@@ -4,8 +4,9 @@ mod output;
 mod pipeline;
 mod transcriber;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -17,6 +18,7 @@ use crate::audio::extract::check_ffmpeg;
 use crate::engines::azure_openai::AzureOpenAi;
 use crate::engines::model_cache::ModelCache;
 use crate::engines::openai_api::OpenAiApi;
+use crate::engines::rate_limit;
 use crate::engines::whisper_local::WhisperLocal;
 use crate::pipeline::{OutputFormat, PipelineConfig, run_pipeline};
 use crate::transcriber::Transcriber;
@@ -25,6 +27,58 @@ const HF_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/
 
 fn models_dir() -> PathBuf {
     PathBuf::from(std::env::var("MODEL_CACHE_DIR").unwrap_or_else(|_| ".cache".to_string()))
+}
+
+fn resolve_cached_model_path(model: &str) -> Result<String> {
+    let model = model.trim();
+    if model.is_empty() {
+        anyhow::bail!("Model name cannot be empty");
+    }
+
+    let direct_path = Path::new(model);
+    if direct_path.exists() {
+        return Ok(direct_path.to_string_lossy().into_owned());
+    }
+
+    let file_name = match model {
+        "tiny" => Some("ggml-tiny.bin"),
+        "tiny.en" => Some("ggml-tiny.en.bin"),
+        "base" => Some("ggml-base.bin"),
+        "base.en" => Some("ggml-base.en.bin"),
+        "small" => Some("ggml-small.bin"),
+        "small.en" => Some("ggml-small.en.bin"),
+        "medium" => Some("ggml-medium.bin"),
+        "medium.en" => Some("ggml-medium.en.bin"),
+        "large-v3" => Some("ggml-large-v3.bin"),
+        "large-v3-turbo" => Some("ggml-large-v3-turbo.bin"),
+        _ => None,
+    };
+
+    if let Some(file_name) = file_name {
+        let cache_path = models_dir().join(file_name);
+        if cache_path.exists() {
+            return Ok(cache_path.to_string_lossy().into_owned());
+        }
+        anyhow::bail!(
+            "Model '{model}' not found in cache directory '{}'. Download it with: transcribeit download-model -s {model}",
+            models_dir().display()
+        );
+    }
+
+    if !model.contains(std::path::MAIN_SEPARATOR) && model.ends_with(".bin") {
+        let cache_path = models_dir().join(model);
+        if cache_path.exists() {
+            return Ok(cache_path.to_string_lossy().into_owned());
+        }
+        anyhow::bail!(
+            "Model file '{model}' not found in cache directory '{}'. Set --model to an existing path or download it first.",
+            models_dir().display()
+        );
+    }
+
+    anyhow::bail!(
+        "Model '{model}' is not a recognized alias. Use a GGML model path or one of: tiny, tiny.en, base, base.en, small, small.en, medium, medium.en, large-v3, large-v3-turbo."
+    );
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -80,6 +134,8 @@ enum OutputFormatArg {
     Text,
     /// WebVTT subtitle format
     Vtt,
+    /// SRT subtitle format
+    Srt,
 }
 
 #[derive(Parser)]
@@ -90,6 +146,7 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)]
 enum Command {
     /// Download a Whisper GGML model from Hugging Face
     DownloadModel {
@@ -119,11 +176,11 @@ enum Command {
         #[arg(short, long, default_value = "local")]
         provider: Provider,
 
-        /// Path to input audio/video file
+        /// Input path, directory, or glob pattern
         #[arg(short, long)]
-        input: PathBuf,
+        input: String,
 
-        /// Path to local model file (required for --provider local)
+        /// Path to local model file or model alias (required for --provider local)
         #[arg(short, long)]
         model: Option<String>,
 
@@ -135,9 +192,17 @@ enum Command {
         #[arg(short, long, env = "OPENAI_API_KEY")]
         api_key: Option<String>,
 
+        /// Azure API key (or set AZURE_API_KEY env var)
+        #[arg(long, env = "AZURE_API_KEY")]
+        azure_api_key: Option<String>,
+
         /// Remote model name (for --provider openai)
         #[arg(long, default_value = "whisper-1")]
         remote_model: String,
+
+        /// Language code (e.g. en, fr, auto). If not set, auto-detection is used.
+        #[arg(long)]
+        language: Option<String>,
 
         /// Azure deployment name (or set AZURE_DEPLOYMENT_NAME env var)
         #[arg(long, env = "AZURE_DEPLOYMENT_NAME", default_value = "whisper")]
@@ -146,6 +211,22 @@ enum Command {
         /// Azure API version (or set AZURE_API_VERSION env var)
         #[arg(long, env = "AZURE_API_VERSION", default_value = "2024-06-01")]
         azure_api_version: String,
+
+        /// Maximum API request retries when rate limited
+        #[arg(long, env = "TRANSCRIBEIT_MAX_RETRIES", default_value = "5")]
+        max_retries: u32,
+
+        /// Timeout in seconds for each API request
+        #[arg(long, env = "TRANSCRIBEIT_REQUEST_TIMEOUT_SECS", default_value = "120")]
+        request_timeout_secs: u64,
+
+        /// Base retry wait in seconds when rate limited
+        #[arg(long, env = "TRANSCRIBEIT_RETRY_WAIT_BASE_SECS", default_value = "10")]
+        retry_wait_base_secs: u64,
+
+        /// Maximum retry wait in seconds when rate limited
+        #[arg(long, env = "TRANSCRIBEIT_RETRY_WAIT_MAX_SECS", default_value = "120")]
+        retry_wait_max_secs: u64,
 
         /// Output directory for VTT and manifest files
         #[arg(short = 'o', long)]
@@ -170,6 +251,14 @@ enum Command {
         /// Maximum segment length in seconds
         #[arg(long, default_value = "600")]
         max_segment_secs: f64,
+
+        /// Maximum parallel segment requests (API providers only; local remains sequential)
+        #[arg(long, default_value = "2")]
+        segment_concurrency: usize,
+
+        /// Normalize audio with ffmpeg loudnorm before transcription
+        #[arg(long)]
+        normalize: bool,
     },
 }
 
@@ -198,7 +287,9 @@ async fn main() -> Result<()> {
             model,
             base_url,
             api_key,
+            azure_api_key,
             remote_model,
+            language,
             azure_deployment,
             azure_api_version,
             output_dir,
@@ -207,20 +298,48 @@ async fn main() -> Result<()> {
             silence_threshold,
             min_silence_duration,
             max_segment_secs,
+            segment_concurrency,
+            normalize,
+            max_retries,
+            request_timeout_secs,
+            retry_wait_base_secs,
+            retry_wait_max_secs,
         } => {
             check_ffmpeg()?;
 
-            let auto_split = matches!(provider, Provider::Openai | Provider::Azure);
+            let input_paths = resolve_input_paths(&input)?;
+            if input_paths.len() > 1 && output_dir.is_none() {
+                eprintln!(
+                    "Batch mode detected ({} files). Output will be printed per file unless --output-dir is set.",
+                    input_paths.len()
+                );
+            }
+
+            let api_settings = rate_limit::ApiRequestSettings::new(
+                Duration::from_secs(request_timeout_secs.max(1)),
+                max_retries,
+                Duration::from_secs(retry_wait_base_secs.max(1)),
+                Duration::from_secs(retry_wait_max_secs.max(1)),
+            );
+
+            let upload_as_mp3 = matches!(provider, Provider::Openai | Provider::Azure);
+            let auto_split = upload_as_mp3;
+            let segment_concurrency = if upload_as_mp3 {
+                segment_concurrency.max(1)
+            } else {
+                1
+            };
 
             let (engine, provider_name, model_name): (Box<dyn Transcriber>, String, String) =
                 match provider {
                     Provider::Local => {
-                        let model_path =
-                            model.context("--model is required for --provider local")?;
+                        let model_path = resolve_cached_model_path(
+                            &model.context("--model is required for --provider local")?,
+                        )?;
                         let cache = Arc::new(ModelCache::new());
                         let name = model_path.clone();
                         (
-                            Box::new(WhisperLocal::new(model_path, cache)),
+                            Box::new(WhisperLocal::new(model_path, cache, language.clone())),
                             "local".into(),
                             name,
                         )
@@ -231,16 +350,22 @@ async fn main() -> Result<()> {
                         )?;
                         let url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
                         (
-                            Box::new(OpenAiApi::new(url, key, remote_model.clone())),
+                            Box::new(OpenAiApi::new(
+                                url,
+                                key,
+                                remote_model.clone(),
+                                language.clone(),
+                                api_settings,
+                            )?),
                             "openai".into(),
                             remote_model,
                         )
                     }
                     Provider::Azure => {
-                        let key = api_key
-                            .or_else(|| std::env::var("AZURE_API_KEY").ok())
+                        let key = azure_api_key
+                            .or(api_key)
                             .context(
-                                "--api-key or AZURE_API_KEY is required for --provider azure",
+                                "--azure-api-key or --api-key/AZURE_API_KEY is required for --provider azure",
                             )?;
                         let endpoint = base_url
                             .or_else(|| std::env::var("AZURE_OPENAI_ENDPOINT").ok())
@@ -253,34 +378,102 @@ async fn main() -> Result<()> {
                                 azure_deployment.clone(),
                                 azure_api_version,
                                 key,
-                            )),
+                                language.clone(),
+                                api_settings,
+                            )?),
                             "azure".into(),
                             azure_deployment,
                         )
                     }
                 };
 
-            let config = PipelineConfig {
-                input,
-                output_dir,
-                output_format: match output_format {
-                    OutputFormatArg::Text => OutputFormat::Text,
-                    OutputFormatArg::Vtt => OutputFormat::Vtt,
-                },
-                segment,
-                silence_threshold,
-                min_silence_duration,
-                max_segment_secs,
-                provider_name,
-                model_name,
-                auto_split_for_api: auto_split,
-            };
+            for (index, input_path) in input_paths.iter().enumerate() {
+                if input_paths.len() > 1 {
+                    eprintln!(
+                        "[{} / {}] Processing {}",
+                        index + 1,
+                        input_paths.len(),
+                        input_path.display()
+                    );
+                }
 
-            run_pipeline(engine, config).await?;
+                let config = PipelineConfig {
+                    input: input_path.clone(),
+                    output_dir: output_dir.clone(),
+                    output_format: match output_format {
+                        OutputFormatArg::Text => OutputFormat::Text,
+                        OutputFormatArg::Vtt => OutputFormat::Vtt,
+                        OutputFormatArg::Srt => OutputFormat::Srt,
+                    },
+                    language: language.clone(),
+                    segment,
+                    silence_threshold,
+                    min_silence_duration,
+                    max_segment_secs,
+                    provider_name: provider_name.clone(),
+                    model_name: model_name.clone(),
+                    auto_split_for_api: auto_split,
+                    upload_as_mp3,
+                    segment_concurrency,
+                    normalize_audio: normalize,
+                };
+
+                run_pipeline(engine.as_ref(), config).await?;
+            }
         }
     }
 
     Ok(())
+}
+
+fn resolve_input_paths(input: &str) -> Result<Vec<PathBuf>> {
+    let input_path = Path::new(input);
+
+    if input_path.exists() {
+        if input_path.is_file() {
+            return Ok(vec![input_path.to_path_buf()]);
+        }
+
+        if input_path.is_dir() {
+            let mut files = Vec::new();
+            for entry in std::fs::read_dir(input_path)
+                .with_context(|| format!("Failed to read directory: {}", input_path.display()))?
+            {
+                let entry = entry?;
+                if entry.file_type()?.is_file() {
+                    files.push(entry.path());
+                }
+            }
+
+            if files.is_empty() {
+                anyhow::bail!("No files found in directory: {}", input_path.display());
+            }
+
+            files.sort_unstable();
+            return Ok(files);
+        }
+
+        anyhow::bail!(
+            "Input exists but is not a file or directory: {}",
+            input_path.display()
+        );
+    }
+
+    let mut matches = Vec::new();
+    for entry in glob::glob(input).with_context(|| format!("Invalid input pattern: {input}"))? {
+        let path =
+            entry.with_context(|| format!("Invalid input glob match for pattern: {input}"))?;
+        if path.is_file() {
+            matches.push(path);
+        }
+    }
+
+    if matches.is_empty() {
+        anyhow::bail!("No files matched input pattern: {input}");
+    }
+
+    matches.sort_unstable();
+    Ok(matches)
 }
 
 async fn download_model(

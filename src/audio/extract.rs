@@ -20,7 +20,7 @@ pub fn check_ffmpeg() -> Result<()> {
 /// Extract/convert any audio or video file to a mono 16kHz 16-bit WAV using ffmpeg.
 ///
 /// Returns a `TempPath` to the generated WAV file, which will be cleaned up when dropped.
-pub async fn extract_to_wav(input: &Path) -> Result<TempPath> {
+pub async fn extract_to_wav(input: &Path, normalize: bool) -> Result<TempPath> {
     let tmp = tempfile::Builder::new()
         .suffix(".wav")
         .tempfile()
@@ -28,8 +28,8 @@ pub async fn extract_to_wav(input: &Path) -> Result<TempPath> {
 
     let tmp_path = tmp.into_temp_path();
 
-    let status = tokio::process::Command::new("ffmpeg")
-        .arg("-y")
+    let mut cmd = tokio::process::Command::new("ffmpeg");
+    cmd.arg("-y")
         .arg("-i")
         .arg(input)
         .arg("-ar")
@@ -38,7 +38,11 @@ pub async fn extract_to_wav(input: &Path) -> Result<TempPath> {
         .arg("1")
         .arg("-vn")
         .arg("-c:a")
-        .arg("pcm_s16le")
+        .arg("pcm_s16le");
+    if normalize {
+        cmd.arg("-af").arg("loudnorm=I=-16:TP=-1.5:LRA=11");
+    }
+    let status = cmd
         .arg(tmp_path.as_os_str())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -49,6 +53,52 @@ pub async fn extract_to_wav(input: &Path) -> Result<TempPath> {
     if !status.success() {
         anyhow::bail!(
             "ffmpeg exited with status {} while converting {}",
+            status,
+            input.display()
+        );
+    }
+
+    Ok(tmp_path)
+}
+
+/// Extract/convert any audio or video file to a mono 16kHz MP3 using ffmpeg.
+///
+/// Returns a `TempPath` to the generated MP3 file, which will be cleaned up when dropped.
+pub async fn extract_to_mp3(input: &Path, normalize: bool) -> Result<TempPath> {
+    let tmp = tempfile::Builder::new()
+        .suffix(".mp3")
+        .tempfile()
+        .context("Failed to create temporary MP3 file")?;
+
+    let tmp_path = tmp.into_temp_path();
+
+    let mut cmd = tokio::process::Command::new("ffmpeg");
+    cmd.arg("-y")
+        .arg("-i")
+        .arg(input)
+        .arg("-ar")
+        .arg("16000")
+        .arg("-ac")
+        .arg("1")
+        .arg("-vn")
+        .arg("-c:a")
+        .arg("libmp3lame")
+        .arg("-q:a")
+        .arg("2");
+    if normalize {
+        cmd.arg("-af").arg("loudnorm=I=-16:TP=-1.5:LRA=11");
+    }
+    let status = cmd
+        .arg(tmp_path.as_os_str())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await
+        .context("Failed to run ffmpeg for audio conversion to mp3")?;
+
+    if !status.success() {
+        anyhow::bail!(
+            "ffmpeg exited with status {} while converting {} to mp3",
             status,
             input.display()
         );

@@ -1,15 +1,18 @@
-use std::path::Path;
+use std::io::{Cursor, Read, Seek};
 
 use anyhow::{Context, Result};
 use hound::WavReader;
 
-/// Read a mono 16kHz WAV file and return f32 samples normalized to [-1.0, 1.0].
+/// Read WAV bytes and return f32 samples normalized to [-1.0, 1.0].
 ///
 /// Validates that the file is mono and 16kHz, bailing with an ffmpeg hint if not.
-pub fn read_wav(path: &Path) -> Result<Vec<f32>> {
-    let reader = WavReader::open(path)
-        .with_context(|| format!("Failed to open WAV file: {}", path.display()))?;
+pub fn read_wav_bytes(data: &[u8]) -> Result<Vec<f32>> {
+    let cursor = Cursor::new(data);
+    let reader = WavReader::new(cursor).context("Failed to parse WAV bytes")?;
+    read_wav_reader(reader)
+}
 
+fn read_wav_reader<R: Read + Seek>(reader: WavReader<R>) -> Result<Vec<f32>> {
     let spec = reader.spec();
     if spec.channels != 1 {
         anyhow::bail!(

@@ -10,11 +10,16 @@ use crate::transcriber::{Segment, Transcriber, Transcript};
 pub struct WhisperLocal {
     model_path: String,
     cache: Arc<ModelCache>,
+    language: Option<String>,
 }
 
 impl WhisperLocal {
-    pub fn new(model_path: String, cache: Arc<ModelCache>) -> Self {
-        Self { model_path, cache }
+    pub fn new(model_path: String, cache: Arc<ModelCache>, language: Option<String>) -> Self {
+        Self {
+            model_path,
+            cache,
+            language,
+        }
     }
 }
 
@@ -23,6 +28,7 @@ impl Transcriber for WhisperLocal {
     async fn transcribe(&self, audio_samples: Vec<f32>) -> Result<Transcript> {
         let model_path = self.model_path.clone();
         let cache = Arc::clone(&self.cache);
+        let language = self.language.clone();
 
         // whisper-rs is synchronous and CPU-heavy; run on a blocking thread
         tokio::task::spawn_blocking(move || {
@@ -38,6 +44,11 @@ impl Transcriber for WhisperLocal {
             params.set_print_timestamps(false);
             params.set_print_special(false);
             params.set_debug_mode(false);
+            if let Some(language) = language.as_deref() {
+                params.set_language(Some(language));
+            } else {
+                params.set_detect_language(true);
+            }
 
             state
                 .full(params, &audio_samples)

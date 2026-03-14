@@ -1641,6 +1641,7 @@ dependencies = [
  "clap",
  "dotenvy",
  "futures-util",
+ "glob",
  "hound",
  "indicatif",
  "regex",

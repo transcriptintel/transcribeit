@@ -1,0 +1,12 @@
+{
+  "extends": ["config:base"],
+  "baseBranches": ["develop"],
+  "timezone": "Europe/Bucharest",
+  "labels": ["dependencies"],
+  "dependencyDashboard": true,
+  "automerge": false,
+  "enabledManagers": ["cargo", "github-actions"],
+  "schedule": ["before 3:00am every monday"],
+  "prHourlyLimit": 2,
+  "prConcurrentLimit": 5
+}
