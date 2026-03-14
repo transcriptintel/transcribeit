@@ -64,7 +64,7 @@ transcribeit run [OPTIONS] --input <FILE>
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-b, --base-url` | Azure endpoint URL | `https://api.openai.com` |
-| `-a, --api-key` | Azure API key | `OPENAI_API_KEY` env var |
+| `-a, --api-key` | Azure API key | `OPENAI_API_KEY` or `AZURE_API_KEY` env var |
 | `--azure-deployment` | Deployment name | `whisper` |
 | `--azure-api-version` | API version | `2024-06-01` |
 
@@ -91,8 +91,9 @@ When using `openai` or `azure` providers, files exceeding 25MB are automatically
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `MODEL_CACHE_DIR` | Directory for downloaded models | `.cache` |
-| `HF_TOKEN` | Hugging Face API token | none |
-| `OPENAI_API_KEY` | OpenAI / Azure API key | none |
+| `HF_TOKEN` | Hugging Face API token (optional) | none |
+| `OPENAI_API_KEY` | OpenAI API key (also used as fallback for Azure) | none |
+| `AZURE_API_KEY` | Azure OpenAI API key | none |
 
 All variables can be set in a `.env` file in the project root.
 

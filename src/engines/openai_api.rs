@@ -22,19 +22,6 @@ impl OpenAiApi {
     }
 }
 
-#[derive(Deserialize)]
-struct VerboseResponse {
-    segments: Option<Vec<ApiSegment>>,
-    text: String,
-}
-
-#[derive(Deserialize)]
-struct ApiSegment {
-    start: f64,
-    end: f64,
-    text: String,
-}
-
 #[async_trait]
 impl Transcriber for OpenAiApi {
     async fn transcribe(&self, audio_samples: Vec<f32>) -> Result<Transcript> {
@@ -67,17 +54,46 @@ impl Transcriber for OpenAiApi {
             anyhow::bail!("API returned {status}: {body}");
         }
 
-        let api_resp: VerboseResponse =
-            resp.json().await.context("Failed to parse API response")?;
+        let body = resp
+            .bytes()
+            .await
+            .context("Failed to read API response body")?;
 
-        Ok(parse_response(api_resp))
+        Ok(parse_response_bytes(&body))
     }
 }
 
-fn parse_response(resp: VerboseResponse) -> Transcript {
-    match resp.segments {
-        Some(segs) if !segs.is_empty() => Transcript {
-            segments: segs
+/// Response with segments (verbose_json format).
+#[derive(Deserialize)]
+struct VerboseResponse {
+    segments: Vec<ApiSegment>,
+    #[allow(dead_code)]
+    text: String,
+}
+
+/// Minimal response (json format, or verbose_json without segments).
+#[derive(Deserialize)]
+struct PlainResponse {
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct ApiSegment {
+    start: f64,
+    end: f64,
+    text: String,
+}
+
+/// Parse response bytes, trying verbose_json first then falling back to plain json.
+/// This ensures compatibility with endpoints that don't support verbose_json.
+pub fn parse_response_bytes(body: &[u8]) -> Transcript {
+    // Try verbose format with segments first
+    if let Ok(resp) = serde_json::from_slice::<VerboseResponse>(body)
+        && !resp.segments.is_empty()
+    {
+        return Transcript {
+            segments: resp
+                .segments
                 .into_iter()
                 .map(|s| Segment {
                     start_ms: (s.start * 1000.0) as i64,
@@ -85,13 +101,26 @@ fn parse_response(resp: VerboseResponse) -> Transcript {
                     text: s.text,
                 })
                 .collect(),
-        },
-        _ => Transcript {
+        };
+    }
+
+    // Fall back to plain text response
+    if let Ok(resp) = serde_json::from_slice::<PlainResponse>(body) {
+        return Transcript {
             segments: vec![Segment {
                 start_ms: 0,
                 end_ms: 0,
                 text: resp.text,
             }],
-        },
+        };
+    }
+
+    // Last resort: treat entire body as text
+    Transcript {
+        segments: vec![Segment {
+            start_ms: 0,
+            end_ms: 0,
+            text: String::from_utf8_lossy(body).into_owned(),
+        }],
     }
 }

@@ -53,6 +53,7 @@ Create a `.env` file in the project root:
 HF_TOKEN=hf_your_token_here
 MODEL_CACHE_DIR=.cache
 OPENAI_API_KEY=sk-your_key_here
+AZURE_API_KEY=your_azure_key_here
 ```
 
 ## Documentation
