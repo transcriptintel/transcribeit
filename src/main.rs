@@ -127,9 +127,9 @@ enum Command {
         #[arg(short, long)]
         model: Option<String>,
 
-        /// API base URL (for --provider openai)
-        #[arg(short, long, default_value = "https://api.openai.com")]
-        base_url: String,
+        /// API base URL (for --provider openai, or set AZURE_OPENAI_ENDPOINT for azure)
+        #[arg(short, long)]
+        base_url: Option<String>,
 
         /// API key (or set OPENAI_API_KEY / AZURE_API_KEY env var)
         #[arg(short, long, env = "OPENAI_API_KEY")]
@@ -139,12 +139,12 @@ enum Command {
         #[arg(long, default_value = "whisper-1")]
         remote_model: String,
 
-        /// Azure deployment name (for --provider azure)
-        #[arg(long, default_value = "whisper")]
+        /// Azure deployment name (or set AZURE_DEPLOYMENT_NAME env var)
+        #[arg(long, env = "AZURE_DEPLOYMENT_NAME", default_value = "whisper")]
         azure_deployment: String,
 
-        /// Azure API version (for --provider azure)
-        #[arg(long, default_value = "2024-06-01")]
+        /// Azure API version (or set AZURE_API_VERSION env var)
+        #[arg(long, env = "AZURE_API_VERSION", default_value = "2024-06-01")]
         azure_api_version: String,
 
         /// Output directory for VTT and manifest files
@@ -229,8 +229,9 @@ async fn main() -> Result<()> {
                         let key = api_key.context(
                             "--api-key or OPENAI_API_KEY is required for --provider openai",
                         )?;
+                        let url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
                         (
-                            Box::new(OpenAiApi::new(base_url, key, remote_model.clone())),
+                            Box::new(OpenAiApi::new(url, key, remote_model.clone())),
                             "openai".into(),
                             remote_model,
                         )
@@ -241,9 +242,14 @@ async fn main() -> Result<()> {
                             .context(
                                 "--api-key or AZURE_API_KEY is required for --provider azure",
                             )?;
+                        let endpoint = base_url
+                            .or_else(|| std::env::var("AZURE_OPENAI_ENDPOINT").ok())
+                            .context(
+                                "--base-url or AZURE_OPENAI_ENDPOINT is required for --provider azure",
+                            )?;
                         (
                             Box::new(AzureOpenAi::new(
-                                base_url,
+                                endpoint,
                                 azure_deployment.clone(),
                                 azure_api_version,
                                 key,

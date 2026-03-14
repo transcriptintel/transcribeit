@@ -3,6 +3,14 @@ name = "transcribeit"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+incremental = false
+
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
@@ -18,3 +26,4 @@ tempfile = "3"
 regex = "1"
 tokio = { version = "1", features = ["full"] }
 whisper-rs = "0.12"
+bytes = "1.11.1"

@@ -63,10 +63,10 @@ transcribeit run [OPTIONS] --input <FILE>
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-b, --base-url` | Azure endpoint URL | `https://api.openai.com` |
+| `-b, --base-url` | Azure endpoint URL | `AZURE_OPENAI_ENDPOINT` env var |
 | `-a, --api-key` | Azure API key | `OPENAI_API_KEY` or `AZURE_API_KEY` env var |
-| `--azure-deployment` | Deployment name | `whisper` |
-| `--azure-api-version` | API version | `2024-06-01` |
+| `--azure-deployment` | Deployment name | `AZURE_DEPLOYMENT_NAME` env var, or `whisper` |
+| `--azure-api-version` | API version | `AZURE_API_VERSION` env var, or `2024-06-01` |
 
 #### Output options
 
@@ -86,6 +86,10 @@ transcribeit run [OPTIONS] --input <FILE>
 
 When using `openai` or `azure` providers, files exceeding 25MB are automatically segmented even without `--segment`.
 
+## Output behavior
+
+During transcription, the CLI shows an animated spinner in the terminal so you can see progress while waiting for Whisper/API calls to complete.
+
 ## Environment variables
 
 | Variable | Description | Default |
@@ -94,6 +98,9 @@ When using `openai` or `azure` providers, files exceeding 25MB are automatically
 | `HF_TOKEN` | Hugging Face API token (optional) | none |
 | `OPENAI_API_KEY` | OpenAI API key (also used as fallback for Azure) | none |
 | `AZURE_API_KEY` | Azure OpenAI API key | none |
+| `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | none |
+| `AZURE_DEPLOYMENT_NAME` | Azure deployment name | `whisper` |
+| `AZURE_API_VERSION` | Azure API version | `2024-06-01` |
 
 All variables can be set in a `.env` file in the project root.
 

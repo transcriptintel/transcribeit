@@ -40,6 +40,7 @@ transcribeit run -p azure -i recording.mp3 \
 - **3 providers** — Local whisper.cpp, OpenAI API, Azure OpenAI. Extensible via the `Transcriber` trait.
 - **Silence-based segmentation** — Splits long audio at silence boundaries for better accuracy and API compatibility.
 - **Auto-split for API limits** — Files exceeding 25MB are automatically segmented when using remote providers.
+- **Progress spinner** — Shows live terminal feedback during transcription (single file and segmented mode).
 - **VTT output** — WebVTT subtitle files with timestamps.
 - **JSON manifest** — Processing metadata, segment details, and statistics.
 - **Model caching** — Loaded whisper models are cached in memory for batch processing.
@@ -54,6 +55,9 @@ HF_TOKEN=hf_your_token_here
 MODEL_CACHE_DIR=.cache
 OPENAI_API_KEY=sk-your_key_here
 AZURE_API_KEY=your_azure_key_here
+AZURE_OPENAI_ENDPOINT=https://myresource.openai.azure.com
+AZURE_DEPLOYMENT_NAME=whisper
+AZURE_API_VERSION=2024-06-01
 ```
 
 ## Documentation

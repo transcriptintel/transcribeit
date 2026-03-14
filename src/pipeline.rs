@@ -1,7 +1,10 @@
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::audio::extract::{extract_to_wav, needs_conversion};
 use crate::audio::segment::{compute_segments, detect_silence, get_duration, split_audio};
@@ -83,7 +86,7 @@ pub async fn run_pipeline(engine: Box<dyn Transcriber>, config: PipelineConfig) 
         .await?
     } else {
         let samples = read_wav(wav_path)?;
-        engine.transcribe(samples).await?
+        transcribe_with_spinner("Transcribing...", engine.transcribe(samples)).await?
     };
 
     let processing_time = started.elapsed().as_secs_f64();
@@ -192,7 +195,17 @@ async fn transcribe_segmented(
         );
 
         let samples = read_wav(tmp_path.as_ref())?;
-        let transcript = engine.transcribe(samples).await?;
+        let transcript = transcribe_with_spinner(
+            &format!(
+                "Transcribing segment {}/{} ({:.1}s - {:.1}s)...",
+                i + 1,
+                audio_segments.len(),
+                audio_seg.start_secs,
+                audio_seg.end_secs
+            ),
+            engine.transcribe(samples),
+        )
+        .await?;
 
         // Offset segment timestamps by the audio segment start time
         let offset_ms = (audio_seg.start_secs * 1000.0) as i64;
@@ -206,4 +219,30 @@ async fn transcribe_segmented(
     Ok(Transcript {
         segments: all_segments,
     })
+}
+
+async fn transcribe_with_spinner<T, F>(message: &str, fut: F) -> Result<T>
+where
+    F: Future<Output = Result<T>>,
+{
+    let spinner = ProgressBar::new_spinner();
+    let style = ProgressStyle::default_spinner()
+        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+        .template("{spinner:.green} {msg}")?;
+    spinner.set_style(style);
+    spinner.set_message(message.to_string());
+    spinner.enable_steady_tick(Duration::from_millis(100));
+
+    let result = fut.await;
+
+    match result {
+        Ok(value) => {
+            spinner.finish_with_message(format!("{message} done"));
+            Ok(value)
+        }
+        Err(err) => {
+            spinner.finish_with_message(format!("{message} failed"));
+            Err(err)
+        }
+    }
 }
