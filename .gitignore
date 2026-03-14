@@ -4,6 +4,6 @@
 .env.*
 .cache
 samples
-output
+/output
 TODO.md
 vendor/
