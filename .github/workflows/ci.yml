@@ -2,34 +2,42 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main, develop]
   pull_request:
+    branches: [main, develop]
 
 permissions:
   contents: read
 
 jobs:
-  verify:
+  fmt:
+    name: Format
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          components: rustfmt, clippy
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
-      - name: Cache cargo registry
-        uses: Swatinem/rust-cache@v2
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (without sherpa-onnx)
+        run: cargo clippy --no-default-features --all-targets -- -D warnings
 
-      - name: Format check
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
-
-      - name: Test
-        run: cargo test --all-targets
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Test (without sherpa-onnx)
+        run: cargo test --no-default-features --all-targets
