@@ -11,7 +11,8 @@ Capture these details for every benchmark run:
 - OS and kernel
 - `rustc` version
 - Provider and exact command used
-- Model used (for local) or deployment/model (for APIs)
+- Model used (for local/sherpa-onnx) or deployment/model (for APIs)
+- Model format (GGML or ONNX) for local providers
 - Input file duration and codec/container
 
 ## Benchmarks to run
@@ -21,9 +22,14 @@ Capture these details for every benchmark run:
 Run on representative files (e.g. 1, 5, 10 minutes).
 
 ```bash
-time transcribeit run -i <input_file> -m base --output-format text -o ./output
-time transcribeit run -i <input_file> -m small --output-format text -o ./output
-time transcribeit run -i <input_file> -m small.en --output-format text -o ./output
+# whisper.cpp (GGML)
+time transcribeit run -i <input_file> -m base -f text -o ./output
+time transcribeit run -i <input_file> -m small -f text -o ./output
+time transcribeit run -i <input_file> -m small.en -f text -o ./output
+
+# sherpa-onnx (ONNX) — auto-segments at 30s
+time transcribeit run -p sherpa-onnx -i <input_file> -m base -f text -o ./output
+time transcribeit run -p sherpa-onnx -i <input_file> -m small.en -f text -o ./output
 ```
 
 Record:
@@ -31,11 +37,13 @@ Record:
 - output length/time ratio (e.g. 600s audio in 180s)
 - CPU utilization profile (optional)
 
-### 2. Provider overhead vs local (same input)
+### 2. Provider overhead comparison (same input)
 
 ```bash
-time transcribeit run -p openai -i <input_file> --output-format text -o ./output
-time transcribeit run -p azure -i <input_file> --output-format text -o ./output
+time transcribeit run -p local -i <input_file> -m base -f text -o ./output
+time transcribeit run -p sherpa-onnx -i <input_file> -m base -f text -o ./output
+time transcribeit run -p openai -i <input_file> -f text -o ./output
+time transcribeit run -p azure -i <input_file> -f text -o ./output
 ```
 
 Record:
@@ -47,8 +55,10 @@ Record:
 ### 3. Segmentation impact
 
 ```bash
-time transcribeit run -p openai -i <long_file> --segment --segment-concurrency 2 --output-format text -o ./output
-time transcribeit run -p openai -i <long_file> --segment --segment-concurrency 1 --max-segment-secs 300 --output-format text -o ./output
+time transcribeit run -p openai -i <long_file> --segment --segment-concurrency 2 -f text -o ./output
+time transcribeit run -p openai -i <long_file> --segment --segment-concurrency 1 --max-segment-secs 300 -f text -o ./output
+# sherpa-onnx always segments at 30s max
+time transcribeit run -p sherpa-onnx -i <long_file> -m base -f text -o ./output
 ```
 
 Record:
@@ -59,8 +69,8 @@ Record:
 ### 4. I/O + conversion overhead
 
 ```bash
-time transcribeit run -i <video_file> -m base --normalize --output-format text -o ./output
-time transcribeit run -i <audio_file> -m base --normalize --output-format text -o ./output
+time transcribeit run -i <video_file> -m base --normalize -f text -o ./output
+time transcribeit run -i <audio_file> -m base --normalize -f text -o ./output
 ```
 
 Record:

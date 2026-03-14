@@ -16,6 +16,40 @@ Fix:
   - `ffmpeg -version`
   - `ffprobe -version`
 
+### `SHERPA_ONNX_LIB_DIR` not set / dylib not found
+
+Symptoms:
+- Build fails with linker errors referencing `sherpa-onnx` symbols
+- Runtime error: `dyld: Library not loaded` (macOS) or `error while loading shared libraries` (Linux)
+
+Fix:
+- Set `SHERPA_ONNX_LIB_DIR` to the directory containing the sherpa-onnx shared libraries. This can be placed in a `.env` file in the project root or exported in your shell.
+
+```bash
+# In .env file
+SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
+
+# Or export directly
+export SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
+cargo build --release
+```
+
+- The `build.rs` script reads this variable, adds it to the linker search path, and embeds an `rpath` so the binary can find the dylibs at runtime.
+- If you installed sherpa-onnx via a package manager, the lib directory is typically something like `/usr/local/lib` or `/opt/homebrew/lib`.
+- Verify the directory contains files like `libsherpa-onnx-core.dylib` (macOS) or `libsherpa-onnx-core.so` (Linux).
+
+### ONNX model directory invalid
+
+Symptoms:
+- `ONNX model not found for '<name>'`
+- `encoder.onnx (or encoder.int8.onnx) not found in ...`
+- `tokens.txt not found in ...`
+
+Fix:
+- Ensure the model directory contains `encoder.onnx` (or `encoder.int8.onnx`), `decoder.onnx` (or `decoder.int8.onnx`), and `tokens.txt` (or `*-tokens.txt`).
+- Download ONNX models with: `transcribeit download-model -f onnx -s <size>`
+- Verify with: `transcribeit list-models` (ONNX models appear with an `[onnx]` tag)
+
 ### Model download fails
 
 Common symptoms:
@@ -26,13 +60,15 @@ Common symptoms:
 Fix:
 - Verify model size name (`base`, `small.en`, `large-v3`, etc.).
 - Ensure network connectivity and DNS resolution.
-- Check `HF_TOKEN` if Hugging Face is rate-limiting your requests.
+- For GGML downloads: check `HF_TOKEN` if Hugging Face is rate-limiting your requests.
+- For ONNX downloads: note that `large-v3` is not available in ONNX format.
 - Use `transcribeit list-models` to confirm successful downloads in `MODEL_CACHE_DIR`.
 
 Example:
 
 ```bash
 transcribeit download-model -s base
+transcribeit download-model -f onnx -s base.en
 transcribeit list-models
 ```
 

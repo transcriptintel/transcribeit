@@ -19,6 +19,7 @@ src/
 │   └── manifest.rs        # JSON manifest writer
 └── engines/
     ├── whisper_local.rs   # Local whisper.cpp via whisper-rs
+    ├── sherpa_onnx.rs     # Local sherpa-onnx engine (Whisper ONNX models)
     ├── openai_api.rs      # OpenAI-compatible REST API
     ├── azure_openai.rs    # Azure OpenAI REST API
     ├── rate_limit.rs      # Retry logic and 429 handling
@@ -44,7 +45,8 @@ pub trait Transcriber: Send + Sync {
 }
 ```
 
-- **Local engine** uses `transcribe()` — it needs decoded samples for whisper.cpp.
+- **Local engine** (`whisper_local`) uses `transcribe()` — it needs decoded samples for whisper.cpp.
+- **Sherpa-ONNX engine** (`sherpa_onnx`) uses `transcribe()` — it needs decoded samples for the ONNX runtime.
 - **API engines** override `transcribe_path()` to upload files directly via multipart, and `transcribe_wav()` to upload in-memory bytes — avoiding the decode→re-encode round-trip.
 
 ## Processing pipeline
@@ -61,7 +63,8 @@ Input file (any format)
   │
   ├─ Should segment?
   │   ├─ --segment flag explicitly set
-  │   └─ Auto: remote provider + estimated size > 25MB
+  │   ├─ Auto: remote provider + estimated size > 25MB
+  │   └─ Auto: sherpa-onnx provider (always segments; max 30s per chunk)
   │
   ├─ If segmenting:
   │   ├─ detect_silence() via FFmpeg silencedetect filter
@@ -109,6 +112,19 @@ Same multipart upload pattern as OpenAI, but with Azure-specific URL format and 
 
 Caches whether the endpoint supports `verbose_json` via an `AtomicU8` flag to skip the fallback on subsequent segment calls within the same run.
 
+### Sherpa-ONNX (`sherpa_onnx.rs`)
+
+Local inference using [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with Whisper ONNX models. Uses a **dedicated worker thread pattern**: the `OfflineRecognizer` is created on a plain `std::thread` (not on the Tokio runtime) and stays there for its entire lifetime. Transcription requests are sent to the thread via an `mpsc` channel and results come back through `tokio::sync::oneshot` channels. This design avoids:
+
+- Blocking the async runtime during inference.
+- Thread-safety issues with the C FFI recognizer, which is neither `Send` nor `Sync`.
+
+Model initialization also happens on the worker thread, with errors propagated back through a sync channel so callers get a clear error if the model directory is invalid.
+
+The engine prefers `int8` quantized ONNX files when available (`encoder.int8.onnx`, `decoder.int8.onnx`) for lower memory usage, falling back to full-precision variants. A `tokens.txt` file must be present in the model directory.
+
+Whisper ONNX models only support audio chunks of 30 seconds or less, so the pipeline automatically enables segmentation and caps `--max-segment-secs` at 30 when using this provider.
+
 ### Rate limiting (`rate_limit.rs`)
 
 Shared retry logic for both API engines. On 429 responses:
@@ -130,6 +146,17 @@ Both API engines can send file uploads directly and choose the correct container
 - whisper.cpp model loading takes seconds
 - Segmented processing calls `transcribe()` multiple times
 - The cache is thread-safe via `Mutex` (lock contention is negligible since cache hits are fast)
+
+## Build requirements
+
+The `sherpa-onnx` crate requires the sherpa-onnx shared libraries at both compile time and runtime. The `build.rs` script loads a `.env` file and reads `SHERPA_ONNX_LIB_DIR` to configure the linker search path and embed an `rpath` so the binary can find the dylibs at runtime.
+
+Set `SHERPA_ONNX_LIB_DIR` in your `.env` file or environment before building:
+
+```bash
+# .env
+SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
+```
 
 ## Adding a new engine
 

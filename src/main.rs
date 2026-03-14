@@ -19,11 +19,14 @@ use crate::engines::azure_openai::AzureOpenAi;
 use crate::engines::model_cache::ModelCache;
 use crate::engines::openai_api::OpenAiApi;
 use crate::engines::rate_limit;
+use crate::engines::sherpa_onnx::SherpaOnnxEngine;
 use crate::engines::whisper_local::WhisperLocal;
 use crate::pipeline::{OutputFormat, PipelineConfig, run_pipeline};
 use crate::transcriber::Transcriber;
 
 const HF_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
+const SHERPA_ONNX_BASE_URL: &str =
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
 
 fn models_dir() -> PathBuf {
     PathBuf::from(std::env::var("MODEL_CACHE_DIR").unwrap_or_else(|_| ".cache".to_string()))
@@ -116,12 +119,39 @@ impl ModelSize {
             Self::LargeV3Turbo => "ggml-large-v3-turbo.bin",
         }
     }
+
+    fn onnx_archive_name(&self) -> Option<&str> {
+        match self {
+            Self::Tiny => Some("sherpa-onnx-whisper-tiny"),
+            Self::TinyEn => Some("sherpa-onnx-whisper-tiny.en"),
+            Self::Base => Some("sherpa-onnx-whisper-base"),
+            Self::BaseEn => Some("sherpa-onnx-whisper-base.en"),
+            Self::Small => Some("sherpa-onnx-whisper-small"),
+            Self::SmallEn => Some("sherpa-onnx-whisper-small.en"),
+            Self::Medium => Some("sherpa-onnx-whisper-medium"),
+            Self::MediumEn => Some("sherpa-onnx-whisper-medium.en"),
+            Self::LargeV3 => None,
+            Self::LargeV3Turbo => Some("sherpa-onnx-whisper-large-v3-turbo"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, ValueEnum, Default)]
+enum ModelFormat {
+    /// GGML format (for whisper.cpp / --provider local)
+    #[default]
+    Ggml,
+    /// ONNX format (for sherpa-onnx / --provider sherpa-onnx)
+    Onnx,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
 enum Provider {
     /// Local whisper.cpp engine
     Local,
+    /// Local sherpa-onnx engine (Whisper ONNX models)
+    #[value(name = "sherpa-onnx")]
+    SherpaOnnx,
     /// OpenAI-compatible API
     Openai,
     /// Azure OpenAI API
@@ -148,11 +178,15 @@ struct Cli {
 #[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 enum Command {
-    /// Download a Whisper GGML model from Hugging Face
+    /// Download a Whisper model
     DownloadModel {
         /// Model size to download
         #[arg(short = 's', long, default_value = "base")]
         model_size: ModelSize,
+
+        /// Model format: ggml (for whisper.cpp) or onnx (for sherpa-onnx)
+        #[arg(short, long, default_value = "ggml")]
+        format: ModelFormat,
 
         /// Directory to save the model (overrides MODEL_CACHE_DIR)
         #[arg(short, long)]
@@ -233,7 +267,7 @@ enum Command {
         output_dir: Option<PathBuf>,
 
         /// Output format
-        #[arg(long, default_value = "text")]
+        #[arg(short = 'f', long, default_value = "vtt")]
         output_format: OutputFormatArg,
 
         /// Enable silence-based segmentation
@@ -271,11 +305,17 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::DownloadModel {
             model_size,
+            format,
             output_dir,
             hf_token,
-        } => {
-            download_model(&model_size, output_dir, hf_token.as_deref()).await?;
-        }
+        } => match format {
+            ModelFormat::Ggml => {
+                download_model(&model_size, output_dir, hf_token.as_deref()).await?;
+            }
+            ModelFormat::Onnx => {
+                download_onnx_model(&model_size, output_dir).await?;
+            }
+        },
 
         Command::ListModels { dir } => {
             list_models(dir)?;
@@ -323,7 +363,14 @@ async fn main() -> Result<()> {
             );
 
             let upload_as_mp3 = matches!(provider, Provider::Openai | Provider::Azure);
-            let auto_split = upload_as_mp3;
+            let auto_split = upload_as_mp3 || matches!(provider, Provider::SherpaOnnx);
+            let max_segment_secs = if matches!(provider, Provider::SherpaOnnx) {
+                // sherpa-onnx Whisper only supports ≤30s per call
+                max_segment_secs.min(30.0)
+            } else {
+                max_segment_secs
+            };
+            let segment = segment || matches!(provider, Provider::SherpaOnnx);
             let segment_concurrency = if upload_as_mp3 {
                 segment_concurrency.max(1)
             } else {
@@ -341,6 +388,17 @@ async fn main() -> Result<()> {
                         (
                             Box::new(WhisperLocal::new(model_path, cache, language.clone())),
                             "local".into(),
+                            name,
+                        )
+                    }
+                    Provider::SherpaOnnx => {
+                        let model_arg =
+                            model.context("--model is required for --provider sherpa-onnx")?;
+                        let model_dir = resolve_onnx_model_dir(&model_arg)?;
+                        let name = model_dir.display().to_string();
+                        (
+                            Box::new(SherpaOnnxEngine::new(model_dir, language.clone())?),
+                            "sherpa-onnx".into(),
                             name,
                         )
                     }
@@ -543,6 +601,129 @@ async fn download_model(
     Ok(())
 }
 
+fn has_tokens_file(dir: &Path) -> bool {
+    if dir.join("tokens.txt").exists() {
+        return true;
+    }
+    glob::glob(&format!("{}/*-tokens.txt", dir.display()))
+        .ok()
+        .and_then(|mut paths| paths.next())
+        .is_some_and(|p| p.is_ok())
+}
+
+fn resolve_onnx_model_dir(model: &str) -> Result<PathBuf> {
+    let model = model.trim();
+
+    // Direct path
+    let direct = PathBuf::from(model);
+    if direct.is_dir() && has_tokens_file(&direct) {
+        return Ok(direct);
+    }
+
+    // Try cache with conventional naming
+    let candidates = [format!("sherpa-onnx-whisper-{model}"), model.to_string()];
+    for name in &candidates {
+        let cache_path = models_dir().join(name);
+        if cache_path.is_dir() && has_tokens_file(&cache_path) {
+            return Ok(cache_path);
+        }
+    }
+
+    anyhow::bail!(
+        "ONNX model not found for '{model}'. Expected a directory with encoder.onnx, decoder.onnx, and tokens.txt.\n\
+         Download with: transcribeit download-model -f onnx -s <size>"
+    )
+}
+
+async fn download_onnx_model(model_size: &ModelSize, output_dir: Option<PathBuf>) -> Result<()> {
+    let archive_name = model_size
+        .onnx_archive_name()
+        .context("This model size is not available in ONNX format")?;
+
+    let dir = output_dir.unwrap_or_else(models_dir);
+    tokio::fs::create_dir_all(&dir)
+        .await
+        .with_context(|| format!("Failed to create directory: {}", dir.display()))?;
+
+    let dest_dir = dir.join(archive_name);
+    if dest_dir.exists() {
+        println!("Model already exists: {}", dest_dir.display());
+        return Ok(());
+    }
+
+    let url = format!("{SHERPA_ONNX_BASE_URL}/{archive_name}.tar.bz2");
+    println!("Downloading {archive_name}.tar.bz2 ...");
+    println!("  from: {url}");
+    println!("  to:   {}", dest_dir.display());
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .context("Failed to start ONNX model download")?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("Download failed with status: {}", resp.status());
+    }
+
+    let total_size = resp.content_length().unwrap_or(0);
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{bar:40.cyan/blue} {bytes}/{total_bytes} ({eta})")?
+            .progress_chars("##-"),
+    );
+
+    // Download to temp file
+    let tmp = tempfile::Builder::new()
+        .suffix(".tar.bz2")
+        .tempfile_in(&dir)
+        .context("Failed to create temp file")?;
+
+    let tmp_path = tmp.path().to_path_buf();
+    {
+        let mut file = tokio::fs::File::create(&tmp_path)
+            .await
+            .context("Failed to open temp file")?;
+
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.context("Error reading download stream")?;
+            file.write_all(&chunk).await.context("Failed to write")?;
+            pb.inc(chunk.len() as u64);
+        }
+        file.flush().await?;
+    }
+
+    pb.finish_and_clear();
+    println!("Extracting...");
+
+    // Extract tar.bz2
+    let tmp_path_clone = tmp_path.clone();
+    let dir_clone = dir.clone();
+    tokio::task::spawn_blocking(move || {
+        let file = std::fs::File::open(&tmp_path_clone).context("Failed to open archive")?;
+        let decoder = bzip2::read::BzDecoder::new(file);
+        let mut archive = tar::Archive::new(decoder);
+        archive
+            .unpack(&dir_clone)
+            .context("Failed to extract ONNX model archive")?;
+        Ok::<(), anyhow::Error>(())
+    })
+    .await??;
+
+    // Clean up temp file
+    let _ = tokio::fs::remove_file(&tmp_path).await;
+
+    if dest_dir.exists() {
+        println!("Done: {}", dest_dir.display());
+    } else {
+        println!("Done: extracted to {}", dir.display());
+    }
+    Ok(())
+}
+
 fn list_models(dir: Option<PathBuf>) -> Result<()> {
     let dir = dir.unwrap_or_else(models_dir);
 
@@ -552,17 +733,33 @@ fn list_models(dir: Option<PathBuf>) -> Result<()> {
     }
 
     let mut found = false;
-    for entry in std::fs::read_dir(&dir).context("Failed to read models directory")? {
-        let entry = entry?;
+
+    // GGML models (.bin files)
+    let mut entries: Vec<_> = std::fs::read_dir(&dir)
+        .context("Failed to read models directory")?
+        .filter_map(|e| e.ok())
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in &entries {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) == Some("bin") {
-            let size = entry.metadata()?.len();
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
             let size_mb = size as f64 / (1024.0 * 1024.0);
             println!(
-                "  {} ({:.0} MB)",
+                "  {} ({:.0} MB) [ggml]",
                 path.file_name().unwrap().to_string_lossy(),
                 size_mb
             );
+            found = true;
+        }
+    }
+
+    // ONNX models (directories with tokens.txt)
+    for entry in &entries {
+        let path = entry.path();
+        if path.is_dir() && has_tokens_file(&path) {
+            println!("  {}/ [onnx]", path.file_name().unwrap().to_string_lossy());
             found = true;
         }
     }

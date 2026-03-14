@@ -4,7 +4,7 @@
 
 ### `download-model`
 
-Download a Whisper GGML model from Hugging Face.
+Download a Whisper model in GGML or ONNX format.
 
 ```bash
 transcribeit download-model [OPTIONS]
@@ -13,14 +13,17 @@ transcribeit download-model [OPTIONS]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-s, --model-size` | Model size | `base` |
+| `-f, --format` | Model format: `ggml` or `onnx` | `ggml` |
 | `-o, --output-dir` | Override download directory | `MODEL_CACHE_DIR` |
-| `-t, --hf-token` | Hugging Face token | `HF_TOKEN` env var |
+| `-t, --hf-token` | Hugging Face token (GGML only) | `HF_TOKEN` env var |
 
 Available model sizes: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v3`, `large-v3-turbo`.
 
+GGML models are downloaded from Hugging Face (`ggerganov/whisper.cpp`). ONNX models are downloaded from the sherpa-onnx GitHub releases as `.tar.bz2` archives and extracted automatically. Note: `large-v3` is not available in ONNX format.
+
 ### `list-models`
 
-List downloaded models with file sizes.
+List downloaded models with file sizes. Shows both `[ggml]` and `[onnx]` models. GGML models appear as `.bin` files with sizes; ONNX models appear as directories with a trailing `/`.
 
 ```bash
 transcribeit list-models [OPTIONS]
@@ -43,13 +46,25 @@ transcribeit run [OPTIONS] --input <FILE_OR_PATH_OR_GLOB>
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-i, --input` | Input path, directory, or glob pattern for audio/video files | required |
-| `-p, --provider` | `local`, `openai`, or `azure` | `local` |
+| `-p, --provider` | `local`, `sherpa-onnx`, `openai`, or `azure` | `local` |
 
-#### Local provider options
+#### Local provider options (`-p local`)
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-m, --model` | Path to GGML model file or cache alias (`tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v3`, `large-v3-turbo`) | required |
+
+Model aliases auto-resolve from the `MODEL_CACHE_DIR` cache directory (default `.cache`).
+
+#### Sherpa-ONNX provider options (`-p sherpa-onnx`)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-m, --model` | Path to ONNX model directory or alias (e.g. `tiny`, `base.en`) | required |
+
+The model directory must contain `encoder.onnx` (or `encoder.int8.onnx`), `decoder.onnx` (or `decoder.int8.onnx`), and `tokens.txt`. When an alias like `base.en` is given, the cache is searched for a directory named `sherpa-onnx-whisper-base.en` under `MODEL_CACHE_DIR`.
+
+Sherpa-ONNX automatically enables segmentation and caps segment length at 30 seconds due to the Whisper ONNX model limitation.
 
 #### OpenAI provider options
 
@@ -74,7 +89,7 @@ transcribeit run [OPTIONS] --input <FILE_OR_PATH_OR_GLOB>
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-o, --output-dir` | Directory for text/VTT/SRT output and manifest files | none (stdout) |
-| `--output-format` | `text`, `vtt`, or `srt` | `text` |
+| `-f, --output-format` | `text`, `vtt`, or `srt` | `vtt` |
 | `--language` | Language hint (e.g. `en`, `es`, `auto`) | `auto` |
 | `--normalize` | Normalize audio with ffmpeg `loudnorm` before transcription | disabled |
 
@@ -99,7 +114,7 @@ These options apply to OpenAI/Azure providers:
 | `--max-segment-secs` | Maximum segment length in seconds | `600` |
 | `--segment-concurrency` | Max parallel segment requests (API providers only) | `2` |
 
-When using `openai` or `azure` providers, files exceeding 25MB are automatically segmented even without `--segment`.
+When using `openai` or `azure` providers, files exceeding 25MB are automatically segmented even without `--segment`. When using `sherpa-onnx`, segmentation is always enabled with a maximum segment length of 30 seconds.
 
 ## Output behavior
 
@@ -126,6 +141,7 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `SHERPA_ONNX_LIB_DIR` | Path to sherpa-onnx shared libraries (required for build) | none |
 | `MODEL_CACHE_DIR` | Directory for downloaded models | `.cache` |
 | `HF_TOKEN` | Hugging Face API token (optional) | none |
 | `OPENAI_API_KEY` | OpenAI API key | none |
@@ -143,15 +159,26 @@ All variables can be set in a `.env` file in the project root.
 ## Examples
 
 ```bash
-# Download models
+# Download GGML models
 transcribeit download-model -s base
 transcribeit download-model -s small.en
 
-# Process a single file (using cache alias)
+# Download ONNX models (for sherpa-onnx provider)
+transcribeit download-model -f onnx -s base.en
+transcribeit download-model -f onnx -s tiny
+
+# List all downloaded models (shows [ggml] and [onnx] tags)
+transcribeit list-models
+
+# Process a single file with local whisper.cpp (using cache alias)
 transcribeit run -i recording.mp3 -m base
 # Process a single file (explicit path)
 transcribeit run -i recording.mp3 -m .cache/ggml-base.bin
 transcribeit run -i meeting.mp4 -m .cache/ggml-small.en.bin
+
+# Process with sherpa-onnx provider (auto-segments at 30s)
+transcribeit run -p sherpa-onnx -i recording.mp3 -m base.en
+transcribeit run -p sherpa-onnx -i lecture.mp4 -m tiny -f vtt -o ./output
 
 # Process a directory
 transcribeit run --input samples/ --output-dir ./output
@@ -159,9 +186,14 @@ transcribeit run --input samples/ --output-dir ./output
 # Process a glob
 transcribeit run --input \"samples/**/*.mp4\" -p azure --output-dir ./output
 
-# VTT subtitles with segmentation
-transcribeit run -i lecture.mp4 -m .cache/ggml-base.bin \
-  --output-format vtt --segment -o ./output
+# VTT subtitles with segmentation (vtt is the default format)
+transcribeit run -i lecture.mp4 -m .cache/ggml-base.bin --segment -o ./output
+
+# Plain text output
+transcribeit run -i lecture.mp4 -m base -f text
+
+# SRT subtitles
+transcribeit run -i lecture.mp4 -m base -f srt -o ./output
 
 # Tune segmentation for noisy audio
 transcribeit run -i noisy.wav -m .cache/ggml-base.bin \
@@ -182,10 +214,10 @@ transcribeit run -p azure -i recording.wav \
 
 ### Provider behavior
 
-OpenAI and Azure differ in where model identity is supplied:
-
-- OpenAI-compatible providers use `--remote-model` and call `POST {base-url}/v1/audio/transcriptions`.
-- Azure uses `--azure-deployment` and calls:
+- **Local** (`-p local`) runs whisper.cpp in-process using GGML models.
+- **Sherpa-ONNX** (`-p sherpa-onnx`) runs sherpa-onnx in-process using Whisper ONNX models. Always auto-segments at 30s.
+- **OpenAI-compatible** (`-p openai`) uses `--remote-model` and calls `POST {base-url}/v1/audio/transcriptions`.
+- **Azure** (`-p azure`) uses `--azure-deployment` and calls:
   `POST {base-url}/openai/deployments/{deployment}/audio/transcriptions?api-version={version}`.
 
 For the full matrix and upload/auth notes, see: [Provider behavior](provider-behavior.md).  
