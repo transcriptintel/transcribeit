@@ -16,7 +16,10 @@ impl ModelCache {
     }
 
     pub fn get_or_load(&self, model_path: &str) -> Result<Arc<WhisperContext>> {
-        let mut map = self.cache.lock().unwrap();
+        let mut map = self
+            .cache
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Model cache lock poisoned: {e}"))?;
         if let Some(ctx) = map.get(model_path) {
             return Ok(Arc::clone(ctx));
         }

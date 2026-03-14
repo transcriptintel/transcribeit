@@ -23,7 +23,15 @@ impl OpenAiApi {
 }
 
 #[derive(Deserialize)]
-struct ApiResponse {
+struct VerboseResponse {
+    segments: Option<Vec<ApiSegment>>,
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct ApiSegment {
+    start: f64,
+    end: f64,
     text: String,
 }
 
@@ -34,7 +42,7 @@ impl Transcriber for OpenAiApi {
 
         let form = multipart::Form::new()
             .text("model", self.model.clone())
-            .text("response_format", "json")
+            .text("response_format", "verbose_json")
             .part(
                 "file",
                 multipart::Part::bytes(wav_bytes)
@@ -59,14 +67,31 @@ impl Transcriber for OpenAiApi {
             anyhow::bail!("API returned {status}: {body}");
         }
 
-        let api_resp: ApiResponse = resp.json().await.context("Failed to parse API response")?;
+        let api_resp: VerboseResponse =
+            resp.json().await.context("Failed to parse API response")?;
 
-        Ok(Transcript {
+        Ok(parse_response(api_resp))
+    }
+}
+
+fn parse_response(resp: VerboseResponse) -> Transcript {
+    match resp.segments {
+        Some(segs) if !segs.is_empty() => Transcript {
+            segments: segs
+                .into_iter()
+                .map(|s| Segment {
+                    start_ms: (s.start * 1000.0) as i64,
+                    end_ms: (s.end * 1000.0) as i64,
+                    text: s.text,
+                })
+                .collect(),
+        },
+        _ => Transcript {
             segments: vec![Segment {
                 start_ms: 0,
                 end_ms: 0,
-                text: api_resp.text,
+                text: resp.text,
             }],
-        })
+        },
     }
 }

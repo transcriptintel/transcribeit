@@ -101,9 +101,9 @@ enum Command {
         #[arg(short, long)]
         output_dir: Option<PathBuf>,
 
-        /// Hugging Face token (or set HF_TOKEN env var)
+        /// Hugging Face token (optional, or set HF_TOKEN env var)
         #[arg(short = 't', long, env = "HF_TOKEN")]
-        hf_token: String,
+        hf_token: Option<String>,
     },
 
     /// List downloaded models
@@ -185,7 +185,7 @@ async fn main() -> Result<()> {
             output_dir,
             hf_token,
         } => {
-            download_model(&model_size, output_dir, &hf_token).await?;
+            download_model(&model_size, output_dir, hf_token.as_deref()).await?;
         }
 
         Command::ListModels { dir } => {
@@ -236,9 +236,11 @@ async fn main() -> Result<()> {
                         )
                     }
                     Provider::Azure => {
-                        let key = api_key.context(
-                            "--api-key or AZURE_API_KEY is required for --provider azure",
-                        )?;
+                        let key = api_key
+                            .or_else(|| std::env::var("AZURE_API_KEY").ok())
+                            .context(
+                                "--api-key or AZURE_API_KEY is required for --provider azure",
+                            )?;
                         (
                             Box::new(AzureOpenAi::new(
                                 base_url,
@@ -278,7 +280,7 @@ async fn main() -> Result<()> {
 async fn download_model(
     model_size: &ModelSize,
     output_dir: Option<PathBuf>,
-    hf_token: &str,
+    hf_token: Option<&str>,
 ) -> Result<()> {
     let dir = output_dir.unwrap_or_else(models_dir);
     tokio::fs::create_dir_all(&dir)
@@ -299,12 +301,11 @@ async fn download_model(
     println!("  to:   {}", dest.display());
 
     let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .bearer_auth(hf_token)
-        .send()
-        .await
-        .context("Failed to start download")?;
+    let mut req = client.get(&url);
+    if let Some(token) = hf_token {
+        req = req.bearer_auth(token);
+    }
+    let resp = req.send().await.context("Failed to start download")?;
 
     if !resp.status().is_success() {
         anyhow::bail!("Download failed with status: {}", resp.status());

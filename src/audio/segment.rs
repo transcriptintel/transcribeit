@@ -78,24 +78,29 @@ pub async fn detect_silence(
     let end_re =
         Regex::new(r"silence_end:\s*(-?[\d.]+)").context("Failed to compile silence_end regex")?;
 
-    let starts: Vec<f64> = start_re
-        .captures_iter(&stderr)
-        .filter_map(|c| c.get(1)?.as_str().parse().ok())
-        .collect();
+    // Parse sequentially: walk lines and pair start→end in order,
+    // skipping unmatched entries to avoid mispaired intervals.
+    let mut intervals = Vec::new();
+    let mut pending_start: Option<f64> = None;
 
-    let ends: Vec<f64> = end_re
-        .captures_iter(&stderr)
-        .filter_map(|c| c.get(1)?.as_str().parse().ok())
-        .collect();
-
-    let intervals: Vec<SilenceInterval> = starts
-        .into_iter()
-        .zip(ends)
-        .map(|(start_secs, end_secs)| SilenceInterval {
-            start_secs,
-            end_secs,
-        })
-        .collect();
+    for line in stderr.lines() {
+        if let Some(caps) = start_re.captures(line) {
+            if let Some(val) = caps.get(1).and_then(|m| m.as_str().parse().ok()) {
+                pending_start = Some(val);
+            }
+        } else if let Some(caps) = end_re.captures(line)
+            && let (Some(start), Some(end)) = (
+                pending_start.take(),
+                caps.get(1).and_then(|m| m.as_str().parse::<f64>().ok()),
+            )
+            && end > start
+        {
+            intervals.push(SilenceInterval {
+                start_secs: start,
+                end_secs: end,
+            });
+        }
+    }
 
     Ok(intervals)
 }
@@ -228,7 +233,7 @@ pub async fn split_audio(input: &Path, segments: &[AudioSegment]) -> Result<Vec<
             .arg(format!("{}", seg.start_secs))
             .arg("-i")
             .arg(input)
-            .arg("-to")
+            .arg("-t")
             .arg(format!("{}", duration))
             .arg("-ar")
             .arg("16000")
