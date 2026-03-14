@@ -46,8 +46,6 @@ impl Transcriber for WhisperLocal {
             params.set_debug_mode(false);
             if let Some(language) = language.as_deref() {
                 params.set_language(Some(language));
-            } else {
-                params.set_detect_language(true);
             }
 
             state
