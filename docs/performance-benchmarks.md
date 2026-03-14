@@ -27,9 +27,15 @@ time transcribeit run -i <input_file> -m base -f text -o ./output
 time transcribeit run -i <input_file> -m small -f text -o ./output
 time transcribeit run -i <input_file> -m small.en -f text -o ./output
 
-# sherpa-onnx (ONNX) — auto-segments at 30s
+# sherpa-onnx Whisper (ONNX) — auto-segments at 30s
 time transcribeit run -p sherpa-onnx -i <input_file> -m base -f text -o ./output
 time transcribeit run -p sherpa-onnx -i <input_file> -m small.en -f text -o ./output
+
+# sherpa-onnx Moonshine
+time transcribeit run -p sherpa-onnx -i <input_file> -m moonshine-base -f text -o ./output
+
+# sherpa-onnx SenseVoice
+time transcribeit run -p sherpa-onnx -i <input_file> -m sense-voice -f text -o ./output
 ```
 
 Record:
@@ -91,6 +97,25 @@ Output size: 4.6 MB
 ```
 
 Keep rows in a simple table (date + commit hash + environment + results) in your preferred tracker so regressions are easy to catch.
+
+## Reference benchmark results
+
+These results were measured on a 5-minute medical interview recording.
+
+| Engine / Model | Wall clock | Realtime factor | Notes |
+|---|---|---|---|
+| Local whisper.cpp `base` | 3.6s | 83x RT | Best speed/quality trade-off |
+| SenseVoice 2024 | 6.6s | 46x RT | Good quality, 50+ languages |
+| Sherpa-ONNX Whisper `base` | 10.9s | 27x RT | |
+| Moonshine `base` | 14.1s | 21x RT | |
+| Local whisper.cpp `large-v3-turbo` | 33.7s | 8.9x RT | Highest transcription quality |
+| Sherpa-ONNX Whisper `turbo` | 47.2s | 6.4x RT | |
+
+**Notes:**
+- Local whisper.cpp (GGML) is consistently the fastest engine for a given model size.
+- SenseVoice 2024 offers excellent speed with good quality. **Avoid the SenseVoice 2025 model** -- it is a regression in quality.
+- Moonshine provides a compact alternative but is slower than Whisper at the same size tier.
+- For highest quality where speed is not critical, use `large-v3-turbo` with local whisper.cpp.
 
 ## CI/automatable baseline
 

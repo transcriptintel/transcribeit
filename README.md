@@ -17,6 +17,9 @@ Accepts any audio or video format — FFmpeg handles conversion automatically.
 # Build (reads SHERPA_ONNX_LIB_DIR from .env automatically via build.rs)
 cargo build --release
 
+# Build without sherpa-onnx (no shared library dependency needed)
+cargo build --release --no-default-features
+
 # Download a GGML model (default format, for --provider local)
 transcribeit download-model -s base
 
@@ -29,8 +32,14 @@ transcribeit list-models
 # Transcribe with local whisper.cpp (model alias resolves from MODEL_CACHE_DIR)
 transcribeit run -i recording.mp3 -m base
 
-# Transcribe with sherpa-onnx (auto-segments at ≤30s boundaries)
+# Transcribe with sherpa-onnx Whisper (auto-segments at ≤30s boundaries)
 transcribeit run -p sherpa-onnx -i recording.mp3 -m base
+
+# Transcribe with sherpa-onnx Moonshine (auto-detected from model files)
+transcribeit run -p sherpa-onnx -i recording.mp3 -m moonshine-base
+
+# Transcribe with sherpa-onnx SenseVoice (auto-detected from model files)
+transcribeit run -p sherpa-onnx -i recording.mp3 -m sense-voice
 
 # Or pass an explicit model path
 transcribeit run -i recording.mp3 -m .cache/ggml-base.bin
@@ -59,11 +68,13 @@ transcribeit run -i recording.wav -m base --language en --normalize
 
 - **Any input format** — MP3, MP4, WAV, FLAC, OGG, etc. FFmpeg converts to mono 16kHz WAV automatically.
 - **4 providers** — Local whisper.cpp, sherpa-onnx, OpenAI API, Azure OpenAI. Extensible via the `Transcriber` trait.
-- **Model aliases** — `-m base`, `-m tiny`, etc. resolve from `MODEL_CACHE_DIR` for both `local` and `sherpa-onnx` providers.
+- **3 model architectures via sherpa-onnx** — Whisper, Moonshine, and SenseVoice are auto-detected from the model directory contents. Just point `--model` at any supported model directory.
+- **Model aliases** — `-m base`, `-m tiny`, etc. resolve from `MODEL_CACHE_DIR` for both `local` and `sherpa-onnx` providers. The sherpa-onnx resolver also supports glob matching (e.g., `-m moonshine-base`, `-m sense-voice`).
 - **Language hinting** — Pass `--language` to force local and API transcription language.
 - **FFmpeg audio normalization** — Optional `--normalize` to apply loudnorm before transcription.
 - **Silence-based segmentation** — Splits long audio at silence boundaries for better accuracy and API compatibility.
 - **sherpa-onnx auto-segmentation** — Whisper ONNX models only support ≤30s per call; segmentation is enabled automatically.
+- **sherpa-onnx is optional** — Enabled by default as a Cargo feature. Build without it: `cargo build --no-default-features`.
 - **Auto-split for API limits** — Files exceeding 25MB are automatically segmented when using remote providers.
 - **Progress spinner** — Shows live terminal feedback during transcription (single file and segmented mode).
 - **Parallel API segment transcription** — Multiple segment requests can be processed concurrently with `--segment-concurrency`.
@@ -101,4 +112,4 @@ See the [docs](docs/) folder for detailed documentation:
 - [CLI Reference](docs/cli-reference.md) — All commands, options, and examples
 - [Provider behavior](docs/provider-behavior.md) — OpenAI vs Azure argument differences
 - [Troubleshooting](docs/troubleshooting.md) — Common setup/runtime issues and fixes
-- [Performance benchmarks](docs/performance-benchmarks.md) — Reproducible measurement plan and templates
+- [Performance benchmarks](docs/performance-benchmarks.md) — Measurement plan, reference results, and templates

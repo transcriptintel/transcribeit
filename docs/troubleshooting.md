@@ -43,12 +43,28 @@ cargo build --release
 Symptoms:
 - `ONNX model not found for '<name>'`
 - `encoder.onnx (or encoder.int8.onnx) not found in ...`
+- `Could not detect model architecture in ...`
 - `tokens.txt not found in ...`
 
 Fix:
-- Ensure the model directory contains `encoder.onnx` (or `encoder.int8.onnx`), `decoder.onnx` (or `decoder.int8.onnx`), and `tokens.txt` (or `*-tokens.txt`).
-- Download ONNX models with: `transcribeit download-model -f onnx -s <size>`
+- The sherpa-onnx engine auto-detects the model architecture. Ensure the model directory contains the correct files for one of:
+  - **Whisper:** `encoder.onnx` + `decoder.onnx` (or int8 variants) + `tokens.txt`
+  - **Moonshine:** `preprocess.onnx` + `encode.onnx` + `uncached_decode.onnx` + `cached_decode.onnx` + `tokens.txt`
+  - **SenseVoice:** `model.onnx` + `tokens.txt`
+- Download Whisper ONNX models with: `transcribeit download-model -f onnx -s <size>`
+- For Moonshine and SenseVoice models, download from the [sherpa-onnx model releases](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models) and extract into `MODEL_CACHE_DIR`.
 - Verify with: `transcribeit list-models` (ONNX models appear with an `[onnx]` tag)
+- The model resolver supports partial name matching (e.g., `-m moonshine-base`, `-m sense-voice`).
+
+### Building without sherpa-onnx
+
+If you do not need the sherpa-onnx provider and want to avoid installing the shared libraries:
+
+```bash
+cargo build --release --no-default-features
+```
+
+This disables the `sherpa-onnx` Cargo feature (which is enabled by default) and removes the dependency on `SHERPA_ONNX_LIB_DIR`.
 
 ### Model download fails
 
@@ -140,6 +156,7 @@ Fix:
 Common causes:
 - Language mismatch (auto-detection failed on very short clips)
 - Excessive background noise
+- Previously, a `whisper-rs` bug with `set_detect_language(true)` caused 0 segments when `--language` was not specified. This has been fixed; if you encounter this on an older build, rebuild with the latest code.
 
 Fix:
 - Provide `--language` hint (for example `--language en`).
@@ -147,3 +164,9 @@ Fix:
   - raise (less negative) `--silence-threshold` for more aggressive splits
   - lower `--min-silence-duration` for noisy recordings
 - Try the same file with a different model (for example `base.en`, `small`, `small.en`).
+
+### SenseVoice emotion/event tags missing
+
+SenseVoice models are capable of detecting emotions and audio events (laughter, applause, music, etc.), but the sherpa-onnx C API strips these tags from the output. Only the transcription text is available. This is a limitation of the sherpa-onnx C-level bindings, not of transcribeit.
+
+Additionally, the SenseVoice 2025 model is a quality regression compared to the 2024 version. Prefer using the 2024 SenseVoice model for best results.

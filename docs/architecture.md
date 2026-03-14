@@ -19,7 +19,7 @@ src/
 │   └── manifest.rs        # JSON manifest writer
 └── engines/
     ├── whisper_local.rs   # Local whisper.cpp via whisper-rs
-    ├── sherpa_onnx.rs     # Local sherpa-onnx engine (Whisper ONNX models)
+    ├── sherpa_onnx.rs     # Local sherpa-onnx engine (auto-detects Whisper, Moonshine, SenseVoice)
     ├── openai_api.rs      # OpenAI-compatible REST API
     ├── azure_openai.rs    # Azure OpenAI REST API
     ├── rate_limit.rs      # Retry logic and 429 handling
@@ -114,16 +114,34 @@ Caches whether the endpoint supports `verbose_json` via an `AtomicU8` flag to sk
 
 ### Sherpa-ONNX (`sherpa_onnx.rs`)
 
-Local inference using [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with Whisper ONNX models. Uses a **dedicated worker thread pattern**: the `OfflineRecognizer` is created on a plain `std::thread` (not on the Tokio runtime) and stays there for its entire lifetime. Transcription requests are sent to the thread via an `mpsc` channel and results come back through `tokio::sync::oneshot` channels. This design avoids:
+Local inference using [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with automatic model architecture detection. Uses a **dedicated worker thread pattern**: the `OfflineRecognizer` is created on a plain `std::thread` (not on the Tokio runtime) and stays there for its entire lifetime. Transcription requests are sent to the thread via an `mpsc` channel and results come back through `tokio::sync::oneshot` channels. This design avoids:
 
 - Blocking the async runtime during inference.
 - Thread-safety issues with the C FFI recognizer, which is neither `Send` nor `Sync`.
 
 Model initialization also happens on the worker thread, with errors propagated back through a sync channel so callers get a clear error if the model directory is invalid.
 
-The engine prefers `int8` quantized ONNX files when available (`encoder.int8.onnx`, `decoder.int8.onnx`) for lower memory usage, falling back to full-precision variants. A `tokens.txt` file must be present in the model directory.
+#### Auto-detected model architectures
+
+The engine auto-detects the model architecture by inspecting the files present in the model directory:
+
+| Architecture | Required files | Config used |
+|---|---|---|
+| **Whisper** | `encoder.onnx` + `decoder.onnx` | `OfflineWhisperModelConfig` |
+| **Moonshine** | `preprocess.onnx` + `encode.onnx` + `uncached_decode.onnx` + `cached_decode.onnx` | `OfflineMoonshineModelConfig` |
+| **SenseVoice** | `model.onnx` (single file) | `OfflineSenseVoiceModelConfig` |
+
+All architectures also require a `tokens.txt` (or `*-tokens.txt`) file in the model directory. The engine prefers `int8` quantized ONNX files when available (e.g., `encoder.int8.onnx`) for lower memory usage, falling back to full-precision variants.
+
+The model resolver supports glob-based directory matching, so you can use partial names like `-m moonshine-base` or `-m sense-voice` to find models in the cache directory.
+
+**SenseVoice limitation:** SenseVoice models can detect emotions and audio events (laughter, applause, music), but these tags are stripped by the sherpa-onnx C API and are not available in the transcription output.
 
 Whisper ONNX models only support audio chunks of 30 seconds or less, so the pipeline automatically enables segmentation and caps `--max-segment-secs` at 30 when using this provider.
+
+#### C++ stderr suppression
+
+During `recognizer.decode()`, the sherpa-onnx C++ library prints warnings to stderr. The engine temporarily redirects stderr to `/dev/null` via `libc::dup`/`dup2` during decode calls and restores it immediately after, keeping the terminal output clean.
 
 ### Rate limiting (`rate_limit.rs`)
 
@@ -149,7 +167,7 @@ Both API engines can send file uploads directly and choose the correct container
 
 ## Build requirements
 
-The `sherpa-onnx` crate requires the sherpa-onnx shared libraries at both compile time and runtime. The `build.rs` script loads a `.env` file and reads `SHERPA_ONNX_LIB_DIR` to configure the linker search path and embed an `rpath` so the binary can find the dylibs at runtime.
+The `sherpa-onnx` Cargo feature is **enabled by default**. It requires the sherpa-onnx shared libraries at both compile time and runtime. The `build.rs` script loads a `.env` file and reads `SHERPA_ONNX_LIB_DIR` to configure the linker search path and embed an `rpath` so the binary can find the dylibs at runtime.
 
 Set `SHERPA_ONNX_LIB_DIR` in your `.env` file or environment before building:
 
@@ -157,6 +175,14 @@ Set `SHERPA_ONNX_LIB_DIR` in your `.env` file or environment before building:
 # .env
 SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
 ```
+
+To build without the sherpa-onnx dependency entirely:
+
+```bash
+cargo build --release --no-default-features
+```
+
+This removes the sherpa-onnx provider and eliminates the need for `SHERPA_ONNX_LIB_DIR`.
 
 ## Adding a new engine
 

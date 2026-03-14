@@ -5,7 +5,8 @@ use std::thread::JoinHandle;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use sherpa_onnx::{
-    OfflineModelConfig, OfflineRecognizer, OfflineRecognizerConfig, OfflineWhisperModelConfig,
+    OfflineModelConfig, OfflineMoonshineModelConfig, OfflineRecognizer, OfflineRecognizerConfig,
+    OfflineSenseVoiceModelConfig, OfflineWhisperModelConfig,
 };
 use tokio::sync::oneshot;
 
@@ -21,20 +22,78 @@ pub struct SherpaOnnxEngine {
     _thread: JoinHandle<()>,
 }
 
+/// Detected model architecture based on files present in the model directory.
+enum ModelArch {
+    Whisper {
+        encoder: PathBuf,
+        decoder: PathBuf,
+    },
+    Moonshine {
+        preprocessor: PathBuf,
+        encoder: PathBuf,
+        uncached_decoder: PathBuf,
+        cached_decoder: PathBuf,
+    },
+    SenseVoice {
+        model: PathBuf,
+    },
+}
+
+fn detect_model_arch(model_dir: &Path) -> Result<ModelArch> {
+    // Check for Moonshine files first (most specific)
+    let moonshine_preprocess = probe_model_file(model_dir, "preprocess");
+    let moonshine_encode = probe_model_file(model_dir, "encode");
+    let moonshine_uncached = probe_model_file(model_dir, "uncached_decode");
+    let moonshine_cached = probe_model_file(model_dir, "cached_decode");
+
+    if let (Ok(preprocessor), Ok(encoder), Ok(uncached_decoder), Ok(cached_decoder)) = (
+        moonshine_preprocess,
+        moonshine_encode,
+        moonshine_uncached,
+        moonshine_cached,
+    ) {
+        return Ok(ModelArch::Moonshine {
+            preprocessor,
+            encoder,
+            uncached_decoder,
+            cached_decoder,
+        });
+    }
+
+    // Check for Whisper files (encoder + decoder pair)
+    if let (Ok(encoder), Ok(decoder)) = (
+        probe_model_file(model_dir, "encoder"),
+        probe_model_file(model_dir, "decoder"),
+    ) {
+        return Ok(ModelArch::Whisper { encoder, decoder });
+    }
+
+    // Check for SenseVoice (single model file)
+    if let Ok(model) = probe_model_file(model_dir, "model") {
+        return Ok(ModelArch::SenseVoice { model });
+    }
+
+    anyhow::bail!(
+        "Could not detect model architecture in {}. Expected Whisper (encoder+decoder), Moonshine (preprocess+encode+cached_decode+uncached_decode), or SenseVoice (model) ONNX files.",
+        model_dir.display()
+    )
+}
+
 impl SherpaOnnxEngine {
     pub fn new(model_dir: PathBuf, language: Option<String>) -> Result<Self> {
-        // Probe for model files (prefer int8 for lower memory)
-        let encoder = probe_model_file(&model_dir, "encoder")?;
-        let decoder = probe_model_file(&model_dir, "decoder")?;
+        let arch = detect_model_arch(&model_dir)?;
         let tokens = probe_tokens_file(&model_dir)?;
 
-        // Use a oneshot to propagate init errors from the thread
         let (init_tx, init_rx) = std::sync::mpsc::channel::<Result<()>>();
         let (request_tx, request_rx) = mpsc::channel::<RecognizeRequest>();
 
         let thread = std::thread::spawn(move || {
-            let config = OfflineRecognizerConfig {
-                model_config: OfflineModelConfig {
+            let num_threads = std::thread::available_parallelism()
+                .map(|n| n.get() as i32)
+                .unwrap_or(4);
+
+            let model_config = match arch {
+                ModelArch::Whisper { encoder, decoder } => OfflineModelConfig {
                     whisper: OfflineWhisperModelConfig {
                         encoder: Some(encoder.to_string_lossy().into_owned()),
                         decoder: Some(decoder.to_string_lossy().into_owned()),
@@ -44,12 +103,43 @@ impl SherpaOnnxEngine {
                         ..Default::default()
                     },
                     tokens: Some(tokens.to_string_lossy().into_owned()),
-                    num_threads: std::thread::available_parallelism()
-                        .map(|n| n.get() as i32)
-                        .unwrap_or(4),
+                    num_threads,
                     provider: Some("cpu".into()),
                     ..Default::default()
                 },
+                ModelArch::Moonshine {
+                    preprocessor,
+                    encoder,
+                    uncached_decoder,
+                    cached_decoder,
+                } => OfflineModelConfig {
+                    moonshine: OfflineMoonshineModelConfig {
+                        preprocessor: Some(preprocessor.to_string_lossy().into_owned()),
+                        encoder: Some(encoder.to_string_lossy().into_owned()),
+                        uncached_decoder: Some(uncached_decoder.to_string_lossy().into_owned()),
+                        cached_decoder: Some(cached_decoder.to_string_lossy().into_owned()),
+                        ..Default::default()
+                    },
+                    tokens: Some(tokens.to_string_lossy().into_owned()),
+                    num_threads,
+                    provider: Some("cpu".into()),
+                    ..Default::default()
+                },
+                ModelArch::SenseVoice { model } => OfflineModelConfig {
+                    sense_voice: OfflineSenseVoiceModelConfig {
+                        model: Some(model.to_string_lossy().into_owned()),
+                        language: Some(language.unwrap_or_else(|| "auto".into())),
+                        use_itn: true,
+                    },
+                    tokens: Some(tokens.to_string_lossy().into_owned()),
+                    num_threads,
+                    provider: Some("cpu".into()),
+                    ..Default::default()
+                },
+            };
+
+            let config = OfflineRecognizerConfig {
+                model_config,
                 ..Default::default()
             };
 
@@ -75,7 +165,6 @@ impl SherpaOnnxEngine {
             }
         });
 
-        // Wait for init result
         init_rx
             .recv()
             .context("sherpa-onnx worker thread exited during init")??;
@@ -107,7 +196,7 @@ fn recognize(recognizer: &OfflineRecognizer, samples: &[f32]) -> Result<Transcri
     let stream = recognizer.create_stream();
     stream.accept_waveform(16000, samples);
 
-    // Suppress sherpa-onnx C++ warnings (e.g. ">30s not supported") printed to stderr
+    // Suppress sherpa-onnx C++ warnings printed to stderr
     let _stderr_guard = suppress_stderr();
     recognizer.decode(&stream);
     drop(_stderr_guard);
@@ -182,18 +271,15 @@ fn tokens_to_segments(tokens: &[String], timestamps: &[f32]) -> Vec<Segment> {
     segments
 }
 
-/// Find encoder/decoder ONNX file, preferring int8 variant.
+/// Find an ONNX model file, preferring int8 variant.
 fn probe_model_file(model_dir: &Path, component: &str) -> Result<PathBuf> {
-    // Try naming patterns in order of preference
     let candidates = [
         format!("{component}.int8.onnx"),
         format!("{component}.onnx"),
-        // sherpa-onnx archives sometimes use model-name prefix
         format!("*-{component}.int8.onnx"),
         format!("*-{component}.onnx"),
     ];
 
-    // Direct match first
     for name in &candidates[..2] {
         let path = model_dir.join(name);
         if path.exists() {
@@ -201,7 +287,6 @@ fn probe_model_file(model_dir: &Path, component: &str) -> Result<PathBuf> {
         }
     }
 
-    // Glob match for prefixed names
     for pattern in &candidates[2..] {
         let glob_pattern = format!("{}/{}", model_dir.display(), pattern);
         if let Some(path) = glob::glob(&glob_pattern)
@@ -237,18 +322,15 @@ fn probe_tokens_file(model_dir: &Path) -> Result<PathBuf> {
 }
 
 /// Temporarily redirect stderr to /dev/null to suppress C++ library warnings.
-/// Returns a guard that restores stderr on drop.
 fn suppress_stderr() -> Option<StderrGuard> {
     use std::os::unix::io::AsRawFd;
 
     let stderr_fd = std::io::stderr().as_raw_fd();
-    // Save original stderr
     let saved = unsafe { libc::dup(stderr_fd) };
     if saved < 0 {
         return None;
     }
 
-    // Open /dev/null and redirect stderr to it
     let devnull = std::fs::File::open("/dev/null").ok()?;
     let devnull_fd = devnull.as_raw_fd();
     unsafe { libc::dup2(devnull_fd, stderr_fd) };

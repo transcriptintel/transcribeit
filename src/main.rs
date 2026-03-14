@@ -134,7 +134,7 @@ impl ModelSize {
             Self::Medium => Some("sherpa-onnx-whisper-medium"),
             Self::MediumEn => Some("sherpa-onnx-whisper-medium.en"),
             Self::LargeV3 => None,
-            Self::LargeV3Turbo => Some("sherpa-onnx-whisper-large-v3-turbo"),
+            Self::LargeV3Turbo => Some("sherpa-onnx-whisper-turbo"),
         }
     }
 }
@@ -636,12 +636,35 @@ fn resolve_onnx_model_dir(model: &str) -> Result<PathBuf> {
         return Ok(direct);
     }
 
-    // Try cache with conventional naming
-    let candidates = [format!("sherpa-onnx-whisper-{model}"), model.to_string()];
+    // Normalize aliases (GGML names → ONNX archive names)
+    let normalized = match model {
+        "large-v3-turbo" => "turbo",
+        other => other,
+    };
+
+    // Try cache with conventional naming patterns
+    let candidates = [
+        format!("sherpa-onnx-whisper-{normalized}"),
+        format!("sherpa-onnx-whisper-{model}"),
+        model.to_string(),
+    ];
     for name in &candidates {
         let cache_path = models_dir().join(name);
         if cache_path.is_dir() && has_tokens_file(&cache_path) {
             return Ok(cache_path);
+        }
+    }
+
+    // Glob search for any matching directory (covers moonshine, sensevoice, etc.)
+    let cache_dir = models_dir();
+    if cache_dir.is_dir() {
+        let pattern = format!("{}/*{}*", cache_dir.display(), normalized);
+        if let Ok(paths) = glob::glob(&pattern) {
+            for entry in paths.flatten() {
+                if entry.is_dir() && has_tokens_file(&entry) {
+                    return Ok(entry);
+                }
+            }
         }
     }
 

@@ -14,14 +14,22 @@ This project supports four providers. They share the same input/output surface, 
 ## Sherpa-ONNX (`-p sherpa-onnx`)
 
 - Input audio/video is converted with FFmpeg to 16 kHz mono WAV.
+- The engine **auto-detects model architecture** from the files in the model directory:
+  - **Whisper** -- `encoder.onnx` + `decoder.onnx` + `tokens.txt`
+  - **Moonshine** -- `preprocess.onnx` + `encode.onnx` + `uncached_decode.onnx` + `cached_decode.onnx` + `tokens.txt`
+  - **SenseVoice** -- `model.onnx` + `tokens.txt`
 - Model loading uses `--model` resolved from:
-  - explicit filesystem path to a directory containing `encoder.onnx`, `decoder.onnx`, and `tokens.txt`
-  - or cache alias (`tiny`, `base.en`, `small`, etc.) resolved under `MODEL_CACHE_DIR` as `sherpa-onnx-whisper-<alias>/`.
+  - explicit filesystem path to a model directory
+  - cache alias (`tiny`, `base.en`, `small`, etc.) resolved under `MODEL_CACHE_DIR` as `sherpa-onnx-whisper-<alias>/`
+  - or glob-based partial name matching (e.g., `-m moonshine-base`, `-m sense-voice`) against directories in `MODEL_CACHE_DIR`.
 - The engine prefers `int8` quantized ONNX files when available for lower memory usage.
 - Transcription runs in-process on a dedicated worker thread using the sherpa-onnx C library via FFI.
+- C++ stderr warnings from the sherpa-onnx library are suppressed during inference to keep terminal output clean.
 - Whisper ONNX models only support audio of 30 seconds or less per call. The pipeline automatically enables segmentation and caps `--max-segment-secs` at 30, regardless of user-supplied values.
+- **SenseVoice limitation:** emotion and audio event detection tags are stripped by the sherpa-onnx C API and are not available in the output.
 - Segment concurrency is always 1 (sequential processing).
 - No external API key is required.
+- The `sherpa-onnx` feature is enabled by default. Build without it using `cargo build --no-default-features`.
 - Requires `SHERPA_ONNX_LIB_DIR` to be set at build time (see [Architecture](architecture.md#build-requirements)).
 
 ## OpenAI-compatible (`-p openai`)
@@ -57,8 +65,8 @@ This project supports four providers. They share the same input/output surface, 
 
 Both are local engines that run without network access. They differ in the model format and inference backend:
 
-- **Local** uses GGML models via `whisper.cpp` (`whisper-rs` binding). Supports all model sizes.
-- **Sherpa-ONNX** uses ONNX models via the `sherpa-onnx` C library. Supports all sizes except `large-v3`. Requires auto-segmentation at 30s due to Whisper ONNX limitations.
+- **Local** uses GGML models via `whisper.cpp` (`whisper-rs` binding). Supports all Whisper model sizes.
+- **Sherpa-ONNX** uses ONNX models via the `sherpa-onnx` C library. Supports three model architectures (Whisper, Moonshine, SenseVoice) with automatic detection. Whisper ONNX supports all sizes except `large-v3`. Requires auto-segmentation at 30s due to Whisper ONNX limitations. The `sherpa-onnx` feature is optional (enabled by default); build without it using `cargo build --no-default-features`.
 
 ### OpenAI vs Azure
 

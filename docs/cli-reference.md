@@ -60,9 +60,15 @@ Model aliases auto-resolve from the `MODEL_CACHE_DIR` cache directory (default `
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-m, --model` | Path to ONNX model directory or alias (e.g. `tiny`, `base.en`) | required |
+| `-m, --model` | Path to ONNX model directory or partial name (e.g. `tiny`, `base.en`, `moonshine-base`, `sense-voice`) | required |
 
-The model directory must contain `encoder.onnx` (or `encoder.int8.onnx`), `decoder.onnx` (or `decoder.int8.onnx`), and `tokens.txt`. When an alias like `base.en` is given, the cache is searched for a directory named `sherpa-onnx-whisper-base.en` under `MODEL_CACHE_DIR`.
+The engine auto-detects the model architecture from files in the directory:
+
+- **Whisper** -- `encoder.onnx` + `decoder.onnx` (or int8 variants) + `tokens.txt`
+- **Moonshine** -- `preprocess.onnx` + `encode.onnx` + `uncached_decode.onnx` + `cached_decode.onnx` + `tokens.txt`
+- **SenseVoice** -- `model.onnx` + `tokens.txt`
+
+When an alias like `base.en` is given, the cache is searched for a directory named `sherpa-onnx-whisper-base.en` under `MODEL_CACHE_DIR`. The resolver also supports glob matching, so partial names like `-m moonshine-base` or `-m sense-voice` will match any directory in the cache containing that string.
 
 Sherpa-ONNX automatically enables segmentation and caps segment length at 30 seconds due to the Whisper ONNX model limitation.
 
@@ -176,9 +182,15 @@ transcribeit run -i recording.mp3 -m base
 transcribeit run -i recording.mp3 -m .cache/ggml-base.bin
 transcribeit run -i meeting.mp4 -m .cache/ggml-small.en.bin
 
-# Process with sherpa-onnx provider (auto-segments at 30s)
+# Process with sherpa-onnx Whisper (auto-segments at 30s)
 transcribeit run -p sherpa-onnx -i recording.mp3 -m base.en
 transcribeit run -p sherpa-onnx -i lecture.mp4 -m tiny -f vtt -o ./output
+
+# Process with sherpa-onnx Moonshine (auto-detected from model files)
+transcribeit run -p sherpa-onnx -i recording.mp3 -m moonshine-base
+
+# Process with sherpa-onnx SenseVoice (auto-detected from model files)
+transcribeit run -p sherpa-onnx -i recording.mp3 -m sense-voice
 
 # Process a directory
 transcribeit run --input samples/ --output-dir ./output
@@ -215,7 +227,7 @@ transcribeit run -p azure -i recording.wav \
 ### Provider behavior
 
 - **Local** (`-p local`) runs whisper.cpp in-process using GGML models.
-- **Sherpa-ONNX** (`-p sherpa-onnx`) runs sherpa-onnx in-process using Whisper ONNX models. Always auto-segments at 30s.
+- **Sherpa-ONNX** (`-p sherpa-onnx`) runs sherpa-onnx in-process. Auto-detects Whisper, Moonshine, and SenseVoice models from directory contents. Always auto-segments at 30s.
 - **OpenAI-compatible** (`-p openai`) uses `--remote-model` and calls `POST {base-url}/v1/audio/transcriptions`.
 - **Azure** (`-p azure`) uses `--azure-deployment` and calls:
   `POST {base-url}/openai/deployments/{deployment}/audio/transcriptions?api-version={version}`.
