@@ -19,12 +19,14 @@ use crate::engines::azure_openai::AzureOpenAi;
 use crate::engines::model_cache::ModelCache;
 use crate::engines::openai_api::OpenAiApi;
 use crate::engines::rate_limit;
+#[cfg(feature = "sherpa-onnx")]
 use crate::engines::sherpa_onnx::SherpaOnnxEngine;
 use crate::engines::whisper_local::WhisperLocal;
 use crate::pipeline::{OutputFormat, PipelineConfig, run_pipeline};
 use crate::transcriber::Transcriber;
 
 const HF_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
+#[cfg(feature = "sherpa-onnx")]
 const SHERPA_ONNX_BASE_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
 
@@ -120,6 +122,7 @@ impl ModelSize {
         }
     }
 
+    #[cfg(feature = "sherpa-onnx")]
     fn onnx_archive_name(&self) -> Option<&str> {
         match self {
             Self::Tiny => Some("sherpa-onnx-whisper-tiny"),
@@ -150,6 +153,7 @@ enum Provider {
     /// Local whisper.cpp engine
     Local,
     /// Local sherpa-onnx engine (Whisper ONNX models)
+    #[cfg(feature = "sherpa-onnx")]
     #[value(name = "sherpa-onnx")]
     SherpaOnnx,
     /// OpenAI-compatible API
@@ -313,7 +317,12 @@ async fn main() -> Result<()> {
                 download_model(&model_size, output_dir, hf_token.as_deref()).await?;
             }
             ModelFormat::Onnx => {
+                #[cfg(feature = "sherpa-onnx")]
                 download_onnx_model(&model_size, output_dir).await?;
+                #[cfg(not(feature = "sherpa-onnx"))]
+                anyhow::bail!(
+                    "ONNX model download requires the 'sherpa-onnx' feature. Build with: cargo build --features sherpa-onnx"
+                );
             }
         },
 
@@ -363,14 +372,18 @@ async fn main() -> Result<()> {
             );
 
             let upload_as_mp3 = matches!(provider, Provider::Openai | Provider::Azure);
-            let auto_split = upload_as_mp3 || matches!(provider, Provider::SherpaOnnx);
-            let max_segment_secs = if matches!(provider, Provider::SherpaOnnx) {
+            #[cfg(feature = "sherpa-onnx")]
+            let is_sherpa = matches!(provider, Provider::SherpaOnnx);
+            #[cfg(not(feature = "sherpa-onnx"))]
+            let is_sherpa = false;
+            let auto_split = upload_as_mp3 || is_sherpa;
+            let max_segment_secs = if is_sherpa {
                 // sherpa-onnx Whisper only supports ≤30s per call
                 max_segment_secs.min(30.0)
             } else {
                 max_segment_secs
             };
-            let segment = segment || matches!(provider, Provider::SherpaOnnx);
+            let segment = segment || is_sherpa;
             let segment_concurrency = if upload_as_mp3 {
                 segment_concurrency.max(1)
             } else {
@@ -391,6 +404,7 @@ async fn main() -> Result<()> {
                             name,
                         )
                     }
+                    #[cfg(feature = "sherpa-onnx")]
                     Provider::SherpaOnnx => {
                         let model_arg =
                             model.context("--model is required for --provider sherpa-onnx")?;
@@ -601,6 +615,7 @@ async fn download_model(
     Ok(())
 }
 
+#[cfg(feature = "sherpa-onnx")]
 fn has_tokens_file(dir: &Path) -> bool {
     if dir.join("tokens.txt").exists() {
         return true;
@@ -611,6 +626,7 @@ fn has_tokens_file(dir: &Path) -> bool {
         .is_some_and(|p| p.is_ok())
 }
 
+#[cfg(feature = "sherpa-onnx")]
 fn resolve_onnx_model_dir(model: &str) -> Result<PathBuf> {
     let model = model.trim();
 
@@ -635,6 +651,7 @@ fn resolve_onnx_model_dir(model: &str) -> Result<PathBuf> {
     )
 }
 
+#[cfg(feature = "sherpa-onnx")]
 async fn download_onnx_model(model_size: &ModelSize, output_dir: Option<PathBuf>) -> Result<()> {
     let archive_name = model_size
         .onnx_archive_name()
@@ -756,6 +773,7 @@ fn list_models(dir: Option<PathBuf>) -> Result<()> {
     }
 
     // ONNX models (directories with tokens.txt)
+    #[cfg(feature = "sherpa-onnx")]
     for entry in &entries {
         let path = entry.path();
         if path.is_dir() && has_tokens_file(&path) {

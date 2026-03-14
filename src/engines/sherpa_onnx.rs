@@ -106,7 +106,11 @@ impl Transcriber for SherpaOnnxEngine {
 fn recognize(recognizer: &OfflineRecognizer, samples: &[f32]) -> Result<Transcript> {
     let stream = recognizer.create_stream();
     stream.accept_waveform(16000, samples);
+
+    // Suppress sherpa-onnx C++ warnings (e.g. ">30s not supported") printed to stderr
+    let _stderr_guard = suppress_stderr();
     recognizer.decode(&stream);
+    drop(_stderr_guard);
 
     let result = stream
         .get_result()
@@ -230,4 +234,41 @@ fn probe_tokens_file(model_dir: &Path) -> Result<PathBuf> {
     }
 
     anyhow::bail!("tokens.txt not found in {}", model_dir.display())
+}
+
+/// Temporarily redirect stderr to /dev/null to suppress C++ library warnings.
+/// Returns a guard that restores stderr on drop.
+fn suppress_stderr() -> Option<StderrGuard> {
+    use std::os::unix::io::AsRawFd;
+
+    let stderr_fd = std::io::stderr().as_raw_fd();
+    // Save original stderr
+    let saved = unsafe { libc::dup(stderr_fd) };
+    if saved < 0 {
+        return None;
+    }
+
+    // Open /dev/null and redirect stderr to it
+    let devnull = std::fs::File::open("/dev/null").ok()?;
+    let devnull_fd = devnull.as_raw_fd();
+    unsafe { libc::dup2(devnull_fd, stderr_fd) };
+
+    Some(StderrGuard {
+        saved_fd: saved,
+        stderr_fd,
+    })
+}
+
+struct StderrGuard {
+    saved_fd: i32,
+    stderr_fd: i32,
+}
+
+impl Drop for StderrGuard {
+    fn drop(&mut self) {
+        unsafe {
+            libc::dup2(self.saved_fd, self.stderr_fd);
+            libc::close(self.saved_fd);
+        }
+    }
 }

@@ -11,6 +11,9 @@ panic = "abort"
 strip = "symbols"
 incremental = false
 
+[features]
+default = ["sherpa-onnx"]
+
 [build-dependencies]
 dotenvy = "0.15"
 
@@ -29,8 +32,9 @@ serde_json = "1"
 tempfile = "3"
 regex = "1"
 tokio = { version = "1", features = ["full"] }
-sherpa-onnx = "0.1"
+sherpa-onnx = { version = "0.1", optional = true }
 tar = "0.4"
 bzip2 = "0.5"
+libc = "0.2"
 whisper-rs = "0.12"
 bytes = "1.11.1"

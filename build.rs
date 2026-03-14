@@ -2,7 +2,10 @@ fn main() {
     // Load .env so SHERPA_ONNX_LIB_DIR is available at build time
     dotenvy::dotenv().ok();
 
-    if let Ok(lib_dir) = std::env::var("SHERPA_ONNX_LIB_DIR") {
+    // Only configure sherpa-onnx linker paths when the feature is enabled
+    if std::env::var("CARGO_FEATURE_SHERPA_ONNX").is_ok()
+        && let Ok(lib_dir) = std::env::var("SHERPA_ONNX_LIB_DIR")
+    {
         let path = std::path::Path::new(&lib_dir);
         let absolute = if path.is_relative() {
             std::env::current_dir()
