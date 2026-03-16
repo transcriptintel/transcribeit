@@ -116,6 +116,34 @@ DIARIZE_SEGMENTATION_MODEL=.cache/sherpa-onnx-pyannote-segmentation-3-0/model.on
 DIARIZE_EMBEDDING_MODEL=.cache/wespeaker_en_voxceleb_CAM++.onnx
 ```
 
+## Binary distribution
+
+Pre-built binaries can be deployed without Rust or build tools. The binary needs FFmpeg on PATH and the sherpa-onnx shared libraries alongside it:
+
+```
+transcribeit              # binary
+lib/                      # sherpa-onnx shared libraries
+  libsherpa-onnx-c-api.dylib
+  libonnxruntime.dylib
+```
+
+On first run, use `transcribeit setup` to download models and additional components. The binary looks for shared libraries in `lib/` relative to itself — no environment variables needed at runtime.
+
+To build a distributable binary:
+
+```bash
+cargo build --release
+# Copy binary + libs
+cp target/release/transcribeit dist/
+cp vendor/sherpa-onnx-*/lib/lib*.dylib dist/lib/
+```
+
+To build without sherpa-onnx (no shared library dependency):
+
+```bash
+cargo build --release --no-default-features
+```
+
 ## License
 
 This project is licensed under the [Business Source License 1.1](LICENSE).
