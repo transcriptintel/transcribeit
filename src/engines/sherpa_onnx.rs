@@ -214,6 +214,7 @@ fn recognize(recognizer: &OfflineRecognizer, samples: &[f32]) -> Result<Transcri
                 start_ms: 0,
                 end_ms: 0,
                 text: result.text.clone(),
+                speaker: None,
             }]
         }
     };
@@ -246,6 +247,7 @@ fn tokens_to_segments(tokens: &[String], timestamps: &[f32]) -> Vec<Segment> {
                     start_ms: (timestamps[seg_start_idx] * 1000.0) as i64,
                     end_ms: (timestamps[i] * 1000.0) as i64,
                     text: trimmed.to_string(),
+                    speaker: None,
                 });
             }
             seg_start_idx = i + 1;
@@ -264,6 +266,7 @@ fn tokens_to_segments(tokens: &[String], timestamps: &[f32]) -> Vec<Segment> {
                 start_ms: (timestamps[0] * 1000.0) as i64,
                 end_ms: (timestamps[len.saturating_sub(1)] * 1000.0) as i64,
                 text: trimmed.to_string(),
+                speaker: None,
             }];
         }
     }

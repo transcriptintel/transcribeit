@@ -194,6 +194,7 @@ pub fn parse_response_bytes(body: &[u8]) -> Transcript {
                     start_ms: (s.start * 1000.0) as i64,
                     end_ms: (s.end * 1000.0) as i64,
                     text: s.text,
+                    speaker: None,
                 })
                 .collect(),
         };
@@ -206,6 +207,7 @@ pub fn parse_response_bytes(body: &[u8]) -> Transcript {
                 start_ms: 0,
                 end_ms: 0,
                 text: resp.text,
+                speaker: None,
             }],
         };
     }
@@ -216,6 +218,7 @@ pub fn parse_response_bytes(body: &[u8]) -> Transcript {
             start_ms: 0,
             end_ms: 0,
             text: String::from_utf8_lossy(body).into_owned(),
+            speaker: None,
         }],
     }
 }

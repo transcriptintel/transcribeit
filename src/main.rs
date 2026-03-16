@@ -1,4 +1,6 @@
 mod audio;
+#[cfg(feature = "sherpa-onnx")]
+mod diarize;
 mod engines;
 mod output;
 mod pipeline;
@@ -172,6 +174,19 @@ enum OutputFormatArg {
     Srt,
 }
 
+#[derive(Debug, Clone, ValueEnum)]
+enum SetupComponent {
+    /// Default STT models (GGML base)
+    Models,
+    /// Silero VAD model for speech-aware segmentation
+    Vad,
+    /// Speaker diarization models (segmentation + embedding)
+    Diarize,
+    /// sherpa-onnx shared libraries for the current platform
+    #[value(name = "sherpa-libs")]
+    SherpaLibs,
+}
+
 #[derive(Parser)]
 #[command(name = "transcribeit", about = "Transcribe audio files")]
 struct Cli {
@@ -182,6 +197,21 @@ struct Cli {
 #[derive(Subcommand)]
 #[allow(clippy::large_enum_variant)]
 enum Command {
+    /// Download and install all components for full functionality
+    Setup {
+        /// Install only a specific component
+        #[arg(short, long)]
+        component: Option<SetupComponent>,
+
+        /// Directory for models (overrides MODEL_CACHE_DIR)
+        #[arg(short, long)]
+        output_dir: Option<PathBuf>,
+
+        /// Hugging Face token for model downloads
+        #[arg(short = 't', long, env = "HF_TOKEN")]
+        hf_token: Option<String>,
+    },
+
     /// Download a Whisper model
     DownloadModel {
         /// Model size to download
@@ -199,6 +229,14 @@ enum Command {
         /// Hugging Face token (optional, or set HF_TOKEN env var)
         #[arg(short = 't', long, env = "HF_TOKEN")]
         hf_token: Option<String>,
+
+        /// Also download VAD model (silero_vad.onnx)
+        #[arg(long)]
+        vad: bool,
+
+        /// Also download diarization models (segmentation + embedding)
+        #[arg(long)]
+        diarize: bool,
     },
 
     /// List downloaded models
@@ -297,6 +335,22 @@ enum Command {
         /// Normalize audio with ffmpeg loudnorm before transcription
         #[arg(long)]
         normalize: bool,
+
+        /// Number of speakers for diarization (requires sherpa-onnx feature and models)
+        #[arg(long)]
+        speakers: Option<i32>,
+
+        /// Path to speaker segmentation model (pyannote ONNX)
+        #[arg(long, env = "DIARIZE_SEGMENTATION_MODEL")]
+        diarize_segmentation_model: Option<String>,
+
+        /// Path to speaker embedding model (ONNX)
+        #[arg(long, env = "DIARIZE_EMBEDDING_MODEL")]
+        diarize_embedding_model: Option<String>,
+
+        /// Path to Silero VAD model for speech-aware segmentation (avoids mid-word cuts)
+        #[arg(long, env = "VAD_MODEL")]
+        vad_model: Option<String>,
     },
 }
 
@@ -307,24 +361,75 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Command::Setup {
+            component,
+            output_dir,
+            hf_token,
+        } => {
+            let components = match component {
+                Some(c) => vec![c],
+                None => vec![
+                    SetupComponent::Models,
+                    SetupComponent::Vad,
+                    SetupComponent::Diarize,
+                    SetupComponent::SherpaLibs,
+                ],
+            };
+
+            let mut summary: Vec<(&str, String)> = Vec::new();
+
+            for comp in &components {
+                match comp {
+                    SetupComponent::Models => {
+                        let status = setup_models(output_dir.clone(), hf_token.as_deref()).await?;
+                        summary.push(("models", status));
+                    }
+                    SetupComponent::Vad => {
+                        let status = setup_vad(output_dir.clone()).await?;
+                        summary.push(("vad", status));
+                    }
+                    SetupComponent::Diarize => {
+                        let status = setup_diarize(output_dir.clone()).await?;
+                        summary.push(("diarize", status));
+                    }
+                    SetupComponent::SherpaLibs => {
+                        let status = setup_sherpa_libs().await?;
+                        summary.push(("sherpa-libs", status));
+                    }
+                }
+            }
+
+            print_setup_summary(&summary);
+        }
+
         Command::DownloadModel {
             model_size,
             format,
             output_dir,
             hf_token,
-        } => match format {
-            ModelFormat::Ggml => {
-                download_model(&model_size, output_dir, hf_token.as_deref()).await?;
+            vad,
+            diarize,
+        } => {
+            match format {
+                ModelFormat::Ggml => {
+                    download_model(&model_size, output_dir.clone(), hf_token.as_deref()).await?;
+                }
+                ModelFormat::Onnx => {
+                    #[cfg(feature = "sherpa-onnx")]
+                    download_onnx_model(&model_size, output_dir.clone()).await?;
+                    #[cfg(not(feature = "sherpa-onnx"))]
+                    anyhow::bail!(
+                        "ONNX model download requires the 'sherpa-onnx' feature. Build with: cargo build --features sherpa-onnx"
+                    );
+                }
             }
-            ModelFormat::Onnx => {
-                #[cfg(feature = "sherpa-onnx")]
-                download_onnx_model(&model_size, output_dir).await?;
-                #[cfg(not(feature = "sherpa-onnx"))]
-                anyhow::bail!(
-                    "ONNX model download requires the 'sherpa-onnx' feature. Build with: cargo build --features sherpa-onnx"
-                );
+            if vad {
+                setup_vad(output_dir.clone()).await?;
             }
-        },
+            if diarize {
+                setup_diarize(output_dir).await?;
+            }
+        }
 
         Command::ListModels { dir } => {
             list_models(dir)?;
@@ -353,6 +458,10 @@ async fn main() -> Result<()> {
             request_timeout_secs,
             retry_wait_base_secs,
             retry_wait_max_secs,
+            speakers,
+            diarize_segmentation_model,
+            diarize_embedding_model,
+            vad_model,
         } => {
             check_ffmpeg()?;
 
@@ -488,6 +597,10 @@ async fn main() -> Result<()> {
                     upload_as_mp3,
                     segment_concurrency,
                     normalize_audio: normalize,
+                    speakers,
+                    diarize_segmentation_model: diarize_segmentation_model.clone(),
+                    diarize_embedding_model: diarize_embedding_model.clone(),
+                    vad_model: vad_model.clone(),
                 };
 
                 run_pipeline(engine.as_ref(), config).await?;
@@ -810,4 +923,264 @@ fn list_models(dir: Option<PathBuf>) -> Result<()> {
     }
 
     Ok(())
+}
+
+// ── Setup helpers ───────────────────────────────────────────────────────────
+
+const SHERPA_ONNX_VERSION: &str = "v1.12.29";
+
+/// Download a single file with progress bar. Returns "installed" or "already present".
+async fn download_file_with_progress(url: &str, dest: &Path, label: &str) -> Result<String> {
+    if dest.exists() {
+        println!("{label}: already present at {}", dest.display());
+        return Ok("already present".into());
+    }
+
+    if let Some(parent) = dest.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    println!("Downloading {label}...");
+    println!("  from: {url}");
+    println!("  to:   {}", dest.display());
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .context("Failed to start download")?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("Download failed with status: {}", resp.status());
+    }
+
+    let total_size = resp.content_length().unwrap_or(0);
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{bar:40.cyan/blue} {bytes}/{total_bytes} ({eta})")?
+            .progress_chars("##-"),
+    );
+
+    let tmp_dest = dest.with_extension("part");
+    let mut file = tokio::fs::File::create(&tmp_dest)
+        .await
+        .context("Failed to create temp file")?;
+
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.context("Error reading download stream")?;
+        file.write_all(&chunk).await.context("Failed to write")?;
+        pb.inc(chunk.len() as u64);
+    }
+
+    file.flush().await?;
+    drop(file);
+
+    tokio::fs::rename(&tmp_dest, dest)
+        .await
+        .context("Failed to finalize download")?;
+
+    pb.finish_and_clear();
+    println!("Done: {}", dest.display());
+    Ok("installed".into())
+}
+
+/// Download and extract a tar.bz2 archive. Returns "installed" or "already present".
+async fn download_and_extract(
+    url: &str,
+    extract_to: &Path,
+    check_dir: &Path,
+    label: &str,
+) -> Result<String> {
+    if check_dir.exists() {
+        println!("{label}: already present at {}", check_dir.display());
+        return Ok("already present".into());
+    }
+
+    tokio::fs::create_dir_all(extract_to).await?;
+
+    println!("Downloading {label}...");
+    println!("  from: {url}");
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .context("Failed to start download")?;
+
+    if !resp.status().is_success() {
+        anyhow::bail!("Download failed with status: {}", resp.status());
+    }
+
+    let total_size = resp.content_length().unwrap_or(0);
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{bar:40.cyan/blue} {bytes}/{total_bytes} ({eta})")?
+            .progress_chars("##-"),
+    );
+
+    let tmp = tempfile::Builder::new()
+        .suffix(".tar.bz2")
+        .tempfile_in(extract_to)
+        .context("Failed to create temp file")?;
+    let tmp_path = tmp.path().to_path_buf();
+
+    {
+        let mut file = tokio::fs::File::create(&tmp_path).await?;
+        let mut stream = resp.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.context("Error reading download stream")?;
+            file.write_all(&chunk).await?;
+            pb.inc(chunk.len() as u64);
+        }
+        file.flush().await?;
+    }
+
+    pb.finish_and_clear();
+    println!("Extracting...");
+
+    let extract_dir = extract_to.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        let file = std::fs::File::open(&tmp_path).context("Failed to open archive")?;
+        let decoder = bzip2::read::BzDecoder::new(file);
+        let mut archive = tar::Archive::new(decoder);
+        archive.unpack(&extract_dir).context("Failed to extract")?;
+        let _ = std::fs::remove_file(&tmp_path);
+        Ok::<(), anyhow::Error>(())
+    })
+    .await??;
+
+    println!("Done: {}", check_dir.display());
+    Ok("installed".into())
+}
+
+async fn setup_models(output_dir: Option<PathBuf>, hf_token: Option<&str>) -> Result<String> {
+    let dir = output_dir.unwrap_or_else(models_dir);
+    let dest = dir.join("ggml-base.bin");
+    if dest.exists() {
+        println!("models: already present (ggml-base.bin)");
+        return Ok("already present".into());
+    }
+    download_model(&ModelSize::Base, Some(dir), hf_token).await?;
+    Ok("installed (ggml-base.bin)".into())
+}
+
+async fn setup_vad(output_dir: Option<PathBuf>) -> Result<String> {
+    let dir = output_dir.unwrap_or_else(models_dir);
+    let dest = dir.join("silero_vad.onnx");
+    download_file_with_progress(
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+        &dest,
+        "VAD model (silero_vad.onnx)",
+    )
+    .await
+}
+
+async fn setup_diarize(output_dir: Option<PathBuf>) -> Result<String> {
+    let dir = output_dir.unwrap_or_else(models_dir);
+    let mut parts = Vec::new();
+
+    // Segmentation model (tar.bz2)
+    let seg_dir = dir.join("sherpa-onnx-pyannote-segmentation-3-0");
+    let seg_status = download_and_extract(
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
+        &dir,
+        &seg_dir,
+        "diarize segmentation model",
+    ).await?;
+    parts.push(format!("segmentation: {seg_status}"));
+
+    // Embedding model (single file)
+    let emb_dest = dir.join("wespeaker_en_voxceleb_CAM++.onnx");
+    let emb_status = download_file_with_progress(
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx",
+        &emb_dest,
+        "diarize embedding model (wespeaker)",
+    ).await?;
+    parts.push(format!("embedding: {emb_status}"));
+
+    Ok(parts.join(", "))
+}
+
+async fn setup_sherpa_libs() -> Result<String> {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+
+    let archive_suffix = match (os, arch) {
+        ("macos", _) => "osx-universal2-shared",
+        ("linux", "x86_64") => "linux-x86_64-shared",
+        ("linux", "aarch64") => "linux-aarch64-shared",
+        _ => anyhow::bail!(
+            "Unsupported platform: {os}-{arch}. Download sherpa-onnx shared libraries manually."
+        ),
+    };
+
+    let archive_name = format!("sherpa-onnx-{SHERPA_ONNX_VERSION}-{archive_suffix}");
+    let url = format!(
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/{SHERPA_ONNX_VERSION}/{archive_name}.tar.bz2"
+    );
+
+    let vendor_dir = PathBuf::from("vendor");
+    let check_dir = vendor_dir.join(&archive_name);
+
+    let status = download_and_extract(
+        &url,
+        &vendor_dir,
+        &check_dir,
+        "sherpa-onnx shared libraries",
+    )
+    .await?;
+
+    if status == "installed" {
+        let lib_dir = check_dir.join("lib");
+        eprintln!(
+            "\nAdd to .env:\n  SHERPA_ONNX_LIB_DIR={}\n",
+            lib_dir.display()
+        );
+    }
+
+    Ok(format!("{status} ({archive_suffix})"))
+}
+
+fn print_setup_summary(summary: &[(&str, String)]) {
+    println!("\n=== Setup Summary ===");
+    for (name, status) in summary {
+        println!("  {name:<14} {status}");
+    }
+
+    let dir = models_dir();
+    println!("\nAdd to .env (if not already set):");
+    println!("  MODEL_CACHE_DIR={}", dir.display());
+
+    let vad_path = dir.join("silero_vad.onnx");
+    if vad_path.exists() {
+        println!("  VAD_MODEL={}", vad_path.display());
+    }
+
+    let seg_path = dir.join("sherpa-onnx-pyannote-segmentation-3-0/model.onnx");
+    if seg_path.exists() {
+        println!("  DIARIZE_SEGMENTATION_MODEL={}", seg_path.display());
+    }
+
+    let emb_path = dir.join("wespeaker_en_voxceleb_CAM++.onnx");
+    if emb_path.exists() {
+        println!("  DIARIZE_EMBEDDING_MODEL={}", emb_path.display());
+    }
+
+    // Check for sherpa-onnx libs in vendor/
+    if let Ok(entries) = std::fs::read_dir("vendor") {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() && path.join("lib").exists() {
+                println!("  SHERPA_ONNX_LIB_DIR={}", path.join("lib").display());
+                break;
+            }
+        }
+    }
+
+    println!();
 }

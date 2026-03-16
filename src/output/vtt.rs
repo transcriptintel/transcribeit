@@ -26,6 +26,9 @@ pub fn write_vtt(transcript: &Transcript, writer: &mut impl Write) -> Result<()>
             format_timestamp(segment.start_ms),
             format_timestamp(segment.end_ms)
         )?;
+        if let Some(ref spk) = segment.speaker {
+            write!(writer, "<v {}>", spk)?;
+        }
         writeln!(writer, "{}", segment.text.trim())?;
         writeln!(writer)?;
     }
@@ -47,11 +50,13 @@ mod tests {
                     start_ms: 0,
                     end_ms: 1234,
                     text: " Hello ".to_string(),
+                    speaker: None,
                 },
                 Segment {
                     start_ms: 5_000,
                     end_ms: 6_100,
                     text: "world".to_string(),
+                    speaker: None,
                 },
             ],
         };
@@ -75,16 +80,19 @@ mod tests {
                     start_ms: 0,
                     end_ms: 10,
                     text: "A".to_string(),
+                    speaker: None,
                 },
                 Segment {
                     start_ms: 10,
                     end_ms: 20,
                     text: "B".to_string(),
+                    speaker: None,
                 },
                 Segment {
                     start_ms: 20,
                     end_ms: 30,
                     text: "C".to_string(),
+                    speaker: None,
                 },
             ],
         };
