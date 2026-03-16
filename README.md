@@ -116,6 +116,14 @@ DIARIZE_SEGMENTATION_MODEL=.cache/sherpa-onnx-pyannote-segmentation-3-0/model.on
 DIARIZE_EMBEDDING_MODEL=.cache/wespeaker_en_voxceleb_CAM++.onnx
 ```
 
+## License
+
+This project is licensed under the [Business Source License 1.1](LICENSE).
+
+- **Free** for non-commercial and evaluation use
+- **Commercial/production use** requires a separate license — contact [TranscriptIntel](https://github.com/transcriptintel)
+- Converts to **Apache 2.0** on March 16, 2030
+
 ## Documentation
 
 See the [docs](docs/) folder for detailed documentation:
