@@ -56,6 +56,49 @@ Fix:
 - Verify with: `transcribeit list-models` (ONNX models appear with an `[onnx]` tag)
 - The model resolver supports partial name matching (e.g., `-m moonshine-base`, `-m sense-voice`).
 
+### VAD model not found or fails to load
+
+Symptoms:
+- `Failed to create VAD (check vad_model_path)`
+- `No such file or directory` when using `--vad-model`
+
+Fix:
+- Verify that the path provided to `--vad-model` (or the `VAD_MODEL` env var) points to a valid `silero_vad.onnx` file.
+- Download the Silero VAD model from the [sherpa-onnx releases](https://github.com/k2-fsa/sherpa-onnx/releases). Look for `silero_vad.onnx` in the VAD model archives.
+- Ensure the `sherpa-onnx` feature is enabled (it is by default). VAD-based segmentation is not available without it.
+- The VAD model path can be set in your `.env` file:
+
+```bash
+# .env
+VAD_MODEL=/path/to/silero_vad.onnx
+```
+
+If you do not have a VAD model, omit `--vad-model` and the pipeline will fall back to FFmpeg `silencedetect` for segmentation.
+
+### Speaker diarization model issues
+
+Symptoms:
+- `Failed to create speaker diarization engine`
+- `--diarize-segmentation-model is required when --speakers is set`
+- `--diarize-embedding-model is required when --speakers is set`
+
+Fix:
+- When using `--speakers N`, both `--diarize-segmentation-model` and `--diarize-embedding-model` are required.
+- Ensure both model paths point to valid ONNX files:
+  - **Segmentation model:** a pyannote speaker segmentation ONNX model.
+  - **Embedding model:** a speaker embedding extraction ONNX model.
+- Download compatible models from the [sherpa-onnx speaker diarization releases](https://github.com/k2-fsa/sherpa-onnx/releases).
+- The model paths can be set via environment variables in your `.env` file:
+
+```bash
+# .env
+DIARIZE_SEGMENTATION_MODEL=/path/to/segmentation.onnx
+DIARIZE_EMBEDDING_MODEL=/path/to/embedding.onnx
+```
+
+- Requires the `sherpa-onnx` feature to be enabled.
+- The `--speakers` value must be greater than 0.
+
 ### Building without sherpa-onnx
 
 If you do not need the sherpa-onnx provider and want to avoid installing the shared libraries:

@@ -119,8 +119,21 @@ These options apply to OpenAI/Azure providers:
 | `--min-silence-duration` | Minimum silence duration in seconds | `0.8` |
 | `--max-segment-secs` | Maximum segment length in seconds | `600` |
 | `--segment-concurrency` | Max parallel segment requests (API providers only) | `2` |
+| `--vad-model` | Path to Silero VAD ONNX model (`silero_vad.onnx`) for speech-aware segmentation | `VAD_MODEL` env var |
 
 When using `openai` or `azure` providers, files exceeding 25MB are automatically segmented even without `--segment`. When using `sherpa-onnx`, segmentation is always enabled with a maximum segment length of 30 seconds.
+
+When `--vad-model` is set and segmentation is needed, VAD-based segmentation is used instead of FFmpeg `silencedetect`. VAD detects actual speech boundaries using Silero VAD, avoiding mid-word cuts. It pads chunks by 250ms, merges gaps shorter than 200ms, and splits long chunks at low-energy points. This requires the `sherpa-onnx` feature to be enabled. When `--vad-model` is not set, the original FFmpeg silence-based segmentation is used as a fallback.
+
+#### Speaker diarization options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--speakers` | Number of speakers for diarization | disabled |
+| `--diarize-segmentation-model` | Path to pyannote segmentation ONNX model | `DIARIZE_SEGMENTATION_MODEL` env var |
+| `--diarize-embedding-model` | Path to speaker embedding ONNX model | `DIARIZE_EMBEDDING_MODEL` env var |
+
+When `--speakers N` is set, speaker diarization runs after transcription to label each segment with a speaker identity. Both `--diarize-segmentation-model` and `--diarize-embedding-model` are required. Speaker labels appear in VTT output as `<v Speaker 0>`, in SRT output as `[Speaker 0]`, and in manifest JSON as a `"speaker"` field on each segment. Requires the `sherpa-onnx` feature.
 
 ## Output behavior
 
@@ -155,6 +168,9 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | none |
 | `AZURE_DEPLOYMENT_NAME` | Azure deployment name | `whisper` |
 | `AZURE_API_VERSION` | Azure API version | `2024-06-01` |
+| `VAD_MODEL` | Path to Silero VAD ONNX model for speech-aware segmentation | none |
+| `DIARIZE_SEGMENTATION_MODEL` | Path to pyannote segmentation ONNX model for speaker diarization | none |
+| `DIARIZE_EMBEDDING_MODEL` | Path to speaker embedding ONNX model for speaker diarization | none |
 | `TRANSCRIBEIT_MAX_RETRIES` | Maximum 429 retries | `5` |
 | `TRANSCRIBEIT_REQUEST_TIMEOUT_SECS` | API request timeout in seconds | `120` |
 | `TRANSCRIBEIT_RETRY_WAIT_BASE_SECS` | Base retry wait time in seconds | `10` |
@@ -210,6 +226,28 @@ transcribeit run -i lecture.mp4 -m base -f srt -o ./output
 # Tune segmentation for noisy audio
 transcribeit run -i noisy.wav -m .cache/ggml-base.bin \
   --segment --silence-threshold -30 --min-silence-duration 0.5
+
+# VAD-based segmentation (avoids mid-word cuts)
+transcribeit run -p sherpa-onnx -i lecture.mp4 -m base.en \
+  --vad-model /path/to/silero_vad.onnx -f vtt -o ./output
+
+# VAD with env var (set VAD_MODEL in .env)
+VAD_MODEL=/path/to/silero_vad.onnx transcribeit run -p sherpa-onnx -i recording.mp3 -m base.en
+
+# Speaker diarization (2 speakers)
+transcribeit run -p sherpa-onnx -i meeting.mp4 -m base.en \
+  --speakers 2 \
+  --diarize-segmentation-model /path/to/segmentation.onnx \
+  --diarize-embedding-model /path/to/embedding.onnx \
+  -f vtt -o ./output
+
+# VAD + speaker diarization combined
+transcribeit run -p sherpa-onnx -i interview.wav -m base.en \
+  --vad-model /path/to/silero_vad.onnx \
+  --speakers 2 \
+  --diarize-segmentation-model /path/to/segmentation.onnx \
+  --diarize-embedding-model /path/to/embedding.onnx \
+  -f srt -o ./output
 
 # OpenAI API
 OPENAI_API_KEY=sk-... transcribeit run -p openai -i recording.mp3
@@ -267,7 +305,8 @@ When `--output-dir` is specified, the following files are created:
       "index": 0,
       "start_secs": 0.0,
       "end_secs": 5.25,
-      "text": "Hello, welcome to the meeting."
+      "text": "Hello, welcome to the meeting.",
+      "speaker": "Speaker 0"
     }
   ],
   "stats": {

@@ -53,6 +53,9 @@ pub struct PipelineConfig {
     pub diarize_segmentation_model: Option<String>,
     #[cfg_attr(not(feature = "sherpa-onnx"), allow(dead_code))]
     pub diarize_embedding_model: Option<String>,
+    /// Path to Silero VAD model for speech-aware segmentation (sherpa-onnx only)
+    #[cfg_attr(not(feature = "sherpa-onnx"), allow(dead_code))]
+    pub vad_model: Option<String>,
 }
 
 pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> Result<()> {
@@ -87,6 +90,14 @@ pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> R
 
     #[allow(unused_mut)]
     let mut transcript = if should_segment {
+        // Use VAD-based segmentation when available (sherpa-onnx), fall back to FFmpeg silencedetect
+        #[cfg(feature = "sherpa-onnx")]
+        if let Some(ref vad_model) = config.vad_model {
+            transcribe_vad_segmented(engine, input_path, vad_model, &config).await?
+        } else {
+            transcribe_segmented(engine, input_path, total_duration, &config).await?
+        }
+        #[cfg(not(feature = "sherpa-onnx"))]
         transcribe_segmented(engine, input_path, total_duration, &config).await?
     } else {
         transcribe_with_spinner("Transcribing...", engine.transcribe_path(input_path)).await?
@@ -244,6 +255,72 @@ pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> R
     }
 
     Ok(())
+}
+
+#[cfg(feature = "sherpa-onnx")]
+async fn transcribe_vad_segmented(
+    engine: &dyn Transcriber,
+    wav_path: &Path,
+    vad_model: &str,
+    config: &PipelineConfig,
+) -> Result<Transcript> {
+    use crate::audio::vad;
+    use crate::audio::wav::read_wav_bytes;
+
+    eprintln!("Running VAD-based speech segmentation...");
+
+    // Read audio samples for VAD
+    let wav_bytes = std::fs::read(wav_path)
+        .with_context(|| format!("Failed to read: {}", wav_path.display()))?;
+    let samples = read_wav_bytes(&wav_bytes)?;
+
+    let chunks = vad::vad_segment(&samples, vad_model, config.max_segment_secs as f32)?;
+
+    eprintln!("Found {} speech chunks (VAD).", chunks.len());
+
+    if chunks.is_empty() {
+        eprintln!("No speech detected.");
+        return Ok(Transcript {
+            segments: Vec::new(),
+        });
+    }
+
+    let mut all_segments: Vec<Segment> = Vec::new();
+
+    for (i, chunk) in chunks.iter().enumerate() {
+        eprintln!(
+            "  Transcribing chunk {}/{} ({:.1}s - {:.1}s, {:.1}s)...",
+            i + 1,
+            chunks.len(),
+            chunk.start_secs(),
+            chunk.end_secs(),
+            chunk.duration_secs(),
+        );
+
+        let chunk_samples = samples[chunk.start_sample..chunk.end_sample].to_vec();
+        let transcript = transcribe_with_spinner(
+            &format!(
+                "Transcribing chunk {}/{} ({:.1}s)...",
+                i + 1,
+                chunks.len(),
+                chunk.duration_secs(),
+            ),
+            engine.transcribe(chunk_samples),
+        )
+        .await?;
+
+        // Offset timestamps by the chunk start time
+        let offset_ms = (chunk.start_secs() * 1000.0) as i64;
+        for mut seg in transcript.segments {
+            seg.start_ms += offset_ms;
+            seg.end_ms += offset_ms;
+            all_segments.push(seg);
+        }
+    }
+
+    Ok(Transcript {
+        segments: all_segments,
+    })
 }
 
 async fn transcribe_segmented(
@@ -408,6 +485,7 @@ mod tests {
                 speakers: None,
                 diarize_segmentation_model: None,
                 diarize_embedding_model: None,
+                vad_model: None,
             },
         )
         .await?;
@@ -471,6 +549,7 @@ mod tests {
                 speakers: None,
                 diarize_segmentation_model: None,
                 diarize_embedding_model: None,
+                vad_model: None,
             },
         )
         .await?;
@@ -520,6 +599,7 @@ mod tests {
                 speakers: None,
                 diarize_segmentation_model: None,
                 diarize_embedding_model: None,
+                vad_model: None,
             },
         )
         .await?;
@@ -571,6 +651,7 @@ mod tests {
                 speakers: None,
                 diarize_segmentation_model: None,
                 diarize_embedding_model: None,
+                vad_model: None,
             },
         )
         .await?;

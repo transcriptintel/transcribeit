@@ -311,6 +311,10 @@ enum Command {
         /// Path to speaker embedding model (ONNX)
         #[arg(long, env = "DIARIZE_EMBEDDING_MODEL")]
         diarize_embedding_model: Option<String>,
+
+        /// Path to Silero VAD model for speech-aware segmentation (avoids mid-word cuts)
+        #[arg(long, env = "VAD_MODEL")]
+        vad_model: Option<String>,
     },
 }
 
@@ -370,6 +374,7 @@ async fn main() -> Result<()> {
             speakers,
             diarize_segmentation_model,
             diarize_embedding_model,
+            vad_model,
         } => {
             check_ffmpeg()?;
 
@@ -508,6 +513,7 @@ async fn main() -> Result<()> {
                     speakers,
                     diarize_segmentation_model: diarize_segmentation_model.clone(),
                     diarize_embedding_model: diarize_embedding_model.clone(),
+                    vad_model: vad_model.clone(),
                 };
 
                 run_pipeline(engine.as_ref(), config).await?;

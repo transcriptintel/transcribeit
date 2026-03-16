@@ -61,16 +61,23 @@ Record:
 ### 3. Segmentation impact
 
 ```bash
+# FFmpeg silencedetect segmentation
 time transcribeit run -p openai -i <long_file> --segment --segment-concurrency 2 -f text -o ./output
 time transcribeit run -p openai -i <long_file> --segment --segment-concurrency 1 --max-segment-secs 300 -f text -o ./output
-# sherpa-onnx always segments at 30s max
+
+# sherpa-onnx with FFmpeg silencedetect (default, always segments at 30s max)
 time transcribeit run -p sherpa-onnx -i <long_file> -m base -f text -o ./output
+
+# sherpa-onnx with VAD-based segmentation
+time transcribeit run -p sherpa-onnx -i <long_file> -m base --vad-model /path/to/silero_vad.onnx -f text -o ./output
 ```
 
 Record:
 - total segment count
 - max queue wait
 - request-level retry counts
+- segmentation method used (VAD vs silencedetect)
+- transcript quality at segment boundaries (check for mid-word cuts)
 
 ### 4. I/O + conversion overhead
 
@@ -116,6 +123,17 @@ These results were measured on a 5-minute medical interview recording.
 - SenseVoice 2024 offers excellent speed with good quality. **Avoid the SenseVoice 2025 model** -- it is a regression in quality.
 - Moonshine provides a compact alternative but is slower than Whisper at the same size tier.
 - For highest quality where speed is not critical, use `large-v3-turbo` with local whisper.cpp.
+
+### VAD vs FFmpeg silencedetect segmentation
+
+VAD-based segmentation (Silero VAD via `--vad-model`) and FFmpeg `silencedetect` produce different segment boundaries. Key differences to observe when benchmarking:
+
+- **Segment boundary quality:** VAD detects speech regions directly, so segment boundaries align with actual speech. FFmpeg `silencedetect` splits at silence midpoints, which can cut mid-word if silence gaps are short or thresholds are mistuned.
+- **Segment count:** VAD typically produces more segments (one per speech region after merging) while `silencedetect` produces fewer, longer segments based on silence gaps.
+- **Processing overhead:** VAD runs on the audio samples in-memory (fast, no subprocess). FFmpeg `silencedetect` runs as a subprocess and requires parsing its stderr output.
+- **Transcript quality:** VAD-segmented transcripts tend to have fewer artifacts at segment boundaries because chunks start and end at speech boundaries with 250ms padding, rather than at arbitrary silence midpoints.
+
+When comparing, use the same audio file and model to isolate the effect of the segmentation method on overall transcript quality and timing.
 
 ## CI/automatable baseline
 

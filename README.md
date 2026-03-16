@@ -62,6 +62,14 @@ transcribeit run -p azure -i recording.mp3 \
 
 # Force language and normalize before transcription
 transcribeit run -i recording.wav -m base --language en --normalize
+
+# VAD-based segmentation (speech-aware, avoids mid-word cuts)
+transcribeit run -p sherpa-onnx -m base -i recording.mp3 --vad-model .cache/silero_vad.onnx
+
+# Speaker diarization (2 speakers)
+transcribeit run -i interview.mp3 -m base --speakers 2 \
+  --diarize-segmentation-model .cache/sherpa-onnx-pyannote-segmentation-3-0/model.onnx \
+  --diarize-embedding-model .cache/wespeaker_en_voxceleb_CAM++.onnx
 ```
 
 ## Features
@@ -72,7 +80,8 @@ transcribeit run -i recording.wav -m base --language en --normalize
 - **Model aliases** — `-m base`, `-m tiny`, etc. resolve from `MODEL_CACHE_DIR` for both `local` and `sherpa-onnx` providers. The sherpa-onnx resolver also supports glob matching (e.g., `-m moonshine-base`, `-m sense-voice`).
 - **Language hinting** — Pass `--language` to force local and API transcription language.
 - **FFmpeg audio normalization** — Optional `--normalize` to apply loudnorm before transcription.
-- **Silence-based segmentation** — Splits long audio at silence boundaries for better accuracy and API compatibility.
+- **VAD-based segmentation** — Speech-aware segmentation via Silero VAD (sherpa-onnx). Detects speech boundaries with padding and gap merging to avoid mid-word cuts. Use `--vad-model .cache/silero_vad.onnx`.
+- **Silence-based segmentation** — Fallback segmentation via FFmpeg `silencedetect` for API providers or when VAD model is not available.
 - **sherpa-onnx auto-segmentation** — Whisper ONNX models only support ≤30s per call; segmentation is enabled automatically.
 - **sherpa-onnx is optional** — Enabled by default as a Cargo feature. Build without it: `cargo build --no-default-features`.
 - **Auto-split for API limits** — Files exceeding 25MB are automatically segmented when using remote providers.
@@ -102,6 +111,9 @@ TRANSCRIBEIT_MAX_RETRIES=5
 TRANSCRIBEIT_REQUEST_TIMEOUT_SECS=120
 TRANSCRIBEIT_RETRY_WAIT_BASE_SECS=10
 TRANSCRIBEIT_RETRY_WAIT_MAX_SECS=120
+VAD_MODEL=.cache/silero_vad.onnx
+DIARIZE_SEGMENTATION_MODEL=.cache/sherpa-onnx-pyannote-segmentation-3-0/model.onnx
+DIARIZE_EMBEDDING_MODEL=.cache/wespeaker_en_voxceleb_CAM++.onnx
 ```
 
 ## Documentation

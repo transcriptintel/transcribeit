@@ -12,11 +12,15 @@ src/
 ├── audio/
 │   ├── extract.rs         # FFmpeg audio conversion
 │   ├── segment.rs         # Silence detection and audio splitting
+│   ├── vad.rs             # VAD-based speech segmentation (Silero VAD via sherpa-onnx)
 │   └── wav.rs             # WAV reading and encoding (shared)
+├── diarize/
+│   ├── mod.rs             # Speaker diarization engine and speaker assignment
+│   └── ffi.rs             # Raw C FFI bindings for sherpa-onnx speaker diarization
 ├── output/
-│   ├── vtt.rs             # WebVTT subtitle writer
-│   ├── srt.rs             # SRT subtitle writer
-│   └── manifest.rs        # JSON manifest writer
+│   ├── vtt.rs             # WebVTT subtitle writer (supports <v Speaker N> tags)
+│   ├── srt.rs             # SRT subtitle writer (supports [Speaker N] labels)
+│   └── manifest.rs        # JSON manifest writer (includes speaker labels)
 └── engines/
     ├── whisper_local.rs   # Local whisper.cpp via whisper-rs
     ├── sherpa_onnx.rs     # Local sherpa-onnx engine (auto-detects Whisper, Moonshine, SenseVoice)
@@ -67,21 +71,32 @@ Input file (any format)
   │   └─ Auto: sherpa-onnx provider (always segments; max 30s per chunk)
   │
   ├─ If segmenting:
-  │   ├─ detect_silence() via FFmpeg silencedetect filter
-  │   ├─ compute_segments() at silence midpoints
-  │   ├─ split_audio() into temp WAV files
-  │   └─ Transcribe each segment, offset timestamps (concurrently for API providers)
+  │   ├─ VAD path (when --vad-model is set and sherpa-onnx feature is enabled):
+  │   │   ├─ read_wav_bytes() → f32 PCM samples
+  │   │   ├─ vad_segment(): detect speech → pad 250ms → merge gaps <200ms → split long chunks at low-energy points
+  │   │   ├─ Extract chunk samples directly from memory
+  │   │   └─ Transcribe each chunk via transcribe(), offset timestamps
+  │   ├─ FFmpeg fallback (no VAD model, or sherpa-onnx feature disabled):
+  │   │   ├─ detect_silence() via FFmpeg silencedetect filter
+  │   │   ├─ compute_segments() at silence midpoints
+  │   │   ├─ split_audio() into temp WAV files
+  │   │   └─ Transcribe each segment, offset timestamps (concurrently for API providers)
   │
   ├─ If not segmenting:
   │   ├─ Local: read_wav() → transcribe() directly
   │   └─ API: transcribe_path() with prepared file
   │
   ├─ normalize_audio? ──→ optional loudnorm filter in ffmpeg conversion pipeline
+  ├─ Speaker diarization? (when --speakers N is set)
+  │   ├─ read audio samples for diarization
+  │   ├─ Diarizer.diarize() → speaker-labeled time spans
+  │   └─ assign_speakers() overlays speaker labels onto transcript segments
+  │
   └─ Output:
       ├─ Text to stdout or `<input_stem>.txt`
-      ├─ VTT to file or stdout
-      ├─ SRT to file or stdout
-      └─ JSON manifest to output directory
+      ├─ VTT to file or stdout (with `<v Speaker N>` tags when diarized)
+      ├─ SRT to file or stdout (with `[Speaker N]` labels when diarized)
+      └─ JSON manifest to output directory (includes speaker field per segment)
 ```
 
 Temporary files use the `tempfile` crate and are cleaned up automatically on drop.
@@ -183,6 +198,36 @@ cargo build --release --no-default-features
 ```
 
 This removes the sherpa-onnx provider and eliminates the need for `SHERPA_ONNX_LIB_DIR`.
+
+## VAD-based segmentation (`audio/vad.rs`)
+
+When `--vad-model` is set and the `sherpa-onnx` feature is enabled, the pipeline uses Silero VAD (via sherpa-onnx) for speech-aware segmentation instead of FFmpeg's `silencedetect` filter. This avoids the main problem with silence-based splitting: mid-word cuts.
+
+The VAD pipeline (`vad_segment()`) has four stages:
+
+1. **Detect speech** -- Silero VAD processes 512-sample frames (~32ms at 16kHz) to find speech boundaries with sample-level precision.
+2. **Pad 250ms** -- Each speech chunk is extended by 250ms on both sides to protect word boundaries at the edges.
+3. **Merge gaps <200ms** -- Adjacent chunks separated by less than 200ms are merged to avoid splitting within short pauses.
+4. **Split long chunks** -- Chunks exceeding `--max-segment-secs` are split at the lowest-energy point within a 1-second search window around the target cut point.
+
+The VAD approach works directly on in-memory PCM samples, so there is no need for intermediate temp files during segmentation. Each chunk is transcribed via `engine.transcribe()` with sample slices, and timestamps are offset by the chunk start time.
+
+When `--vad-model` is not set, segmentation falls back to FFmpeg `silencedetect` (the original behavior).
+
+## Speaker diarization (`diarize/`)
+
+Speaker diarization identifies which speaker is talking at each point in the audio. It requires the `sherpa-onnx` feature and two ONNX models:
+
+- **Segmentation model** (`--diarize-segmentation-model`): a pyannote segmentation ONNX model that detects speaker change points.
+- **Embedding model** (`--diarize-embedding-model`): a speaker embedding ONNX model that clusters voice characteristics.
+
+The `Diarizer` follows the same dedicated worker thread pattern as `SherpaOnnxEngine`: the C FFI types are not `Send`/`Sync`, so they live on a plain `std::thread` and communicate via channels. Diarization requests are sent through `mpsc` and results come back through `tokio::sync::oneshot`.
+
+After transcription completes, `assign_speakers()` overlays speaker labels onto transcript segments by finding the diarization segment with the maximum time overlap for each transcript segment. Speaker labels appear as:
+
+- **VTT**: `<v Speaker 0>text</v>`
+- **SRT**: `[Speaker 0] text`
+- **Manifest JSON**: `"speaker": "Speaker 0"` field on each segment
 
 ## Adding a new engine
 
