@@ -213,3 +213,28 @@ Fix:
 SenseVoice models are capable of detecting emotions and audio events (laughter, applause, music, etc.), but the sherpa-onnx C API strips these tags from the output. Only the transcription text is available. This is a limitation of the sherpa-onnx C-level bindings, not of transcribeit.
 
 Additionally, the SenseVoice 2025 model is a quality regression compared to the 2024 version. Prefer using the 2024 SenseVoice model for best results.
+
+### Binary fails with "Library not loaded: libsherpa-onnx-c-api.dylib"
+
+Symptoms:
+- `dyld: Library not loaded: @rpath/libsherpa-onnx-c-api.dylib`
+- Binary crashes immediately on startup
+
+Fix: The binary expects sherpa-onnx shared libraries in a `lib/` directory next to itself:
+
+```
+transcribeit              # binary
+lib/                      # create this directory
+  libsherpa-onnx-c-api.dylib
+  libonnxruntime.dylib
+  libonnxruntime.1.23.2.dylib
+```
+
+Copy the dylibs from `vendor/sherpa-onnx-*/lib/` or download them with `transcribeit setup -c sherpa-libs`.
+
+If you see a hardcoded path from another machine (e.g., `/Users/someone/...`), the binary was built with an old `build.rs`. Rebuild with the latest code — the portable `@executable_path/lib` rpath is now used.
+
+To avoid this dependency entirely, build without sherpa-onnx:
+```bash
+cargo build --release --no-default-features
+```
