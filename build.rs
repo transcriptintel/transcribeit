@@ -15,10 +15,21 @@ fn main() {
             path.to_path_buf()
         };
 
-        // Tell the linker where to find the shared libs
+        // Tell the linker where to find the shared libs at build time
         println!("cargo:rustc-link-search=native={}", absolute.display());
 
-        // Embed rpath so the binary finds dylibs at runtime
+        // Embed rpaths for runtime dylib resolution:
+        // 1. @executable_path/lib — for portable distribution (dylibs next to binary in lib/)
+        // 2. @executable_path — for dylibs in the same directory as the binary
+        // 3. The absolute build-time path — for development convenience
+        if cfg!(target_os = "macos") {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/lib");
+            println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path");
+        } else {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/lib");
+            println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
+        }
+        // Also keep the build-time path for local development
         println!("cargo:rustc-link-arg=-Wl,-rpath,{}", absolute.display());
     }
 
