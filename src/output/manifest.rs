@@ -34,6 +34,8 @@ pub struct SegmentInfo {
     pub start_secs: f64,
     pub end_secs: f64,
     pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker: Option<String>,
 }
 
 #[derive(Serialize)]

@@ -72,6 +72,7 @@ impl Transcriber for WhisperLocal {
                     start_ms: start * 10,
                     end_ms: end * 10,
                     text,
+                    speaker: None,
                 });
             }
 

@@ -47,6 +47,12 @@ pub struct PipelineConfig {
     pub upload_as_mp3: bool,
     pub segment_concurrency: usize,
     pub normalize_audio: bool,
+    #[cfg_attr(not(feature = "sherpa-onnx"), allow(dead_code))]
+    pub speakers: Option<i32>,
+    #[cfg_attr(not(feature = "sherpa-onnx"), allow(dead_code))]
+    pub diarize_segmentation_model: Option<String>,
+    #[cfg_attr(not(feature = "sherpa-onnx"), allow(dead_code))]
+    pub diarize_embedding_model: Option<String>,
 }
 
 pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> Result<()> {
@@ -79,11 +85,52 @@ pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> R
         );
     }
 
-    let transcript = if should_segment {
+    #[allow(unused_mut)]
+    let mut transcript = if should_segment {
         transcribe_segmented(engine, input_path, total_duration, &config).await?
     } else {
         transcribe_with_spinner("Transcribing...", engine.transcribe_path(input_path)).await?
     };
+
+    // Speaker diarization (if requested)
+    #[cfg(feature = "sherpa-onnx")]
+    if let Some(num_speakers) = config.speakers {
+        let seg_model = config
+            .diarize_segmentation_model
+            .as_deref()
+            .context("--diarize-segmentation-model is required when --speakers is set")?;
+        let emb_model = config
+            .diarize_embedding_model
+            .as_deref()
+            .context("--diarize-embedding-model is required when --speakers is set")?;
+
+        eprintln!("Running speaker diarization ({num_speakers} speakers)...");
+
+        let diarizer = crate::diarize::Diarizer::new(
+            std::path::Path::new(seg_model),
+            std::path::Path::new(emb_model),
+            num_speakers,
+        )?;
+
+        // Read the audio samples for diarization
+        let wav_bytes = std::fs::read(input_path).with_context(|| {
+            format!(
+                "Failed to read audio for diarization: {}",
+                input_path.display()
+            )
+        })?;
+        let diarize_samples = crate::audio::wav::read_wav_bytes(&wav_bytes)?;
+        let diarized =
+            transcribe_with_spinner("Diarizing...", diarizer.diarize(diarize_samples)).await?;
+
+        eprintln!(
+            "Found {} speaker segments across {} speakers.",
+            diarized.len(),
+            num_speakers
+        );
+
+        crate::diarize::assign_speakers(&mut transcript, &diarized);
+    }
 
     let processing_time = started.elapsed().as_secs_f64();
 
@@ -180,6 +227,7 @@ pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> R
                     start_secs: s.start_ms as f64 / 1000.0,
                     end_secs: s.end_ms as f64 / 1000.0,
                     text: s.text.trim().to_string(),
+                    speaker: s.speaker.clone(),
                 })
                 .collect(),
             stats: Stats {
@@ -357,6 +405,9 @@ mod tests {
                 upload_as_mp3: false,
                 segment_concurrency: 1,
                 normalize_audio: false,
+                speakers: None,
+                diarize_segmentation_model: None,
+                diarize_embedding_model: None,
             },
         )
         .await?;
@@ -417,6 +468,9 @@ mod tests {
                 upload_as_mp3: false,
                 segment_concurrency: 1,
                 normalize_audio: false,
+                speakers: None,
+                diarize_segmentation_model: None,
+                diarize_embedding_model: None,
             },
         )
         .await?;
@@ -463,6 +517,9 @@ mod tests {
                 upload_as_mp3: false,
                 segment_concurrency: 1,
                 normalize_audio: false,
+                speakers: None,
+                diarize_segmentation_model: None,
+                diarize_embedding_model: None,
             },
         )
         .await?;
@@ -511,6 +568,9 @@ mod tests {
                 upload_as_mp3: true,
                 segment_concurrency: 2,
                 normalize_audio: false,
+                speakers: None,
+                diarize_segmentation_model: None,
+                diarize_embedding_model: None,
             },
         )
         .await?;
@@ -567,6 +627,7 @@ mod tests {
                     start_ms: 0,
                     end_ms: 1000,
                     text: "integration".to_string(),
+                    speaker: None,
                 }],
             })
         }
@@ -582,6 +643,7 @@ mod tests {
                     start_ms: 0,
                     end_ms: 1000,
                     text: "integration".to_string(),
+                    speaker: None,
                 }],
             })
         }

@@ -1,4 +1,6 @@
 mod audio;
+#[cfg(feature = "sherpa-onnx")]
+mod diarize;
 mod engines;
 mod output;
 mod pipeline;
@@ -297,6 +299,18 @@ enum Command {
         /// Normalize audio with ffmpeg loudnorm before transcription
         #[arg(long)]
         normalize: bool,
+
+        /// Number of speakers for diarization (requires sherpa-onnx feature and models)
+        #[arg(long)]
+        speakers: Option<i32>,
+
+        /// Path to speaker segmentation model (pyannote ONNX)
+        #[arg(long, env = "DIARIZE_SEGMENTATION_MODEL")]
+        diarize_segmentation_model: Option<String>,
+
+        /// Path to speaker embedding model (ONNX)
+        #[arg(long, env = "DIARIZE_EMBEDDING_MODEL")]
+        diarize_embedding_model: Option<String>,
     },
 }
 
@@ -353,6 +367,9 @@ async fn main() -> Result<()> {
             request_timeout_secs,
             retry_wait_base_secs,
             retry_wait_max_secs,
+            speakers,
+            diarize_segmentation_model,
+            diarize_embedding_model,
         } => {
             check_ffmpeg()?;
 
@@ -488,6 +505,9 @@ async fn main() -> Result<()> {
                     upload_as_mp3,
                     segment_concurrency,
                     normalize_audio: normalize,
+                    speakers,
+                    diarize_segmentation_model: diarize_segmentation_model.clone(),
+                    diarize_embedding_model: diarize_embedding_model.clone(),
                 };
 
                 run_pipeline(engine.as_ref(), config).await?;

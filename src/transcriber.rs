@@ -5,10 +5,12 @@ use std::path::Path;
 use crate::audio::wav::read_wav_bytes;
 
 /// A segment of transcribed text with timing info.
+#[derive(Default)]
 pub struct Segment {
     pub start_ms: i64,
     pub end_ms: i64,
     pub text: String,
+    pub speaker: Option<String>,
 }
 
 /// Full transcript result.

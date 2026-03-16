@@ -23,7 +23,11 @@ pub fn write_srt(transcript: &Transcript, writer: &mut impl Write) -> Result<()>
             format_timestamp(segment.start_ms),
             format_timestamp(segment.end_ms)
         )?;
-        writeln!(writer, "{}", segment.text.trim())?;
+        if let Some(ref spk) = segment.speaker {
+            writeln!(writer, "[{}] {}", spk, segment.text.trim())?;
+        } else {
+            writeln!(writer, "{}", segment.text.trim())?;
+        }
         writeln!(writer)?;
     }
 
@@ -43,6 +47,7 @@ mod tests {
                 start_ms: 0,
                 end_ms: 1234,
                 text: " Hello ".to_string(),
+                speaker: None,
             }],
         };
 
