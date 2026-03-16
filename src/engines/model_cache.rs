@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::os::raw::{c_char, c_void};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
@@ -10,17 +9,15 @@ pub struct ModelCache {
 }
 
 impl ModelCache {
-    #[inline]
-    unsafe extern "C" fn whisper_log_silencer(
-        _level: u32,
-        _text: *const c_char,
-        _user_data: *mut c_void,
-    ) {
-    }
-
     fn silence_whisper_logs() {
+        unsafe extern "C" fn noop(
+            _level: std::os::raw::c_uint,
+            _text: *const std::os::raw::c_char,
+            _user_data: *mut std::os::raw::c_void,
+        ) {
+        }
         unsafe {
-            whisper_rs::set_log_callback(Some(Self::whisper_log_silencer), std::ptr::null_mut());
+            whisper_rs::set_log_callback(Some(noop), std::ptr::null_mut());
         }
     }
 

@@ -30,7 +30,6 @@ impl Transcriber for WhisperLocal {
         let cache = Arc::clone(&self.cache);
         let language = self.language.clone();
 
-        // whisper-rs is synchronous and CPU-heavy; run on a blocking thread
         tokio::task::spawn_blocking(move || {
             let ctx = cache.get_or_load(&model_path)?;
 
@@ -52,29 +51,15 @@ impl Transcriber for WhisperLocal {
                 .full(params, &audio_samples)
                 .context("Whisper inference failed")?;
 
-            let num_segments = state
-                .full_n_segments()
-                .context("Failed to get segment count")?;
-
-            let mut segments = Vec::new();
-            for i in 0..num_segments {
-                let text = state
-                    .full_get_segment_text(i)
-                    .context("Failed to get segment text")?;
-                let start = state
-                    .full_get_segment_t0(i)
-                    .context("Failed to get segment start")?;
-                let end = state
-                    .full_get_segment_t1(i)
-                    .context("Failed to get segment end")?;
-
-                segments.push(Segment {
-                    start_ms: start * 10,
-                    end_ms: end * 10,
-                    text,
+            let segments: Vec<Segment> = state
+                .as_iter()
+                .map(|seg| Segment {
+                    start_ms: seg.start_timestamp() * 10,
+                    end_ms: seg.end_timestamp() * 10,
+                    text: seg.to_string(),
                     speaker: None,
-                });
-            }
+                })
+                .collect();
 
             Ok(Transcript { segments })
         })
