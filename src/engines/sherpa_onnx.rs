@@ -215,11 +215,15 @@ fn recognize(recognizer: &OfflineRecognizer, samples: &[f32]) -> Result<Transcri
                 end_ms: 0,
                 text: result.text.clone(),
                 speaker: None,
+                ..Default::default()
             }]
         }
     };
 
-    Ok(Transcript { segments })
+    Ok(Transcript {
+        segments,
+        provider_metadata: None,
+    })
 }
 
 /// Group per-token timestamps into sentence-level segments.
@@ -248,6 +252,7 @@ fn tokens_to_segments(tokens: &[String], timestamps: &[f32]) -> Vec<Segment> {
                     end_ms: (timestamps[i] * 1000.0) as i64,
                     text: trimmed.to_string(),
                     speaker: None,
+                    ..Default::default()
                 });
             }
             seg_start_idx = i + 1;
@@ -267,6 +272,7 @@ fn tokens_to_segments(tokens: &[String], timestamps: &[f32]) -> Vec<Segment> {
                 end_ms: (timestamps[len.saturating_sub(1)] * 1000.0) as i64,
                 text: trimmed.to_string(),
                 speaker: None,
+                ..Default::default()
             }];
         }
     }

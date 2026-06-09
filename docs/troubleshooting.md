@@ -183,6 +183,49 @@ transcribeit run -p openai -i long.wav \
   --retry-wait-max-secs 180
 ```
 
+### Qwen file transcription rejects async calls
+
+Symptoms:
+- `Qwen ASR task query returned 403 Forbidden`
+- message includes `current user api does not support asynchronous calls`
+
+Fix:
+- Use the async ASR base URL for file transcription:
+
+```bash
+DASHSCOPE_ASR_BASE_URL=https://dashscope-intl.aliyuncs.com/api/v1
+```
+
+- Keep `DASHSCOPE_BASE_URL` for OpenAI-compatible chat/short ASR calls if needed. `qwen-filetrans` reads `DASHSCOPE_ASR_BASE_URL` to avoid accidentally using a compatible-mode workspace endpoint that does not support async task polling.
+
+### Qwen file transcription cannot access audio
+
+Symptoms:
+- DashScope task fails after submit
+- provider result indicates the audio URL could not be downloaded
+
+Fix:
+- Confirm S3/R2 credentials can upload objects to `S3_BUCKET`.
+- Confirm the generated pre-signed GET URL is valid for the duration of the DashScope job.
+- For Cloudflare R2, set:
+
+```bash
+S3_REGION=auto
+S3_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
+S3_BUCKET=<bucket>
+S3_ACCESS_KEY_ID=<key>
+S3_SECRET_ACCESS_KEY=<secret>
+```
+
+### Wrong Qwen model selected
+
+Symptoms:
+- `qwen3-asr-flash... is a short-audio Qwen3-ASR-Flash model and is not supported by --provider qwen-filetrans`
+
+Fix:
+- Use the default `qwen3-asr-flash-filetrans` model for `-p qwen-filetrans`.
+- Short `qwen3-asr-flash` models are limited to 10 MB and 300 seconds and use a different synchronous API path. The CLI rejects this mismatch before conversion and S3 upload.
+
 ### Audio format / preprocessing issues
 
 Common symptoms:
@@ -192,7 +235,7 @@ Common symptoms:
 Fix:
 - Use `--normalize` to reduce volume inconsistency from recorded content.
 - Ensure input is not corrupted and ffmpeg conversion succeeds.
-- For remote providers, MP3 conversion is used internally; local provider uses WAV input internally.
+- For OpenAI/Azure providers, MP3 conversion is used internally; local provider uses WAV input internally. Qwen file transcription stages a prepared MP3 in S3-compatible storage and passes a pre-signed URL to DashScope.
 
 ### Empty or tiny transcript outputs
 

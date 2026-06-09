@@ -1,15 +1,16 @@
 # transcribeit
 
-A Rust CLI for speech-to-text transcription. Supports local inference via [whisper.cpp](https://github.com/ggerganov/whisper.cpp), local inference via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), remote transcription via OpenAI-compatible APIs, and Azure OpenAI.
+A Rust CLI for speech-to-text transcription. Supports local inference via [whisper.cpp](https://github.com/ggerganov/whisper.cpp), local inference via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), remote transcription via OpenAI-compatible APIs, Azure OpenAI, and Qwen ASR file transcription.
 
 Accepts any audio or video format — FFmpeg handles conversion automatically.
 
 ## Prerequisites
 
-- Rust 1.80+ (edition 2024)
+- Rust 1.96+ (edition 2024)
 - [FFmpeg](https://ffmpeg.org/) installed and on PATH
 - C/C++ toolchain and CMake (for building whisper.cpp)
 - sherpa-onnx shared libraries (if using the `sherpa-onnx` provider) — set `SHERPA_ONNX_LIB_DIR` in `.env` to the directory containing them
+- S3-compatible storage credentials when using `qwen-filetrans`; Cloudflare R2 is supported through `S3_ENDPOINT_URL`
 
 ## Quick start
 
@@ -60,6 +61,9 @@ transcribeit run -p openai -i recording.mp3
 transcribeit run -p azure -i recording.mp3 \
   --azure-deployment my-whisper -b https://myresource.openai.azure.com
 
+# Transcribe whole files with Qwen ASR via S3/R2 pre-signed URLs
+transcribeit run -p qwen-filetrans -i recording.mp3 -f vtt -o ./output
+
 # Force language and normalize before transcription
 transcribeit run -i recording.wav -m base --language en --normalize
 
@@ -75,7 +79,10 @@ transcribeit run -i interview.mp3 -m base --speakers 2 \
 ## Features
 
 - **Any input format** — MP3, MP4, WAV, FLAC, OGG, etc. FFmpeg converts to mono 16kHz WAV automatically.
-- **4 providers** — Local whisper.cpp, sherpa-onnx, OpenAI API, Azure OpenAI. Extensible via the `Transcriber` trait.
+- **5 providers** — Local whisper.cpp, sherpa-onnx, OpenAI API, Azure OpenAI, and Qwen file transcription. Extensible via the `Transcriber` trait.
+- **Qwen ASR whole-file transcription** — `qwen-filetrans` stages audio in S3-compatible storage, passes a pre-signed URL to DashScope, polls the async task, and maps Qwen timestamps into the transcript model.
+- **Qwen provider metadata** — Manifests include Qwen task timing/usage, audio info, per-segment language/emotion, and word-level timestamps. Temporary pre-signed URLs are not persisted.
+- **Qwen model guardrails** — Accidental short-audio `qwen3-asr-flash` model selection is rejected before conversion and S3 upload; use `qwen3-asr-flash-filetrans` for this provider.
 - **3 model architectures via sherpa-onnx** — Whisper, Moonshine, and SenseVoice are auto-detected from the model directory contents. Just point `--model` at any supported model directory.
 - **Model aliases** — `-m base`, `-m tiny`, etc. resolve from `MODEL_CACHE_DIR` for both `local` and `sherpa-onnx` providers. The sherpa-onnx resolver also supports glob matching (e.g., `-m moonshine-base`, `-m sense-voice`).
 - **Language hinting** — Pass `--language` to force local and API transcription language.
@@ -107,6 +114,16 @@ AZURE_API_KEY=your_azure_key_here
 AZURE_OPENAI_ENDPOINT=https://myresource.openai.azure.com
 AZURE_DEPLOYMENT_NAME=whisper
 AZURE_API_VERSION=2024-06-01
+DASHSCOPE_API_KEY=sk-your_dashscope_key_here
+DASHSCOPE_ASR_BASE_URL=https://dashscope-intl.aliyuncs.com/api/v1
+S3_BUCKET=your-staging-bucket
+S3_REGION=auto
+S3_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
+S3_ACCESS_KEY_ID=your_s3_access_key
+S3_SECRET_ACCESS_KEY=your_s3_secret_key
+S3_PREFIX=transcribeit/qwen-filetrans
+S3_PRESIGN_EXPIRES_SECS=3600
+S3_FORCE_PATH_STYLE=false
 TRANSCRIBEIT_MAX_RETRIES=5
 TRANSCRIBEIT_REQUEST_TIMEOUT_SECS=120
 TRANSCRIBEIT_RETRY_WAIT_BASE_SECS=10
@@ -158,6 +175,6 @@ See the [docs](docs/) folder for detailed documentation:
 
 - [Architecture](docs/architecture.md) — Project structure, trait design, processing pipeline
 - [CLI Reference](docs/cli-reference.md) — All commands, options, and examples
-- [Provider behavior](docs/provider-behavior.md) — OpenAI vs Azure argument differences
+- [Provider behavior](docs/provider-behavior.md) — Provider-specific API shape, upload behavior, and authentication
 - [Troubleshooting](docs/troubleshooting.md) — Common setup/runtime issues and fixes
 - [Performance benchmarks](docs/performance-benchmarks.md) — Measurement plan, reference results, and templates

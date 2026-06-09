@@ -1,6 +1,6 @@
 # Provider behavior
 
-This project supports four providers. They share the same input/output surface, but engine type, API shape, and credentials differ.
+This project supports five providers. They share the same input/output surface, but engine type, API shape, and credentials differ.
 
 ## Local (`-p local`)
 
@@ -60,6 +60,38 @@ This project supports four providers. They share the same input/output surface, 
   - `{endpoint}/openai/deployments/{deployment}/audio/transcriptions?api-version={version}`
 - Uses model name from deployment; `--remote-model` is ignored for Azure.
 - Uploads the prepared 16 kHz mono MP3 when possible.
+
+## Qwen file transcription (`-p qwen-filetrans`)
+
+- Uses Alibaba DashScope `qwen3-asr-flash-filetrans` by default.
+- Endpoint used:
+  - `POST {qwen-api-base-url}/services/audio/asr/transcription`
+  - `GET {qwen-api-base-url}/tasks/{task_id}`
+- Base URL defaults to `https://dashscope-intl.aliyuncs.com/api/v1` and can be overridden with `--qwen-api-base-url` or `DASHSCOPE_ASR_BASE_URL`.
+- Authentication:
+  - `--dashscope-api-key` or `DASHSCOPE_API_KEY`
+  - `--api-key`/`OPENAI_API_KEY` is used as a fallback.
+- The provider stages audio in S3-compatible object storage because Qwen file transcription only accepts publicly reachable `input.file_url` values.
+- Required storage configuration:
+  - `S3_BUCKET`
+  - `S3_REGION` or `AWS_REGION`
+  - `S3_ACCESS_KEY_ID` or `AWS_ACCESS_KEY_ID`
+  - `S3_SECRET_ACCESS_KEY` or `AWS_SECRET_ACCESS_KEY`
+- Optional storage configuration:
+  - `S3_ENDPOINT_URL` for S3-compatible providers
+  - `S3_SESSION_TOKEN` or `AWS_SESSION_TOKEN`
+  - `S3_PREFIX` (defaults to `transcribeit/qwen-filetrans`)
+  - `S3_PRESIGN_EXPIRES_SECS` (defaults to `3600`, minimum `300`)
+  - `S3_FORCE_PATH_STYLE=true` for providers that require path-style URLs
+- Input audio/video is converted with FFmpeg to 16 kHz mono MP3 before upload.
+- The engine uploads the prepared file, generates a pre-signed GET URL, submits the Qwen async task, polls until completion, downloads the transcription JSON, and maps Qwen sentence timestamps into the project transcript model.
+- Manifests include Qwen provider metadata when available:
+  - `provider_metadata.qwen.task` with task ID, request ID, timing, status, and usage
+  - `provider_metadata.qwen.result` with audio info and transcript/sentence/word counts
+  - per-segment `language`, `emotion`, and `words` with word-level timestamps
+- Temporary pre-signed URLs are not persisted in the manifest; only `file_url_present` is recorded.
+- Qwen file transcription is intended for whole-file processing. Do not enable segmentation unless you explicitly want multiple independent remote tasks.
+- If a short-audio `qwen3-asr-flash` model is accidentally selected with `-p qwen-filetrans`, the CLI validates the local file before upload and fails without staging it to S3. Short flash models have a 10 MB and 300 second limit and use a different API path.
 
 ## Why providers differ
 

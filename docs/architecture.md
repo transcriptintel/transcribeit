@@ -26,6 +26,8 @@ src/
     ├── sherpa_onnx.rs     # Local sherpa-onnx engine (auto-detects Whisper, Moonshine, SenseVoice)
     ├── openai_api.rs      # OpenAI-compatible REST API
     ├── azure_openai.rs    # Azure OpenAI REST API
+    ├── qwen_filetrans.rs  # Qwen async file transcription provider
+    ├── qwen_filetrans/    # Qwen request/response types and model limits
     ├── rate_limit.rs      # Retry logic and 429 handling
     └── model_cache.rs     # In-memory whisper model cache
 ```
@@ -51,7 +53,8 @@ pub trait Transcriber: Send + Sync {
 
 - **Local engine** (`whisper_local`) uses `transcribe()` — it needs decoded samples for whisper.cpp.
 - **Sherpa-ONNX engine** (`sherpa_onnx`) uses `transcribe()` — it needs decoded samples for the ONNX runtime.
-- **API engines** override `transcribe_path()` to upload files directly via multipart, and `transcribe_wav()` to upload in-memory bytes — avoiding the decode→re-encode round-trip.
+- **OpenAI/Azure API engines** override `transcribe_path()` to upload files directly via multipart, and `transcribe_wav()` to upload in-memory bytes — avoiding the decode→re-encode round-trip.
+- **Qwen file transcription** overrides `transcribe_path()` to upload prepared audio to S3-compatible storage, generate a pre-signed URL, and submit that URL to DashScope.
 
 ## Processing pipeline
 
@@ -61,13 +64,13 @@ The `pipeline.rs` module orchestrates the full flow:
 Input file (any format)
   │
   ├─ needs_conversion()? ──→ extract_to_wav(normalize) for local provider
-  ├─ upload_as_mp3(normalize) for API provider (16kHz mono MP3)
+  ├─ upload_as_mp3(normalize) for API providers and Qwen filetrans (16kHz mono MP3)
   │
   ├─ get_duration() via ffprobe
   │
   ├─ Should segment?
   │   ├─ --segment flag explicitly set
-  │   ├─ Auto: remote provider + estimated size > 25MB
+  │   ├─ Auto: OpenAI/Azure provider + estimated size > 25MB
   │   └─ Auto: sherpa-onnx provider (always segments; max 30s per chunk)
   │
   ├─ If segmenting:
@@ -80,11 +83,11 @@ Input file (any format)
   │   │   ├─ detect_silence() via FFmpeg silencedetect filter
   │   │   ├─ compute_segments() at silence midpoints
   │   │   ├─ split_audio() into temp WAV files
-  │   │   └─ Transcribe each segment, offset timestamps (concurrently for API providers)
+  │   │   └─ Transcribe each segment, offset timestamps (concurrently for segmented API providers)
   │
   ├─ If not segmenting:
   │   ├─ Local: read_wav() → transcribe() directly
-  │   └─ API: transcribe_path() with prepared file
+  │   └─ API: transcribe_path() with prepared file or staged pre-signed URL
   │
   ├─ normalize_audio? ──→ optional loudnorm filter in ffmpeg conversion pipeline
   ├─ Speaker diarization? (when --speakers N is set)
@@ -115,7 +118,7 @@ Sends audio to any OpenAI-compatible `/v1/audio/transcriptions` endpoint via mul
 
 - OpenAI (`https://api.openai.com`)
 - Self-hosted services (LocalAI, vLLM, etc.)
-- Other compatible APIs (Qwen AST, etc.)
+- Other compatible APIs
 
 ### Azure OpenAI (`azure_openai.rs`)
 
@@ -126,6 +129,23 @@ Same multipart upload pattern as OpenAI, but with Azure-specific URL format and 
 ```
 
 Caches whether the endpoint supports `verbose_json` via an `AtomicU8` flag to skip the fallback on subsequent segment calls within the same run.
+
+### Qwen File Transcription (`qwen_filetrans.rs`)
+
+Uses Alibaba DashScope `qwen3-asr-flash-filetrans` for whole-file asynchronous transcription. The provider:
+
+- validates model selection before conversion/upload
+- converts input audio/video to 16 kHz mono MP3
+- uploads the prepared file to S3-compatible storage
+- generates a pre-signed GET URL
+- submits a DashScope async transcription task
+- polls until completion
+- downloads the result JSON
+- maps sentence timestamps, word timestamps, language, and emotion into the normalized transcript/manifest model
+
+The S3 staging implementation lives in `storage::s3` and works with AWS S3-compatible providers such as Cloudflare R2. Temporary pre-signed URLs are not persisted in manifests; only `file_url_present` is recorded.
+
+Short synchronous Qwen models such as `qwen3-asr-flash` use a different API path and have strict 10 MB / 300 second limits. If one is selected with `-p qwen-filetrans`, the CLI fails before conversion or S3 upload.
 
 ### Sherpa-ONNX (`sherpa_onnx.rs`)
 
@@ -170,7 +190,7 @@ All settings (timeout, retries, wait times) are configurable via CLI flags and e
 
 ### Shared WAV encoding
 
-Both API engines can send file uploads directly and choose the correct container format for compatibility (WAV for local transcribe path, MP3 for API provider uploads). The `audio::wav::encode_wav()` helper is still used by local engines and non-file upload paths.
+OpenAI/Azure engines can send file uploads directly and choose the correct container format for compatibility (WAV for local transcribe path, MP3 for API provider uploads). Qwen file transcription stages MP3 in S3-compatible storage and sends DashScope a pre-signed URL. The `audio::wav::encode_wav()` helper is still used by local engines and non-file upload paths.
 
 ## Model cache (`model_cache.rs`)
 

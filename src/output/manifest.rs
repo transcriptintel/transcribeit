@@ -8,6 +8,8 @@ pub struct Manifest {
     pub config: ProcessingConfig,
     pub segments: Vec<SegmentInfo>,
     pub stats: Stats,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_metadata: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -36,6 +38,21 @@ pub struct SegmentInfo {
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speaker: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emotion: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub words: Vec<WordInfo>,
+}
+
+#[derive(Serialize)]
+pub struct WordInfo {
+    pub start_secs: f64,
+    pub end_secs: f64,
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub punctuation: Option<String>,
 }
 
 #[derive(Serialize)]

@@ -51,14 +51,17 @@ mod tests {
                     end_ms: 1234,
                     text: " Hello ".to_string(),
                     speaker: None,
+                    ..Default::default()
                 },
                 Segment {
                     start_ms: 5_000,
                     end_ms: 6_100,
                     text: "world".to_string(),
                     speaker: None,
+                    ..Default::default()
                 },
             ],
+            provider_metadata: None,
         };
 
         let mut out = Cursor::new(Vec::new());
@@ -81,20 +84,24 @@ mod tests {
                     end_ms: 10,
                     text: "A".to_string(),
                     speaker: None,
+                    ..Default::default()
                 },
                 Segment {
                     start_ms: 10,
                     end_ms: 20,
                     text: "B".to_string(),
                     speaker: None,
+                    ..Default::default()
                 },
                 Segment {
                     start_ms: 20,
                     end_ms: 30,
                     text: "C".to_string(),
                     speaker: None,
+                    ..Default::default()
                 },
             ],
+            provider_metadata: None,
         };
 
         let mut out = Cursor::new(Vec::new());
