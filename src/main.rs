@@ -9,6 +9,7 @@ mod output;
 mod pipeline;
 mod pipeline_output;
 mod setup;
+mod storage;
 mod transcriber;
 
 use std::sync::Arc;
@@ -22,6 +23,11 @@ use crate::cli::{Cli, Command, ModelFormat, OutputFormatArg, Provider, SetupComp
 use crate::engines::azure_openai::AzureOpenAi;
 use crate::engines::model_cache::ModelCache;
 use crate::engines::openai_api::OpenAiApi;
+use crate::engines::qwen_filetrans::QwenFileTrans;
+use crate::engines::qwen_filetrans::limits::{
+    is_filetrans_model as is_qwen_filetrans_model,
+    validate_model_for_path as validate_qwen_model_for_path,
+};
 use crate::engines::rate_limit;
 #[cfg(feature = "sherpa-onnx")]
 use crate::engines::sherpa_onnx::SherpaOnnxEngine;
@@ -34,6 +40,7 @@ use crate::pipeline::{OutputFormat, PipelineConfig, run_pipeline};
 use crate::setup::{
     print_setup_summary, setup_diarize, setup_models, setup_sherpa_libs, setup_vad,
 };
+use crate::storage::s3::{S3ConfigInput, S3Uploader, s3_config_from_input};
 use crate::transcriber::Transcriber;
 
 #[tokio::main]
@@ -123,8 +130,10 @@ async fn main() -> Result<()> {
             model,
             base_url,
             api_key,
+            dashscope_api_key,
             azure_api_key,
             remote_model,
+            qwen_api_base_url,
             language,
             azure_deployment,
             azure_api_version,
@@ -144,6 +153,15 @@ async fn main() -> Result<()> {
             diarize_segmentation_model,
             diarize_embedding_model,
             vad_model,
+            s3_bucket,
+            s3_region,
+            s3_endpoint_url,
+            s3_access_key_id,
+            s3_secret_access_key,
+            s3_session_token,
+            s3_prefix,
+            s3_presign_expires_secs,
+            s3_force_path_style,
         } => {
             check_ffmpeg()?;
 
@@ -162,7 +180,13 @@ async fn main() -> Result<()> {
                 Duration::from_secs(retry_wait_max_secs.max(1)),
             );
 
-            let upload_as_mp3 = matches!(provider, Provider::Openai | Provider::Azure);
+            let qwen_filetrans_model = remote_model
+                .as_deref()
+                .unwrap_or("qwen3-asr-flash-filetrans");
+            let qwen_needs_mp3_staging = matches!(provider, Provider::QwenFiletrans)
+                && is_qwen_filetrans_model(qwen_filetrans_model);
+            let upload_as_mp3 =
+                matches!(provider, Provider::Openai | Provider::Azure) || qwen_needs_mp3_staging;
             #[cfg(feature = "sherpa-onnx")]
             let is_sherpa = matches!(provider, Provider::SherpaOnnx);
             #[cfg(not(feature = "sherpa-onnx"))]
@@ -212,16 +236,17 @@ async fn main() -> Result<()> {
                             "--api-key or OPENAI_API_KEY is required for --provider openai",
                         )?;
                         let url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
+                        let model_name = remote_model.unwrap_or_else(|| "whisper-1".to_string());
                         (
                             Box::new(OpenAiApi::new(
                                 url,
                                 key,
-                                remote_model.clone(),
+                                model_name.clone(),
                                 language.clone(),
                                 api_settings,
                             )?),
                             "openai".into(),
-                            remote_model,
+                            model_name,
                         )
                     }
                     Provider::Azure => {
@@ -248,6 +273,49 @@ async fn main() -> Result<()> {
                             azure_deployment,
                         )
                     }
+                    Provider::QwenFiletrans => {
+                        let key = dashscope_api_key.or(api_key).context(
+                            "--dashscope-api-key, --api-key, DASHSCOPE_API_KEY, or OPENAI_API_KEY is required for --provider qwen-filetrans",
+                        )?;
+                        let s3_config = s3_config_from_input(S3ConfigInput {
+                            bucket: s3_bucket.context(
+                                "--s3-bucket or S3_BUCKET is required for --provider qwen-filetrans",
+                            )?,
+                            region: s3_region.or_else(|| std::env::var("AWS_REGION").ok()).context(
+                                "--s3-region, S3_REGION, or AWS_REGION is required for --provider qwen-filetrans",
+                            )?,
+                            endpoint_url: s3_endpoint_url,
+                            access_key_id: s3_access_key_id
+                                .or_else(|| std::env::var("AWS_ACCESS_KEY_ID").ok())
+                                .context(
+                                "--s3-access-key-id, S3_ACCESS_KEY_ID, or AWS_ACCESS_KEY_ID is required for --provider qwen-filetrans",
+                            )?,
+                            secret_access_key: s3_secret_access_key
+                                .or_else(|| std::env::var("AWS_SECRET_ACCESS_KEY").ok())
+                                .context(
+                                "--s3-secret-access-key, S3_SECRET_ACCESS_KEY, or AWS_SECRET_ACCESS_KEY is required for --provider qwen-filetrans",
+                            )?,
+                            session_token: s3_session_token.or_else(|| std::env::var("AWS_SESSION_TOKEN").ok()),
+                            prefix: s3_prefix,
+                            presign_expires_secs: s3_presign_expires_secs,
+                            force_path_style: s3_force_path_style,
+                        })?;
+                        let uploader = S3Uploader::new(s3_config).await?;
+                        let model_name =
+                            remote_model.unwrap_or_else(|| "qwen3-asr-flash-filetrans".into());
+                        (
+                            Box::new(QwenFileTrans::new(
+                                qwen_api_base_url,
+                                key,
+                                model_name.clone(),
+                                language.clone(),
+                                api_settings,
+                                uploader,
+                            )?),
+                            "qwen-filetrans".into(),
+                            model_name,
+                        )
+                    }
                 };
 
             for (index, input_path) in input_paths.iter().enumerate() {
@@ -258,6 +326,10 @@ async fn main() -> Result<()> {
                         input_paths.len(),
                         input_path.display()
                     );
+                }
+
+                if provider_name == "qwen-filetrans" && !is_qwen_filetrans_model(&model_name) {
+                    validate_qwen_model_for_path(&model_name, input_path).await?;
                 }
 
                 let config = PipelineConfig {

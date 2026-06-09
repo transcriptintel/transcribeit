@@ -176,6 +176,7 @@ async fn transcribe_vad_segmented(
         eprintln!("No speech detected.");
         return Ok(Transcript {
             segments: Vec::new(),
+            provider_metadata: None,
         });
     }
 
@@ -214,6 +215,7 @@ async fn transcribe_vad_segmented(
 
     Ok(Transcript {
         segments: all_segments,
+        provider_metadata: None,
     })
 }
 
@@ -303,6 +305,7 @@ async fn transcribe_segmented(
 
     Ok(Transcript {
         segments: all_segments,
+        provider_metadata: None,
     })
 }
 

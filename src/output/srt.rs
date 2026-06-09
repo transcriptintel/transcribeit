@@ -48,7 +48,9 @@ mod tests {
                 end_ms: 1234,
                 text: " Hello ".to_string(),
                 speaker: None,
+                ..Default::default()
             }],
+            provider_metadata: None,
         };
 
         let mut out = Cursor::new(Vec::new());

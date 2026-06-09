@@ -1,6 +1,7 @@
 pub mod azure_openai;
 pub mod model_cache;
 pub mod openai_api;
+pub mod qwen_filetrans;
 pub mod rate_limit;
 #[cfg(feature = "sherpa-onnx")]
 pub mod sherpa_onnx;

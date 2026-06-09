@@ -46,7 +46,7 @@ transcribeit run [OPTIONS] --input <FILE_OR_PATH_OR_GLOB>
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-i, --input` | Input path, directory, or glob pattern for audio/video files | required |
-| `-p, --provider` | `local`, `sherpa-onnx`, `openai`, or `azure` | `local` |
+| `-p, --provider` | `local`, `sherpa-onnx`, `openai`, `azure`, or `qwen-filetrans` | `local` |
 
 #### Local provider options (`-p local`)
 
@@ -90,6 +90,29 @@ Sherpa-ONNX automatically enables segmentation and caps segment length at 30 sec
 | `--azure-deployment` | Deployment name | `AZURE_DEPLOYMENT_NAME` env var, or `whisper` |
 | `--azure-api-version` | API version | `AZURE_API_VERSION` env var, or `2024-06-01` |
 
+#### Qwen file transcription provider options (`-p qwen-filetrans`)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--dashscope-api-key` | DashScope API key | `DASHSCOPE_API_KEY` env var |
+| `--qwen-api-base-url` | DashScope async ASR API base URL | `DASHSCOPE_ASR_BASE_URL` env var, or `https://dashscope-intl.aliyuncs.com/api/v1` |
+| `--remote-model` | Qwen file transcription model | `qwen3-asr-flash-filetrans` |
+| `--s3-bucket` | S3 bucket for temporary audio uploads | `S3_BUCKET` env var |
+| `--s3-region` | S3 region | `S3_REGION` or `AWS_REGION` env var |
+| `--s3-endpoint-url` | S3-compatible endpoint URL | `S3_ENDPOINT_URL` env var |
+| `--s3-access-key-id` | S3 access key ID | `S3_ACCESS_KEY_ID` or `AWS_ACCESS_KEY_ID` env var |
+| `--s3-secret-access-key` | S3 secret access key | `S3_SECRET_ACCESS_KEY` or `AWS_SECRET_ACCESS_KEY` env var |
+| `--s3-session-token` | S3 session token | `S3_SESSION_TOKEN` or `AWS_SESSION_TOKEN` env var |
+| `--s3-prefix` | S3 object prefix | `transcribeit/qwen-filetrans` |
+| `--s3-presign-expires-secs` | Pre-signed URL expiry in seconds | `3600` |
+| `--s3-force-path-style` | Force path-style URLs for S3-compatible storage | disabled |
+
+Qwen file transcription uploads the prepared audio to S3-compatible storage and passes a pre-signed GET URL to DashScope. The provider is intended for whole-file transcription; avoid `--segment` unless you explicitly want multiple independent remote jobs.
+
+When available, Qwen manifests include `provider_metadata.qwen` with task timing/usage, audio info, transcript counts, and word-level timestamps on each segment. Temporary pre-signed URLs are not persisted.
+
+If a short-audio `qwen3-asr-flash` model is selected with `-p qwen-filetrans`, the CLI validates the file size and duration before upload and fails without staging the file to S3. Use `qwen3-asr-flash-filetrans` for this provider.
+
 #### Output options
 
 | Option | Description | Default |
@@ -101,7 +124,7 @@ Sherpa-ONNX automatically enables segmentation and caps segment length at 30 sec
 
 #### API resilience options
 
-These options apply to OpenAI/Azure providers:
+These options apply to OpenAI, Azure, and Qwen file transcription providers:
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -168,6 +191,17 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | none |
 | `AZURE_DEPLOYMENT_NAME` | Azure deployment name | `whisper` |
 | `AZURE_API_VERSION` | Azure API version | `2024-06-01` |
+| `DASHSCOPE_API_KEY` | DashScope API key for Qwen providers | none |
+| `DASHSCOPE_ASR_BASE_URL` | DashScope async ASR base URL for Qwen file transcription | `https://dashscope-intl.aliyuncs.com/api/v1` |
+| `S3_BUCKET` | S3 bucket for Qwen file transcription staging | none |
+| `S3_REGION` / `AWS_REGION` | S3 region for Qwen file transcription staging | none |
+| `S3_ENDPOINT_URL` | S3-compatible endpoint URL | none |
+| `S3_ACCESS_KEY_ID` / `AWS_ACCESS_KEY_ID` | S3 access key ID | none |
+| `S3_SECRET_ACCESS_KEY` / `AWS_SECRET_ACCESS_KEY` | S3 secret access key | none |
+| `S3_SESSION_TOKEN` / `AWS_SESSION_TOKEN` | S3 session token | none |
+| `S3_PREFIX` | S3 object prefix for Qwen staging uploads | `transcribeit/qwen-filetrans` |
+| `S3_PRESIGN_EXPIRES_SECS` | S3 pre-signed URL expiry in seconds | `3600` |
+| `S3_FORCE_PATH_STYLE` | Force path-style URLs for S3-compatible storage | `false` |
 | `VAD_MODEL` | Path to Silero VAD ONNX model for speech-aware segmentation | none |
 | `DIARIZE_SEGMENTATION_MODEL` | Path to pyannote segmentation ONNX model for speaker diarization | none |
 | `DIARIZE_EMBEDDING_MODEL` | Path to speaker embedding ONNX model for speaker diarization | none |
@@ -260,6 +294,15 @@ transcribeit run -p openai -b http://localhost:8080 \
 transcribeit run -p azure -i recording.wav \
   -b https://myresource.openai.azure.com \
   -a $AZURE_API_KEY --azure-deployment my-whisper
+
+# Qwen file transcription with S3 staging
+transcribeit run -p qwen-filetrans -i recording.mp3 \
+  --dashscope-api-key "$DASHSCOPE_API_KEY" \
+  --s3-bucket "$S3_BUCKET" \
+  --s3-region "$S3_REGION" \
+  --s3-access-key-id "$S3_ACCESS_KEY_ID" \
+  --s3-secret-access-key "$S3_SECRET_ACCESS_KEY" \
+  -f vtt -o ./output
 ```
 
 ### Provider behavior
@@ -269,6 +312,7 @@ transcribeit run -p azure -i recording.wav \
 - **OpenAI-compatible** (`-p openai`) uses `--remote-model` and calls `POST {base-url}/v1/audio/transcriptions`.
 - **Azure** (`-p azure`) uses `--azure-deployment` and calls:
   `POST {base-url}/openai/deployments/{deployment}/audio/transcriptions?api-version={version}`.
+- **Qwen file transcription** (`-p qwen-filetrans`) uploads audio to S3-compatible storage, passes a pre-signed URL to DashScope, and polls the async transcription task.
 
 For the full matrix and upload/auth notes, see: [Provider behavior](provider-behavior.md).  
 For benchmark guidance and result templates, see: [Performance benchmarks](performance-benchmarks.md).
@@ -306,7 +350,17 @@ When `--output-dir` is specified, the following files are created:
       "start_secs": 0.0,
       "end_secs": 5.25,
       "text": "Hello, welcome to the meeting.",
-      "speaker": "Speaker 0"
+      "speaker": "Speaker 0",
+      "language": "en",
+      "emotion": "neutral",
+      "words": [
+        {
+          "start_secs": 0.0,
+          "end_secs": 0.4,
+          "text": "Hello",
+          "punctuation": ","
+        }
+      ]
     }
   ],
   "stats": {
@@ -314,6 +368,28 @@ When `--output-dir` is specified, the following files are created:
     "total_segments": 42,
     "total_characters": 15000,
     "processing_time_secs": 120.5
+  },
+  "provider_metadata": {
+    "qwen": {
+      "model": "qwen3-asr-flash-filetrans",
+      "task": {
+        "task_status": "SUCCEEDED",
+        "usage": {
+          "seconds": 3600
+        }
+      },
+      "result": {
+        "audio_info": {
+          "format": "mp3",
+          "sample_rate": 16000
+        },
+        "file_url_present": true,
+        "transcript_count": 1,
+        "sentence_count": 42,
+        "word_count": 8000,
+        "words_enabled": true
+      }
+    }
   }
 }
 ```

@@ -76,6 +76,9 @@ pub(crate) enum Provider {
     Openai,
     /// Azure OpenAI API
     Azure,
+    /// Qwen3-ASR-Flash-Filetrans via DashScope and S3 pre-signed URLs
+    #[value(name = "qwen-filetrans")]
+    QwenFiletrans,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -182,13 +185,25 @@ pub(crate) enum Command {
         #[arg(short, long, env = "OPENAI_API_KEY")]
         api_key: Option<String>,
 
+        /// DashScope API key for Qwen providers (or set DASHSCOPE_API_KEY)
+        #[arg(long, env = "DASHSCOPE_API_KEY")]
+        dashscope_api_key: Option<String>,
+
         /// Azure API key (or set AZURE_API_KEY env var)
         #[arg(long, env = "AZURE_API_KEY")]
         azure_api_key: Option<String>,
 
-        /// Remote model name (for --provider openai)
-        #[arg(long, default_value = "whisper-1")]
-        remote_model: String,
+        /// Remote model name (for --provider openai or qwen-filetrans)
+        #[arg(long)]
+        remote_model: Option<String>,
+
+        /// DashScope API base URL for Qwen file transcription
+        #[arg(
+            long,
+            env = "DASHSCOPE_ASR_BASE_URL",
+            default_value = "https://dashscope-intl.aliyuncs.com/api/v1"
+        )]
+        qwen_api_base_url: String,
 
         /// Language code (e.g. en, fr, auto). If not set, auto-detection is used.
         #[arg(long)]
@@ -265,5 +280,41 @@ pub(crate) enum Command {
         /// Path to Silero VAD model for speech-aware segmentation (avoids mid-word cuts)
         #[arg(long, env = "VAD_MODEL")]
         vad_model: Option<String>,
+
+        /// S3 bucket used to stage audio for Qwen file transcription
+        #[arg(long, env = "S3_BUCKET")]
+        s3_bucket: Option<String>,
+
+        /// S3 region used to stage audio for Qwen file transcription
+        #[arg(long, env = "S3_REGION")]
+        s3_region: Option<String>,
+
+        /// S3-compatible endpoint URL (optional for AWS S3)
+        #[arg(long, env = "S3_ENDPOINT_URL")]
+        s3_endpoint_url: Option<String>,
+
+        /// S3 access key ID
+        #[arg(long, env = "S3_ACCESS_KEY_ID")]
+        s3_access_key_id: Option<String>,
+
+        /// S3 secret access key
+        #[arg(long, env = "S3_SECRET_ACCESS_KEY")]
+        s3_secret_access_key: Option<String>,
+
+        /// S3 session token, when using temporary credentials
+        #[arg(long, env = "S3_SESSION_TOKEN")]
+        s3_session_token: Option<String>,
+
+        /// S3 object prefix for temporary Qwen uploads
+        #[arg(long, env = "S3_PREFIX")]
+        s3_prefix: Option<String>,
+
+        /// Pre-signed URL expiry in seconds
+        #[arg(long, env = "S3_PRESIGN_EXPIRES_SECS", default_value = "3600")]
+        s3_presign_expires_secs: u64,
+
+        /// Force path-style S3 URLs for S3-compatible providers
+        #[arg(long, env = "S3_FORCE_PATH_STYLE")]
+        s3_force_path_style: bool,
     },
 }

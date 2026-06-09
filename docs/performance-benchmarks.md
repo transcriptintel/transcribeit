@@ -50,6 +50,7 @@ time transcribeit run -p local -i <input_file> -m base -f text -o ./output
 time transcribeit run -p sherpa-onnx -i <input_file> -m base -f text -o ./output
 time transcribeit run -p openai -i <input_file> -f text -o ./output
 time transcribeit run -p azure -i <input_file> -f text -o ./output
+time transcribeit run -p qwen-filetrans -i <input_file> -f text -o ./output
 ```
 
 Record:
@@ -89,6 +90,24 @@ time transcribeit run -i <audio_file> -m base --normalize -f text -o ./output
 Record:
 - conversion wall time (video vs audio)
 - post-conversion processing time ratio
+
+### 5. Qwen file transcription
+
+Qwen filetrans is a whole-file async provider, so benchmark it separately from segmented API providers:
+
+```bash
+time transcribeit run -p qwen-filetrans -i <long_file> -f text -o ./output
+time transcribeit run -p qwen-filetrans -i <long_file> -f vtt -o ./output
+```
+
+Record:
+- input size and duration
+- S3-compatible storage provider and region
+- DashScope ASR base URL
+- task `usage.seconds` from `provider_metadata.qwen.task`
+- local wall-clock time
+- manifest `provider_metadata.qwen.result.word_count`
+- whether word-level timestamps were present
 
 ## Suggested result format
 

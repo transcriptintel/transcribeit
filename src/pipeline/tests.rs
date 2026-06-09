@@ -266,7 +266,9 @@ impl Transcriber for FakeTranscriber {
                 end_ms: 1000,
                 text: "integration".to_string(),
                 speaker: None,
+                ..Default::default()
             }],
+            provider_metadata: None,
         })
     }
 }
@@ -282,7 +284,9 @@ impl Transcriber for FakeApiTranscriber {
                 end_ms: 1000,
                 text: "integration".to_string(),
                 speaker: None,
+                ..Default::default()
             }],
+            provider_metadata: None,
         })
     }
 

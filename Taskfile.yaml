@@ -1,0 +1,66 @@
+version: 3
+
+silent: true
+
+dotenv:
+  - .env
+
+tasks:
+  print-openai-base-url:
+    cmds:
+      - |
+        echo "${OPENAI_BASE_URL}"
+
+  test-dashscope:
+    cmds:
+      - |
+        test -n "$DASHSCOPE_API_KEY" || (echo "DASHSCOPE_API_KEY is not set" >&2; exit 1)
+        DASHSCOPE_BASE_URL="${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}"
+
+        curl --silent --show-error --location "${DASHSCOPE_BASE_URL%/}/chat/completions" \
+          --write-out "\nHTTP_STATUS:%{http_code}\n" \
+          --header "Authorization: Bearer ${DASHSCOPE_API_KEY}" \
+          --header "Content-Type: application/json" \
+          --data '{
+            "model": "qwen3.6-flash",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Reply with exactly: dashscope-ok"
+              }
+            ],
+            "stream": false,
+            "enable_thinking": false,
+            "max_tokens": 32,
+            "temperature": 0
+          }'
+  test-qwen-asr:
+    cmds:
+      - |
+        test -n "$DASHSCOPE_API_KEY" || (echo "DASHSCOPE_API_KEY is not set" >&2; exit 1)
+        DASHSCOPE_BASE_URL="${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}"
+
+        curl --silent --show-error --location "${DASHSCOPE_BASE_URL%/}/chat/completions" \
+        --write-out "\nHTTP_STATUS:%{http_code}\n" \
+        -H "Authorization: Bearer $DASHSCOPE_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "model": "qwen3-asr-flash",
+            "messages": [
+                {
+                    "content": [
+                        {
+                            "type": "input_audio",
+                            "input_audio": {
+                                "data": "https://dashscope.oss-cn-beijing.aliyuncs.com/audios/welcome.mp3"
+                            }
+                        }
+                    ],
+                    "role": "user"
+                }
+            ],
+            "stream":false,
+            "asr_options": {
+                "enable_itn": false
+            }
+        }'

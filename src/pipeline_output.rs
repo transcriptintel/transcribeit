@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 
 use crate::output::manifest::{
-    InputInfo, Manifest, ProcessingConfig, SegmentInfo, Stats, write_manifest,
+    InputInfo, Manifest, ProcessingConfig, SegmentInfo, Stats, WordInfo, write_manifest,
 };
 use crate::output::{srt::write_srt, vtt::write_vtt};
 use crate::pipeline::{OutputFormat, PipelineConfig};
@@ -136,6 +136,18 @@ fn build_manifest(
                 end_secs: s.end_ms as f64 / 1000.0,
                 text: s.text.trim().to_string(),
                 speaker: s.speaker.clone(),
+                language: s.language.clone(),
+                emotion: s.emotion.clone(),
+                words: s
+                    .words
+                    .iter()
+                    .map(|w| WordInfo {
+                        start_secs: w.start_ms as f64 / 1000.0,
+                        end_secs: w.end_ms as f64 / 1000.0,
+                        text: w.text.clone(),
+                        punctuation: w.punctuation.clone(),
+                    })
+                    .collect(),
             })
             .collect(),
         stats: Stats {
@@ -144,5 +156,6 @@ fn build_manifest(
             total_characters: transcript.segments.iter().map(|s| s.text.len()).sum(),
             processing_time_secs: processing_time,
         },
+        provider_metadata: transcript.provider_metadata.clone(),
     }
 }

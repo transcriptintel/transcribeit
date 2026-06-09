@@ -11,11 +11,23 @@ pub struct Segment {
     pub end_ms: i64,
     pub text: String,
     pub speaker: Option<String>,
+    pub language: Option<String>,
+    pub emotion: Option<String>,
+    pub words: Vec<Word>,
+}
+
+#[derive(Default, Clone)]
+pub struct Word {
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub text: String,
+    pub punctuation: Option<String>,
 }
 
 /// Full transcript result.
 pub struct Transcript {
     pub segments: Vec<Segment>,
+    pub provider_metadata: Option<serde_json::Value>,
 }
 
 impl Transcript {

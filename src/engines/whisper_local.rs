@@ -58,10 +58,14 @@ impl Transcriber for WhisperLocal {
                     end_ms: seg.end_timestamp() * 10,
                     text: seg.to_string(),
                     speaker: None,
+                    ..Default::default()
                 })
                 .collect();
 
-            Ok(Transcript { segments })
+            Ok(Transcript {
+                segments,
+                provider_metadata: None,
+            })
         })
         .await?
     }
