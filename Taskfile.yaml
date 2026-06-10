@@ -6,6 +6,10 @@ dotenv:
   - .env
 
 tasks:
+  test-hf-token:
+    cmds:
+      - |
+        test -n "$HF_TOKEN" || (echo "HF_TOKEN is not set" >&2; exit 1)
   print-openai-base-url:
     cmds:
       - |

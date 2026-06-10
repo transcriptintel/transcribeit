@@ -51,6 +51,7 @@ time transcribeit run -p sherpa-onnx -i <input_file> -m base -f text -o ./output
 time transcribeit run -p openai -i <input_file> -f text -o ./output
 time transcribeit run -p azure -i <input_file> -f text -o ./output
 time transcribeit run -p qwen-filetrans -i <input_file> -f text -o ./output
+time transcribeit run -p gemini -i <input_file> -f text -o ./output
 ```
 
 Record:
@@ -104,10 +105,27 @@ Record:
 - input size and duration
 - S3-compatible storage provider and region
 - DashScope ASR base URL
-- task `usage.seconds` from `provider_metadata.qwen.task`
+- task `usage.seconds` from `provider_metadata.data.task`
 - local wall-clock time
-- manifest `provider_metadata.qwen.result.word_count`
+- manifest `provider_metadata.data.result.word_count`
 - whether word-level timestamps were present
+
+### 6. Gemini hosted transcription
+
+Gemini is a whole-file multimodal provider with model-generated structured output, so benchmark transcript quality and timestamp reliability separately from dedicated ASR providers:
+
+```bash
+time transcribeit run -p gemini --remote-model gemini-3.5-flash -i <input_file> -f vtt -o ./output
+time transcribeit run -p gemini --remote-model gemini-3.1-pro-preview -i <input_file> -f vtt -o ./output
+```
+
+Record:
+- model name
+- wall-clock time
+- manifest `quality.timing_reliable`
+- manifest `quality.timestamps_clamped`
+- manifest `provider_metadata.data.response.usage_metadata`
+- whether speaker/language/emotion fields were useful or only generic
 
 ## Suggested result format
 

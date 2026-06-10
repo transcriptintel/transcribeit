@@ -8,7 +8,7 @@ use tokio::io::AsyncWriteExt;
 use crate::cli::ModelSize;
 use crate::models::{download_model, models_dir};
 
-const SHERPA_ONNX_VERSION: &str = "v1.12.29";
+const SHERPA_ONNX_VERSION: &str = "v1.13.2";
 
 pub(crate) async fn setup_models(
     output_dir: Option<PathBuf>,
@@ -66,9 +66,10 @@ pub(crate) async fn setup_sherpa_libs() -> Result<String> {
     let arch = std::env::consts::ARCH;
 
     let archive_suffix = match (os, arch) {
-        ("macos", _) => "osx-universal2-shared",
-        ("linux", "x86_64") => "linux-x86_64-shared",
-        ("linux", "aarch64") => "linux-aarch64-shared",
+        ("macos", "x86_64") => "osx-x64-shared-lib",
+        ("macos", "aarch64") => "osx-arm64-shared-lib",
+        ("linux", "x86_64") => "linux-x64-shared-lib",
+        ("linux", "aarch64") => "linux-aarch64-shared-cpu-lib",
         _ => anyhow::bail!(
             "Unsupported platform: {os}-{arch}. Download sherpa-onnx shared libraries manually."
         ),
@@ -89,14 +90,6 @@ pub(crate) async fn setup_sherpa_libs() -> Result<String> {
         "sherpa-onnx shared libraries",
     )
     .await?;
-
-    if status == "installed" {
-        let lib_dir = check_dir.join("lib");
-        eprintln!(
-            "\nAdd to .env:\n  SHERPA_ONNX_LIB_DIR={}\n",
-            lib_dir.display()
-        );
-    }
 
     Ok(format!("{status} ({archive_suffix})"))
 }
@@ -126,17 +119,33 @@ pub(crate) fn print_setup_summary(summary: &[(&str, String)]) {
         println!("  DIARIZE_EMBEDDING_MODEL={}", emb_path.display());
     }
 
-    if let Ok(entries) = std::fs::read_dir("vendor") {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() && path.join("lib").exists() {
-                println!("  SHERPA_ONNX_LIB_DIR={}", path.join("lib").display());
-                break;
-            }
-        }
+    if let Some(lib_dir) = sherpa_lib_dir_hint() {
+        println!("  SHERPA_ONNX_LIB_DIR={}", lib_dir.display());
     }
 
     println!();
+}
+
+fn sherpa_lib_dir_hint() -> Option<PathBuf> {
+    let vendor_dir = PathBuf::from("vendor");
+    let expected_prefix = format!("sherpa-onnx-{SHERPA_ONNX_VERSION}-");
+
+    let entries: Vec<_> = std::fs::read_dir(&vendor_dir)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir() && path.join("lib").exists())
+        .collect();
+
+    entries
+        .iter()
+        .find(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(&expected_prefix))
+        })
+        .or_else(|| entries.first())
+        .map(|path| path.join("lib"))
 }
 
 async fn download_file_with_progress(url: &str, dest: &Path, label: &str) -> Result<String> {

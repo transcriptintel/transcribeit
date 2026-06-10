@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use reqwest::multipart;
 use serde::Deserialize;
+use serde_json::Value;
 use std::path::Path;
 
 use crate::audio::wav::encode_wav;
@@ -49,6 +50,32 @@ impl OpenAiApi {
         }
     }
 
+    fn is_diarize_model(&self) -> bool {
+        self.model.eq_ignore_ascii_case("gpt-4o-transcribe-diarize")
+    }
+
+    fn response_formats(&self) -> Vec<Option<&'static str>> {
+        if self.is_diarize_model() {
+            vec![Some("diarized_json"), None]
+        } else {
+            vec![Some("verbose_json"), None]
+        }
+    }
+
+    fn base_form(&self, response_format: Option<&'static str>) -> multipart::Form {
+        let mut form = multipart::Form::new().text("model", self.model.clone());
+        if let Some(fmt) = response_format {
+            form = form.text("response_format", fmt);
+        }
+        if self.is_diarize_model() {
+            form = form.text("chunking_strategy", "auto");
+        }
+        if let Some(lang) = self.language.as_deref() {
+            form = form.text("language", lang.to_string());
+        }
+        form
+    }
+
     /// Run the format-fallback + retry loop for a given form builder closure.
     async fn transcribe_with_fallback<F>(&self, build_form: F) -> Result<Transcript>
     where
@@ -57,7 +84,7 @@ impl OpenAiApi {
         let url = format!("{}/v1/audio/transcriptions", self.base_url);
 
         let mut last_error: Option<(reqwest::StatusCode, String)> = None;
-        for response_format in [Some("verbose_json"), None] {
+        for response_format in self.response_formats() {
             let result = {
                 let url = &url;
                 let client = &self.client;
@@ -111,13 +138,7 @@ impl Transcriber for OpenAiApi {
     async fn transcribe_path(&self, wav_path: &Path) -> Result<Transcript> {
         let path = wav_path.to_path_buf();
         self.transcribe_with_fallback(|response_format| {
-            let mut form = multipart::Form::new().text("model", self.model.clone());
-            if let Some(fmt) = response_format {
-                form = form.text("response_format", fmt);
-            }
-            if let Some(lang) = self.language.as_deref() {
-                form = form.text("language", lang.to_string());
-            }
+            let mut form = self.base_form(response_format);
             // Note: Part::file is async but we need a sync closure here.
             // Use blocking read since form building happens before the async send.
             let bytes = std::fs::read(&path)
@@ -141,13 +162,7 @@ impl Transcriber for OpenAiApi {
 
     async fn transcribe_wav(&self, wav_bytes: Vec<u8>) -> Result<Transcript> {
         self.transcribe_with_fallback(|response_format| {
-            let mut form = multipart::Form::new().text("model", self.model.clone());
-            if let Some(fmt) = response_format {
-                form = form.text("response_format", fmt);
-            }
-            if let Some(lang) = self.language.as_deref() {
-                form = form.text("language", lang.to_string());
-            }
+            let mut form = self.base_form(response_format);
             form = form.part(
                 "file",
                 multipart::Part::bytes(wav_bytes.clone())
@@ -160,60 +175,33 @@ impl Transcriber for OpenAiApi {
     }
 }
 
-/// Response with segments (verbose_json format).
-#[derive(Deserialize)]
-struct VerboseResponse {
-    segments: Option<Vec<ApiSegment>>,
-}
-
-/// Minimal response (json format, or verbose_json without segments).
-#[derive(Deserialize)]
-struct PlainResponse {
-    text: String,
-}
-
-#[derive(Deserialize)]
-struct ApiSegment {
-    start: f64,
-    end: f64,
-    text: String,
-}
-
 /// Parse response bytes, trying verbose_json first then falling back to plain json.
 /// This ensures compatibility with endpoints that don't support verbose_json.
 pub fn parse_response_bytes(body: &[u8]) -> Transcript {
-    // Try verbose format with segments first.
-    if let Ok(resp) = serde_json::from_slice::<VerboseResponse>(body)
-        && let Some(segs) = resp.segments
-        && !segs.is_empty()
-    {
-        return Transcript {
-            segments: segs
-                .into_iter()
-                .map(|s| Segment {
-                    start_ms: (s.start * 1000.0) as i64,
-                    end_ms: (s.end * 1000.0) as i64,
-                    text: s.text,
+    if let Ok(value) = serde_json::from_slice::<Value>(body) {
+        if let Some(segments) = parse_json_segments(&value)
+            && !segments.is_empty()
+        {
+            return Transcript {
+                segments,
+                provider_metadata: None,
+            };
+        }
+
+        if let Some(text) = value.get("text").and_then(Value::as_str)
+            && !text.trim().is_empty()
+        {
+            return Transcript {
+                segments: vec![Segment {
+                    start_ms: 0,
+                    end_ms: 0,
+                    text: text.to_string(),
                     speaker: None,
                     ..Default::default()
-                })
-                .collect(),
-            provider_metadata: None,
-        };
-    }
-
-    // Fall back to plain text response.
-    if let Ok(resp) = serde_json::from_slice::<PlainResponse>(body) {
-        return Transcript {
-            segments: vec![Segment {
-                start_ms: 0,
-                end_ms: 0,
-                text: resp.text,
-                speaker: None,
-                ..Default::default()
-            }],
-            provider_metadata: None,
-        };
+                }],
+                provider_metadata: None,
+            };
+        }
     }
 
     // Last resort: treat entire body as text.
@@ -227,6 +215,45 @@ pub fn parse_response_bytes(body: &[u8]) -> Transcript {
         }],
         provider_metadata: None,
     }
+}
+
+fn parse_json_segments(value: &Value) -> Option<Vec<Segment>> {
+    let segments = value.get("segments")?.as_array()?;
+    let parsed = segments.iter().filter_map(parse_json_segment).collect();
+    Some(parsed)
+}
+
+fn parse_json_segment(value: &Value) -> Option<Segment> {
+    let text = value
+        .get("text")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())?;
+
+    let start_ms = timestamp_ms(value.get("start")).unwrap_or(0);
+    let end_ms = timestamp_ms(value.get("end")).unwrap_or(start_ms);
+    let speaker = value
+        .get("speaker")
+        .or_else(|| value.get("speaker_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+
+    Some(Segment {
+        start_ms,
+        end_ms,
+        text: text.to_string(),
+        speaker,
+        ..Default::default()
+    })
+}
+
+fn timestamp_ms(value: Option<&Value>) -> Option<i64> {
+    let seconds = match value? {
+        Value::Number(n) => n.as_f64()?,
+        Value::String(s) => s.parse().ok()?,
+        _ => return None,
+    };
+    Some((seconds * 1000.0).round() as i64)
 }
 
 pub(crate) fn is_response_format_not_supported(body: &str) -> bool {
@@ -277,37 +304,4 @@ pub(crate) fn is_response_format_not_supported(body: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::is_response_format_not_supported;
-
-    #[test]
-    fn detects_structured_openai_error_param() {
-        let body = r#"{"error":{"message":"Unsupported value: 'response_format'","param":"response_format","type":"invalid_request_error"}}"#;
-        assert!(is_response_format_not_supported(body));
-    }
-
-    #[test]
-    fn detects_structured_azure_error_message() {
-        let body = r#"{"error":{"code":"BadRequest","message":"The request is invalid. Parameter 'response_format' is invalid."}}"#;
-        assert!(is_response_format_not_supported(body));
-    }
-
-    #[test]
-    fn falls_back_to_structured_error_code() {
-        let body = r#"{"error":{"code":"response_format","message":"Unsupported value"}}"#;
-        assert!(is_response_format_not_supported(body));
-    }
-
-    #[test]
-    fn rejects_unrelated_errors() {
-        let body =
-            r#"{"error":{"message":"Model not found","param":"model","code":"model_not_found"}}"#;
-        assert!(!is_response_format_not_supported(body));
-    }
-
-    #[test]
-    fn detects_plaintext_error_when_param_missing() {
-        let body = "unsupported value 'response_format' for audio transcription";
-        assert!(is_response_format_not_supported(body));
-    }
-}
+mod tests;

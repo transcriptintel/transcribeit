@@ -26,6 +26,7 @@ src/
     ├── sherpa_onnx.rs     # Local sherpa-onnx engine (auto-detects Whisper, Moonshine, SenseVoice)
     ├── openai_api.rs      # OpenAI-compatible REST API
     ├── azure_openai.rs    # Azure OpenAI REST API
+    ├── gemini.rs          # Gemini Files API + generateContent
     ├── qwen_filetrans.rs  # Qwen async file transcription provider
     ├── qwen_filetrans/    # Qwen request/response types and model limits
     ├── rate_limit.rs      # Retry logic and 429 handling
@@ -55,6 +56,7 @@ pub trait Transcriber: Send + Sync {
 - **Sherpa-ONNX engine** (`sherpa_onnx`) uses `transcribe()` — it needs decoded samples for the ONNX runtime.
 - **OpenAI/Azure API engines** override `transcribe_path()` to upload files directly via multipart, and `transcribe_wav()` to upload in-memory bytes — avoiding the decode→re-encode round-trip.
 - **Qwen file transcription** overrides `transcribe_path()` to upload prepared audio to S3-compatible storage, generate a pre-signed URL, and submit that URL to DashScope.
+- **Gemini** overrides `transcribe_path()` to upload prepared audio through Gemini Files API and call `generateContent` with structured JSON output.
 
 ## Processing pipeline
 
@@ -64,7 +66,7 @@ The `pipeline.rs` module orchestrates the full flow:
 Input file (any format)
   │
   ├─ needs_conversion()? ──→ extract_to_wav(normalize) for local provider
-  ├─ upload_as_mp3(normalize) for API providers and Qwen filetrans (16kHz mono MP3)
+  ├─ upload_as_mp3(normalize) for OpenAI/Azure, Qwen filetrans, and Gemini (16kHz mono MP3)
   │
   ├─ get_duration() via ffprobe
   │
@@ -99,10 +101,22 @@ Input file (any format)
       ├─ Text to stdout or `<input_stem>.txt`
       ├─ VTT to file or stdout (with `<v Speaker N>` tags when diarized)
       ├─ SRT to file or stdout (with `[Speaker N]` labels when diarized)
-      └─ JSON manifest to output directory (includes speaker field per segment)
+      └─ JSON manifest to output directory (`transcribeit.manifest.v2`)
 ```
 
 Temporary files use the `tempfile` crate and are cleaned up automatically on drop.
+
+## Manifest contract
+
+When `--output-dir` is set, the JSON manifest is the stable machine-readable contract for downstream applications. The current schema is `transcribeit.manifest.v2`.
+
+- `transcript.text` and `transcript.segments` are the preferred consumer-facing transcript fields.
+- Segment and word timestamps include canonical integer millisecond fields (`start_ms`, `end_ms`) plus second fields for readability.
+- `capabilities` describes which optional fields are present, such as word timestamps, speaker labels, segment language, and emotion.
+- `quality` describes how reliable timing/speaker metadata is, including `timing_source`, `timing_reliable`, and `timestamps_clamped`.
+- `provider_metadata` is a stable envelope: `{ "provider": "...", "schema_version": "...", "data": { ... } }`.
+- Provider-specific payloads live only under `provider_metadata.data`; temporary URLs and secrets must not be persisted.
+- The top-level `segments` array remains as a compatibility mirror for older consumers.
 
 ## Engines
 
@@ -147,6 +161,20 @@ The S3 staging implementation lives in `storage::s3` and works with AWS S3-compa
 
 Short synchronous Qwen models such as `qwen3-asr-flash` use a different API path and have strict 10 MB / 300 second limits. If one is selected with `-p qwen-filetrans`, the CLI fails before conversion or S3 upload.
 
+### Gemini (`gemini.rs`)
+
+Uses Gemini Files API and `generateContent` for whole-file multimodal transcription. The provider:
+
+- converts input audio/video to 16 kHz mono MP3
+- uploads the prepared file with a resumable Files API upload
+- waits for the file to become `ACTIVE`
+- requests structured JSON with `text`, segment timestamps, speaker, language, and emotion fields
+- maps valid segments into the normalized transcript/manifest model
+- falls back to generated transcript text when structured JSON is missing or invalid
+- deletes the temporary Gemini file after the transcription request
+
+Gemini is not a dedicated ASR endpoint. Timestamp, speaker, language, and emotion values come from the model's structured output, so benchmark quality before relying on them for subtitle workflows.
+
 ### Sherpa-ONNX (`sherpa_onnx.rs`)
 
 Local inference using [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with automatic model architecture detection. Uses a **dedicated worker thread pattern**: the `OfflineRecognizer` is created on a plain `std::thread` (not on the Tokio runtime) and stays there for its entire lifetime. Transcription requests are sent to the thread via an `mpsc` channel and results come back through `tokio::sync::oneshot` channels. This design avoids:
@@ -190,7 +218,7 @@ All settings (timeout, retries, wait times) are configurable via CLI flags and e
 
 ### Shared WAV encoding
 
-OpenAI/Azure engines can send file uploads directly and choose the correct container format for compatibility (WAV for local transcribe path, MP3 for API provider uploads). Qwen file transcription stages MP3 in S3-compatible storage and sends DashScope a pre-signed URL. The `audio::wav::encode_wav()` helper is still used by local engines and non-file upload paths.
+OpenAI/Azure engines can send file uploads directly and choose the correct container format for compatibility (WAV for local transcribe path, MP3 for API provider uploads). Qwen file transcription stages MP3 in S3-compatible storage and sends DashScope a pre-signed URL. Gemini uploads MP3 through Gemini Files API. The `audio::wav::encode_wav()` helper is still used by local engines and non-file upload paths.
 
 ## Model cache (`model_cache.rs`)
 
@@ -202,7 +230,7 @@ OpenAI/Azure engines can send file uploads directly and choose the correct conta
 
 ## Build requirements
 
-The `sherpa-onnx` Cargo feature is **enabled by default**. It requires the sherpa-onnx shared libraries at both compile time and runtime. The `build.rs` script loads a `.env` file and reads `SHERPA_ONNX_LIB_DIR` to configure the linker search path and embed an `rpath` so the binary can find the dylibs at runtime.
+The `sherpa-onnx` Cargo feature is opt-in. It requires the sherpa-onnx shared libraries at both compile time and runtime. The `build.rs` script loads a `.env` file and reads `SHERPA_ONNX_LIB_DIR` to configure the linker search path and embed an `rpath` so the binary can find the dylibs at runtime.
 
 Set `SHERPA_ONNX_LIB_DIR` in your `.env` file or environment before building:
 
@@ -211,13 +239,13 @@ Set `SHERPA_ONNX_LIB_DIR` in your `.env` file or environment before building:
 SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
 ```
 
-To build without the sherpa-onnx dependency entirely:
+To build with sherpa-onnx enabled:
 
 ```bash
-cargo build --release --no-default-features
+cargo build --release --features sherpa-onnx
 ```
 
-This removes the sherpa-onnx provider and eliminates the need for `SHERPA_ONNX_LIB_DIR`.
+The default build omits the sherpa-onnx provider and eliminates the need for `SHERPA_ONNX_LIB_DIR`.
 
 ## VAD-based segmentation (`audio/vad.rs`)
 

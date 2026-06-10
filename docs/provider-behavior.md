@@ -1,6 +1,6 @@
 # Provider behavior
 
-This project supports five providers. They share the same input/output surface, but engine type, API shape, and credentials differ.
+This project supports six providers. They share the same input/output surface, but engine type, API shape, and credentials differ.
 
 ## Local (`-p local`)
 
@@ -31,8 +31,8 @@ This project supports five providers. They share the same input/output surface, 
 - **SenseVoice limitation:** emotion and audio event detection tags are stripped by the sherpa-onnx C API and are not available in the output.
 - Segment concurrency is always 1 (sequential processing).
 - No external API key is required.
-- The `sherpa-onnx` feature is enabled by default. Build without it using `cargo build --no-default-features`.
-- Requires `SHERPA_ONNX_LIB_DIR` to be set at build time (see [Architecture](architecture.md#build-requirements)).
+- The `sherpa-onnx` feature is opt-in. Build with it using `cargo build --features sherpa-onnx`.
+- Requires `SHERPA_ONNX_LIB_DIR` to be set at build time when the feature is enabled (see [Architecture](architecture.md#build-requirements)).
 
 ## OpenAI-compatible (`-p openai`)
 
@@ -41,6 +41,11 @@ This project supports five providers. They share the same input/output surface, 
 - Model/engine: `--remote-model` (default `whisper-1`).
 - Endpoint used: `POST {base-url}/v1/audio/transcriptions`.
 - Files are uploaded as 16 kHz mono MP3 by default for compatibility.
+- Response handling:
+  - `whisper-1` is requested as `verbose_json` first, then retried without `response_format` if the endpoint rejects it.
+  - `gpt-4o-mini-transcribe` and `gpt-4o-transcribe` usually return top-level `text`, which becomes one untimed segment in the current CLI.
+  - `gpt-4o-transcribe-diarize` is requested as `diarized_json` with `chunking_strategy=auto`; speaker labels and segment timestamps are mapped into the transcript model.
+  - JSON responses are parsed defensively. Unknown fields are ignored, missing segment timestamps default to `0`, and invalid/empty segments fall back to top-level `text` when available.
 - Supports API resilience options:
   - `--max-retries`
   - `--request-timeout-secs`
@@ -86,12 +91,44 @@ This project supports five providers. They share the same input/output surface, 
 - Input audio/video is converted with FFmpeg to 16 kHz mono MP3 before upload.
 - The engine uploads the prepared file, generates a pre-signed GET URL, submits the Qwen async task, polls until completion, downloads the transcription JSON, and maps Qwen sentence timestamps into the project transcript model.
 - Manifests include Qwen provider metadata when available:
-  - `provider_metadata.qwen.task` with task ID, request ID, timing, status, and usage
-  - `provider_metadata.qwen.result` with audio info and transcript/sentence/word counts
+  - `provider_metadata.provider = "qwen-filetrans"`
+  - `provider_metadata.schema_version = "qwen-filetrans.metadata.v1"`
+  - `provider_metadata.data.task` with task ID, request ID, timing, status, and usage
+  - `provider_metadata.data.result` with audio info and transcript/sentence/word counts
   - per-segment `language`, `emotion`, and `words` with word-level timestamps
 - Temporary pre-signed URLs are not persisted in the manifest; only `file_url_present` is recorded.
 - Qwen file transcription is intended for whole-file processing. Do not enable segmentation unless you explicitly want multiple independent remote tasks.
 - If a short-audio `qwen3-asr-flash` model is accidentally selected with `-p qwen-filetrans`, the CLI validates the local file before upload and fails without staging it to S3. Short flash models have a 10 MB and 300 second limit and use a different API path.
+
+## Gemini (`-p gemini`)
+
+- Uses Gemini Files API plus `generateContent`.
+- Authentication: `--gemini-api-key` or `GEMINI_API_KEY`.
+  - `--api-key`/`OPENAI_API_KEY` is accepted as a fallback for scripting consistency.
+- Base URL defaults to `https://generativelanguage.googleapis.com/v1beta` and can be overridden with `--gemini-api-base-url` or `GEMINI_API_BASE_URL`.
+- Default model: `gemini-3.5-flash`.
+- Useful benchmark candidates include `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3-pro-preview`, and `gemini-2.5-flash`.
+- Endpoint flow:
+  - `POST {upload-base-url}/files` to start a resumable file upload.
+  - Upload bytes to the returned `x-goog-upload-url`.
+  - Poll `GET {base-url}/files/{id}` until the file is `ACTIVE`.
+  - `POST {base-url}/models/{model}:generateContent`.
+  - `DELETE {base-url}/files/{id}` after transcription.
+- Input audio/video is converted with FFmpeg to 16 kHz mono MP3 before upload.
+- The request uses Gemini structured JSON output and asks for:
+  - full transcript text
+  - chronological segments
+  - optional segment timestamps
+  - optional speaker, language, and emotion fields
+- Gemini timestamps, speakers, and emotions are generated model output, not a dedicated ASR response schema. The parser accepts future response fields, skips empty segments, and falls back to top-level generated text if structured JSON is missing or invalid.
+- Manifests include Gemini provider metadata when available:
+  - `provider_metadata.provider = "gemini"`
+  - `provider_metadata.schema_version = "gemini.metadata.v1"`
+  - `provider_metadata.data.model`
+  - `provider_metadata.data.upload_method`
+  - `provider_metadata.data.response.usage_metadata`
+  - `provider_metadata.data.response.finish_reasons`
+  - `provider_metadata.data.file.deleted`
 
 ## Why providers differ
 
@@ -100,7 +137,7 @@ This project supports five providers. They share the same input/output surface, 
 Both are local engines that run without network access. They differ in the model format and inference backend:
 
 - **Local** uses GGML models via `whisper.cpp` (`whisper-rs` binding). Supports all Whisper model sizes. Uses FFmpeg `silencedetect` for segmentation.
-- **Sherpa-ONNX** uses ONNX models via the `sherpa-onnx` C library. Supports three model architectures (Whisper, Moonshine, SenseVoice) with automatic detection. Whisper ONNX supports all sizes except `large-v3`. Requires auto-segmentation at 30s due to Whisper ONNX limitations. Supports VAD-based segmentation via `--vad-model` for cleaner speech boundaries (recommended). Also supports speaker diarization via `--speakers`. The `sherpa-onnx` feature is optional (enabled by default); build without it using `cargo build --no-default-features`.
+- **Sherpa-ONNX** uses ONNX models via the `sherpa-onnx` C library. Supports three model architectures (Whisper, Moonshine, SenseVoice) with automatic detection. Whisper ONNX supports all sizes except `large-v3`. Requires auto-segmentation at 30s due to Whisper ONNX limitations. Supports VAD-based segmentation via `--vad-model` for cleaner speech boundaries (recommended). Also supports speaker diarization via `--speakers`. The `sherpa-onnx` feature is optional; enable it with `cargo build --features sherpa-onnx`.
 
 ### Segmentation: VAD vs FFmpeg silencedetect
 

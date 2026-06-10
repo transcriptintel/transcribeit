@@ -3,9 +3,9 @@ use crate::transcriber::{Segment, Transcriber, Transcript};
 use anyhow::Result;
 use async_trait::async_trait;
 use hound::WavSpec;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::f32::consts::PI;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::tempdir;
 
@@ -25,24 +25,9 @@ async fn pipeline_end_to_end_writes_vtt_and_manifest() -> Result<()> {
     run_pipeline(
         &FakeTranscriber,
         PipelineConfig {
-            input: input_path.clone(),
-            output_dir: Some(output_dir.clone()),
-            output_format: OutputFormat::Vtt,
-            language: None,
-            segment: false,
-            silence_threshold: -40.0,
-            min_silence_duration: 0.8,
-            max_segment_secs: 600.0,
             provider_name: "fake".into(),
             model_name: "fake-model".into(),
-            auto_split_for_api: false,
-            upload_as_mp3: false,
-            segment_concurrency: 1,
-            normalize_audio: false,
-            speakers: None,
-            diarize_segmentation_model: None,
-            diarize_embedding_model: None,
-            vad_model: None,
+            ..test_config(input_path.clone(), output_dir.clone(), OutputFormat::Vtt)
         },
     )
     .await?;
@@ -66,9 +51,79 @@ async fn pipeline_end_to_end_writes_vtt_and_manifest() -> Result<()> {
     );
     assert_eq!(manifest["config"]["provider"], "fake");
     assert_eq!(manifest["config"]["model"], "fake-model");
+    assert_eq!(manifest["schema_version"], "transcribeit.manifest.v2");
+    assert_eq!(manifest["input"]["duration_ms"], 1000);
     assert_eq!(manifest["segments"][0]["start_secs"], 0.0);
     assert_eq!(manifest["segments"][0]["end_secs"], 1.0);
+    assert_eq!(manifest["segments"][0]["id"], "seg_000001");
+    assert_eq!(manifest["segments"][0]["start_ms"], 0);
+    assert_eq!(manifest["segments"][0]["end_ms"], 1000);
     assert_eq!(manifest["segments"][0]["text"], "integration");
+    assert_eq!(manifest["transcript"]["text"], "integration");
+    assert_eq!(manifest["transcript"]["segments"][0]["id"], "seg_000001");
+    assert_eq!(manifest["capabilities"]["segments"], true);
+    assert_eq!(manifest["capabilities"]["word_timestamps"], false);
+    assert_eq!(manifest["quality"]["timing_source"], "unknown");
+    assert_eq!(manifest["quality"]["timing_reliable"], false);
+    assert!(manifest.get("provider_metadata").is_none());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pipeline_manifest_wraps_provider_metadata_in_stable_envelope() -> Result<()> {
+    if !command_exists("ffprobe") {
+        eprintln!("Skipping integration test: ffprobe not available");
+        return Ok(());
+    }
+
+    let workdir = tempdir()?;
+    let input_path = workdir.path().join("sample.wav");
+    write_test_wav(&input_path, 1_000)?;
+
+    let output_dir = workdir.path().join("out");
+
+    run_pipeline(
+        &FakeMetadataTranscriber,
+        PipelineConfig {
+            language: Some("en".to_string()),
+            provider_name: "gemini".into(),
+            model_name: "gemini-test".into(),
+            ..test_config(input_path.clone(), output_dir.clone(), OutputFormat::Text)
+        },
+    )
+    .await?;
+
+    let manifest_path = output_dir.join("sample.manifest.json");
+    let manifest_data = std::fs::read_to_string(manifest_path)?;
+    let manifest: Value = serde_json::from_str(&manifest_data)?;
+
+    assert_eq!(manifest["provider_metadata"]["provider"], "gemini");
+    assert_eq!(
+        manifest["provider_metadata"]["schema_version"],
+        "gemini.metadata.v1"
+    );
+    assert_eq!(
+        manifest["provider_metadata"]["data"]["response"]["timestamps_clamped"],
+        true
+    );
+    assert_eq!(
+        manifest["provider_metadata"]["data"]["file"]["deleted"],
+        true
+    );
+    assert_eq!(manifest["quality"]["timing_source"], "model_generated");
+    assert_eq!(manifest["quality"]["timing_reliable"], false);
+    assert_eq!(manifest["quality"]["timestamps_clamped"], true);
+    assert_eq!(manifest["quality"]["speaker_source"], "model_generated");
+    assert!(
+        manifest["quality"]["warnings"]
+            .as_array()
+            .expect("warnings should be an array")
+            .iter()
+            .any(|warning| warning
+                .as_str()
+                .is_some_and(|text| text.contains("model-generated")))
+    );
 
     Ok(())
 }
@@ -89,24 +144,9 @@ async fn pipeline_end_to_end_writes_text_file_and_manifest() -> Result<()> {
     run_pipeline(
         &FakeTranscriber,
         PipelineConfig {
-            input: input_path.clone(),
-            output_dir: Some(output_dir.clone()),
-            output_format: OutputFormat::Text,
-            language: None,
-            segment: false,
-            silence_threshold: -40.0,
-            min_silence_duration: 0.8,
-            max_segment_secs: 600.0,
             provider_name: "fake".into(),
             model_name: "fake-model".into(),
-            auto_split_for_api: false,
-            upload_as_mp3: false,
-            segment_concurrency: 1,
-            normalize_audio: false,
-            speakers: None,
-            diarize_segmentation_model: None,
-            diarize_embedding_model: None,
-            vad_model: None,
+            ..test_config(input_path.clone(), output_dir.clone(), OutputFormat::Text)
         },
     )
     .await?;
@@ -139,24 +179,10 @@ async fn pipeline_end_to_end_writes_srt_file_and_manifest() -> Result<()> {
     run_pipeline(
         &FakeTranscriber,
         PipelineConfig {
-            input: input_path.clone(),
-            output_dir: Some(output_dir.clone()),
-            output_format: OutputFormat::Srt,
             language: Some("en".to_string()),
-            segment: false,
-            silence_threshold: -40.0,
-            min_silence_duration: 0.8,
-            max_segment_secs: 600.0,
             provider_name: "fake".into(),
             model_name: "fake-model".into(),
-            auto_split_for_api: false,
-            upload_as_mp3: false,
-            segment_concurrency: 1,
-            normalize_audio: false,
-            speakers: None,
-            diarize_segmentation_model: None,
-            diarize_embedding_model: None,
-            vad_model: None,
+            ..test_config(input_path.clone(), output_dir.clone(), OutputFormat::Srt)
         },
     )
     .await?;
@@ -191,24 +217,13 @@ async fn pipeline_segmented_api_uploads_are_processed_concurrently() -> Result<(
     run_pipeline(
         &FakeApiTranscriber,
         PipelineConfig {
-            input: input_path.clone(),
-            output_dir: Some(output_dir.clone()),
-            output_format: OutputFormat::Text,
-            language: None,
             segment: true,
-            silence_threshold: -40.0,
-            min_silence_duration: 0.8,
             max_segment_secs: 5.0,
             provider_name: "fake-api".into(),
             model_name: "fake-model".into(),
-            auto_split_for_api: false,
             upload_as_mp3: true,
             segment_concurrency: 2,
-            normalize_audio: false,
-            speakers: None,
-            diarize_segmentation_model: None,
-            diarize_embedding_model: None,
-            vad_model: None,
+            ..test_config(input_path.clone(), output_dir.clone(), OutputFormat::Text)
         },
     )
     .await?;
@@ -231,6 +246,29 @@ fn command_exists(command: &str) -> bool {
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
+}
+
+fn test_config(input: PathBuf, output_dir: PathBuf, output_format: OutputFormat) -> PipelineConfig {
+    PipelineConfig {
+        input,
+        output_dir: Some(output_dir),
+        output_format,
+        language: None,
+        segment: false,
+        silence_threshold: -40.0,
+        min_silence_duration: 0.8,
+        max_segment_secs: 600.0,
+        provider_name: "fake".into(),
+        model_name: "fake-model".into(),
+        auto_split_for_api: false,
+        upload_as_mp3: false,
+        segment_concurrency: 1,
+        normalize_audio: false,
+        speakers: None,
+        diarize_segmentation_model: None,
+        diarize_embedding_model: None,
+        vad_model: None,
+    }
 }
 
 fn write_test_wav(path: &Path, duration_ms: u64) -> Result<()> {
@@ -292,5 +330,34 @@ impl Transcriber for FakeApiTranscriber {
 
     async fn transcribe_path(&self, _wav_path: &Path) -> Result<Transcript> {
         self.transcribe(Vec::new()).await
+    }
+}
+
+struct FakeMetadataTranscriber;
+
+#[async_trait]
+impl Transcriber for FakeMetadataTranscriber {
+    async fn transcribe(&self, _audio_samples: Vec<f32>) -> Result<Transcript> {
+        Ok(Transcript {
+            segments: vec![Segment {
+                start_ms: 0,
+                end_ms: 1000,
+                text: "metadata".to_string(),
+                speaker: Some("Speaker 1".to_string()),
+                language: Some("en".to_string()),
+                emotion: Some("neutral".to_string()),
+                ..Default::default()
+            }],
+            provider_metadata: Some(json!({
+                "gemini": {
+                    "response": {
+                        "timestamps_clamped": true
+                    },
+                    "file": {
+                        "deleted": true
+                    }
+                }
+            })),
+        })
     }
 }

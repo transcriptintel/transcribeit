@@ -101,13 +101,17 @@ DIARIZE_EMBEDDING_MODEL=/path/to/embedding.onnx
 
 ### Building without sherpa-onnx
 
-If you do not need the sherpa-onnx provider and want to avoid installing the shared libraries:
+If you do not need the sherpa-onnx provider, use the default build. It does not require the shared libraries:
 
 ```bash
-cargo build --release --no-default-features
+cargo build --release
 ```
 
-This disables the `sherpa-onnx` Cargo feature (which is enabled by default) and removes the dependency on `SHERPA_ONNX_LIB_DIR`.
+To enable the sherpa-onnx provider, install the shared libraries and build with:
+
+```bash
+cargo build --release --features sherpa-onnx
+```
 
 ### Model download fails
 
@@ -277,7 +281,7 @@ Copy the dylibs from `vendor/sherpa-onnx-*/lib/` or download them with `transcri
 
 If you see a hardcoded path from another machine (e.g., `/Users/someone/...`), the binary was built with an old `build.rs`. Rebuild with the latest code — the portable `@executable_path/lib` rpath is now used.
 
-To avoid this dependency entirely, build without sherpa-onnx:
+To avoid this dependency entirely, use the default build:
 ```bash
-cargo build --release --no-default-features
+cargo build --release
 ```
