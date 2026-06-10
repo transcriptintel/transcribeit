@@ -46,7 +46,7 @@ transcribeit run [OPTIONS] --input <FILE_OR_PATH_OR_GLOB>
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-i, --input` | Input path, directory, or glob pattern for audio/video files | required |
-| `-p, --provider` | `local`, `sherpa-onnx`, `openai`, `azure`, or `qwen-filetrans` | `local` |
+| `-p, --provider` | `local`, `sherpa-onnx`, `openai`, `azure`, `qwen-filetrans`, or `gemini` | `local` |
 
 #### Local provider options (`-p local`)
 
@@ -80,6 +80,10 @@ Sherpa-ONNX automatically enables segmentation and caps segment length at 30 sec
 | `-a, --api-key` | API key | `OPENAI_API_KEY` env var |
 | `--remote-model` | Model name | `whisper-1` |
 
+Supported hosted OpenAI transcription models include `whisper-1`, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`, and `gpt-4o-transcribe-diarize`.
+
+`whisper-1` returns timestamped segments through the default `verbose_json` request path. `gpt-4o-mini-transcribe` and `gpt-4o-transcribe` return plain transcript text through the current CLI. When `--remote-model gpt-4o-transcribe-diarize` is selected, the provider requests `diarized_json` with `chunking_strategy=auto` and maps speaker labels into VTT/SRT/manifest output.
+
 #### Azure provider options
 
 | Option | Description | Default |
@@ -109,9 +113,23 @@ Sherpa-ONNX automatically enables segmentation and caps segment length at 30 sec
 
 Qwen file transcription uploads the prepared audio to S3-compatible storage and passes a pre-signed GET URL to DashScope. The provider is intended for whole-file transcription; avoid `--segment` unless you explicitly want multiple independent remote jobs.
 
-When available, Qwen manifests include `provider_metadata.qwen` with task timing/usage, audio info, transcript counts, and word-level timestamps on each segment. Temporary pre-signed URLs are not persisted.
+When available, Qwen manifests include `provider_metadata.provider = "qwen-filetrans"` and Qwen task timing/usage, audio info, and transcript counts under `provider_metadata.data`. Word-level timestamps remain on each normalized segment. Temporary pre-signed URLs are not persisted.
 
 If a short-audio `qwen3-asr-flash` model is selected with `-p qwen-filetrans`, the CLI validates the file size and duration before upload and fails without staging the file to S3. Use `qwen3-asr-flash-filetrans` for this provider.
+
+#### Gemini provider options (`-p gemini`)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--gemini-api-key` | Gemini API key | `GEMINI_API_KEY` env var |
+| `--gemini-api-base-url` | Gemini API base URL | `GEMINI_API_BASE_URL` env var, or `https://generativelanguage.googleapis.com/v1beta` |
+| `--remote-model` | Gemini model name | `gemini-3.5-flash` |
+
+The Gemini provider uses the Gemini Files API plus `generateContent` with structured JSON output. It converts input audio/video to 16 kHz mono MP3 before upload, then asks Gemini for a transcript object with `text`, `segments`, timestamps, speaker, language, and emotion fields.
+
+Current model candidates verified through the Gemini models API include `gemini-3.5-flash`, `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3-pro-preview`, and `gemini-2.5-flash`. Prefer stable `gemini-3.5-flash` for the default path and benchmark preview models before adopting them in production workflows.
+
+Gemini timestamps and speaker labels are generated structured output rather than a dedicated ASR response schema. The parser is defensive: invalid JSON, missing fields, empty segments, and unknown future response fields fall back to transcript text instead of failing the run.
 
 #### Output options
 
@@ -124,7 +142,7 @@ If a short-audio `qwen3-asr-flash` model is selected with `-p qwen-filetrans`, t
 
 #### API resilience options
 
-These options apply to OpenAI, Azure, and Qwen file transcription providers:
+These options apply to OpenAI, Azure, Qwen file transcription, and Gemini providers:
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -187,6 +205,8 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 | `MODEL_CACHE_DIR` | Directory for downloaded models | `.cache` |
 | `HF_TOKEN` | Hugging Face API token (optional) | none |
 | `OPENAI_API_KEY` | OpenAI API key | none |
+| `GEMINI_API_KEY` | Gemini API key | none |
+| `GEMINI_API_BASE_URL` | Gemini API base URL | `https://generativelanguage.googleapis.com/v1beta` |
 | `AZURE_API_KEY` | Azure API key fallback for Azure provider if `--azure-api-key` is unset | none |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | none |
 | `AZURE_DEPLOYMENT_NAME` | Azure deployment name | `whisper` |
@@ -310,9 +330,11 @@ transcribeit run -p qwen-filetrans -i recording.mp3 \
 - **Local** (`-p local`) runs whisper.cpp in-process using GGML models.
 - **Sherpa-ONNX** (`-p sherpa-onnx`) runs sherpa-onnx in-process. Auto-detects Whisper, Moonshine, and SenseVoice models from directory contents. Always auto-segments at 30s.
 - **OpenAI-compatible** (`-p openai`) uses `--remote-model` and calls `POST {base-url}/v1/audio/transcriptions`.
+  `gpt-4o-transcribe-diarize` is handled specially: the request includes `response_format=diarized_json` and `chunking_strategy=auto`, and response segments are parsed defensively so unknown or missing fields do not fail the run.
 - **Azure** (`-p azure`) uses `--azure-deployment` and calls:
   `POST {base-url}/openai/deployments/{deployment}/audio/transcriptions?api-version={version}`.
 - **Qwen file transcription** (`-p qwen-filetrans`) uploads audio to S3-compatible storage, passes a pre-signed URL to DashScope, and polls the async transcription task.
+- **Gemini** (`-p gemini`) uploads audio through Gemini Files API, calls `generateContent`, and parses structured transcript JSON defensively.
 
 For the full matrix and upload/auth notes, see: [Provider behavior](provider-behavior.md).  
 For benchmark guidance and result templates, see: [Performance benchmarks](performance-benchmarks.md).
@@ -328,11 +350,15 @@ When `--output-dir` is specified, the following files are created:
 
 ### Manifest format
 
+Manifests use `schema_version: "transcribeit.manifest.v2"`. New consumers should prefer `transcript.text`, `transcript.segments`, `capabilities`, `quality`, and the `provider_metadata` envelope. The top-level `segments` array remains for compatibility with earlier consumers.
+
 ```json
 {
+  "schema_version": "transcribeit.manifest.v2",
   "input": {
     "file": "meeting.mp4",
-    "duration_secs": 3600.0
+    "duration_secs": 3600.0,
+    "duration_ms": 3600000
   },
   "config": {
     "provider": "local",
@@ -344,33 +370,77 @@ When `--output-dir` is specified, the following files are created:
     "language": "en",
     "normalized_audio": true
   },
+  "capabilities": {
+    "segments": true,
+    "word_timestamps": true,
+    "speaker_labels": true,
+    "language_per_segment": true,
+    "emotion_per_segment": true,
+    "native_timestamps": true
+  },
+  "quality": {
+    "timing_source": "provider_native",
+    "timing_reliable": true,
+    "timestamps_clamped": false,
+    "speaker_source": "provider_native",
+    "warnings": []
+  },
+  "transcript": {
+    "text": "Hello, welcome to the meeting.",
+    "segments": [
+      {
+        "id": "seg_000001",
+        "index": 0,
+        "start_secs": 0.0,
+        "end_secs": 5.25,
+        "start_ms": 0,
+        "end_ms": 5250,
+        "text": "Hello, welcome to the meeting.",
+        "speaker": "Speaker 0",
+        "language": "en",
+        "emotion": "neutral",
+        "words": [
+          {
+            "id": "seg_000001_word_000001",
+            "index": 0,
+            "start_secs": 0.0,
+            "end_secs": 0.4,
+            "start_ms": 0,
+            "end_ms": 400,
+            "text": "Hello",
+            "punctuation": ","
+          }
+        ]
+      }
+    ]
+  },
   "segments": [
     {
+      "id": "seg_000001",
       "index": 0,
       "start_secs": 0.0,
       "end_secs": 5.25,
+      "start_ms": 0,
+      "end_ms": 5250,
       "text": "Hello, welcome to the meeting.",
       "speaker": "Speaker 0",
       "language": "en",
       "emotion": "neutral",
-      "words": [
-        {
-          "start_secs": 0.0,
-          "end_secs": 0.4,
-          "text": "Hello",
-          "punctuation": ","
-        }
-      ]
+      "words": []
     }
   ],
   "stats": {
     "total_duration_secs": 3600.0,
+    "total_duration_ms": 3600000,
     "total_segments": 42,
     "total_characters": 15000,
-    "processing_time_secs": 120.5
+    "processing_time_secs": 120.5,
+    "processing_time_ms": 120500
   },
   "provider_metadata": {
-    "qwen": {
+    "provider": "qwen-filetrans",
+    "schema_version": "qwen-filetrans.metadata.v1",
+    "data": {
       "model": "qwen3-asr-flash-filetrans",
       "task": {
         "task_status": "SUCCEEDED",

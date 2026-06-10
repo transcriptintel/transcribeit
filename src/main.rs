@@ -21,6 +21,7 @@ use clap::Parser;
 use crate::audio::extract::check_ffmpeg;
 use crate::cli::{Cli, Command, ModelFormat, OutputFormatArg, Provider, SetupComponent};
 use crate::engines::azure_openai::AzureOpenAi;
+use crate::engines::gemini::GeminiApi;
 use crate::engines::model_cache::ModelCache;
 use crate::engines::openai_api::OpenAiApi;
 use crate::engines::qwen_filetrans::QwenFileTrans;
@@ -131,9 +132,11 @@ async fn main() -> Result<()> {
             base_url,
             api_key,
             dashscope_api_key,
+            gemini_api_key,
             azure_api_key,
             remote_model,
             qwen_api_base_url,
+            gemini_api_base_url,
             language,
             azure_deployment,
             azure_api_version,
@@ -185,13 +188,15 @@ async fn main() -> Result<()> {
                 .unwrap_or("qwen3-asr-flash-filetrans");
             let qwen_needs_mp3_staging = matches!(provider, Provider::QwenFiletrans)
                 && is_qwen_filetrans_model(qwen_filetrans_model);
+            let openai_style_upload = matches!(provider, Provider::Openai | Provider::Azure);
+            let gemini_needs_mp3_upload = matches!(provider, Provider::Gemini);
             let upload_as_mp3 =
-                matches!(provider, Provider::Openai | Provider::Azure) || qwen_needs_mp3_staging;
+                openai_style_upload || qwen_needs_mp3_staging || gemini_needs_mp3_upload;
             #[cfg(feature = "sherpa-onnx")]
             let is_sherpa = matches!(provider, Provider::SherpaOnnx);
             #[cfg(not(feature = "sherpa-onnx"))]
             let is_sherpa = false;
-            let auto_split = upload_as_mp3 || is_sherpa;
+            let auto_split = openai_style_upload || qwen_needs_mp3_staging || is_sherpa;
             let max_segment_secs = if is_sherpa {
                 // sherpa-onnx Whisper only supports ≤30s per call
                 max_segment_secs.min(30.0)
@@ -313,6 +318,25 @@ async fn main() -> Result<()> {
                                 uploader,
                             )?),
                             "qwen-filetrans".into(),
+                            model_name,
+                        )
+                    }
+                    Provider::Gemini => {
+                        let key = gemini_api_key
+                            .or(api_key)
+                            .context(
+                                "--gemini-api-key, GEMINI_API_KEY, --api-key, or OPENAI_API_KEY is required for --provider gemini",
+                            )?;
+                        let model_name = remote_model.unwrap_or_else(|| "gemini-3.5-flash".into());
+                        (
+                            Box::new(GeminiApi::new(
+                                gemini_api_base_url,
+                                key,
+                                model_name.clone(),
+                                language.clone(),
+                                api_settings,
+                            )?),
+                            "gemini".into(),
                             model_name,
                         )
                     }

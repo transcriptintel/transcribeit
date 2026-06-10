@@ -3107,6 +3107,7 @@ dependencies = [
  "tar",
  "tempfile",
  "tokio",
+ "urlencoding",
  "uuid",
  "whisper-rs",
 ]

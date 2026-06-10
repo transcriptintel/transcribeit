@@ -79,6 +79,8 @@ pub(crate) enum Provider {
     /// Qwen3-ASR-Flash-Filetrans via DashScope and S3 pre-signed URLs
     #[value(name = "qwen-filetrans")]
     QwenFiletrans,
+    /// Gemini multimodal transcription through generateContent and Files API
+    Gemini,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -189,11 +191,15 @@ pub(crate) enum Command {
         #[arg(long, env = "DASHSCOPE_API_KEY")]
         dashscope_api_key: Option<String>,
 
+        /// Gemini API key (or set GEMINI_API_KEY)
+        #[arg(long, env = "GEMINI_API_KEY")]
+        gemini_api_key: Option<String>,
+
         /// Azure API key (or set AZURE_API_KEY env var)
         #[arg(long, env = "AZURE_API_KEY")]
         azure_api_key: Option<String>,
 
-        /// Remote model name (for --provider openai or qwen-filetrans)
+        /// Remote model name (for --provider openai, qwen-filetrans, or gemini)
         #[arg(long)]
         remote_model: Option<String>,
 
@@ -204,6 +210,14 @@ pub(crate) enum Command {
             default_value = "https://dashscope-intl.aliyuncs.com/api/v1"
         )]
         qwen_api_base_url: String,
+
+        /// Gemini API base URL
+        #[arg(
+            long,
+            env = "GEMINI_API_BASE_URL",
+            default_value = "https://generativelanguage.googleapis.com/v1beta"
+        )]
+        gemini_api_base_url: String,
 
         /// Language code (e.g. en, fr, auto). If not set, auto-detection is used.
         #[arg(long)]
