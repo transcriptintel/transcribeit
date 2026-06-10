@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::time::Instant;
 
-use anyhow::{Context, Result};
+#[cfg(feature = "sherpa-onnx")]
+use anyhow::Context;
+use anyhow::Result;
 use futures_util::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
 

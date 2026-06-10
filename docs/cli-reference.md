@@ -201,7 +201,7 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SHERPA_ONNX_LIB_DIR` | Path to sherpa-onnx shared libraries (required for build) | none |
+| `SHERPA_ONNX_LIB_DIR` | Path to sherpa-onnx shared libraries (required when building with `--features sherpa-onnx`) | none |
 | `MODEL_CACHE_DIR` | Directory for downloaded models | `.cache` |
 | `HF_TOKEN` | Hugging Face API token (optional) | none |
 | `OPENAI_API_KEY` | OpenAI API key | none |

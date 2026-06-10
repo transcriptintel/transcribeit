@@ -31,8 +31,8 @@ This project supports six providers. They share the same input/output surface, b
 - **SenseVoice limitation:** emotion and audio event detection tags are stripped by the sherpa-onnx C API and are not available in the output.
 - Segment concurrency is always 1 (sequential processing).
 - No external API key is required.
-- The `sherpa-onnx` feature is enabled by default. Build without it using `cargo build --no-default-features`.
-- Requires `SHERPA_ONNX_LIB_DIR` to be set at build time (see [Architecture](architecture.md#build-requirements)).
+- The `sherpa-onnx` feature is opt-in. Build with it using `cargo build --features sherpa-onnx`.
+- Requires `SHERPA_ONNX_LIB_DIR` to be set at build time when the feature is enabled (see [Architecture](architecture.md#build-requirements)).
 
 ## OpenAI-compatible (`-p openai`)
 
@@ -137,7 +137,7 @@ This project supports six providers. They share the same input/output surface, b
 Both are local engines that run without network access. They differ in the model format and inference backend:
 
 - **Local** uses GGML models via `whisper.cpp` (`whisper-rs` binding). Supports all Whisper model sizes. Uses FFmpeg `silencedetect` for segmentation.
-- **Sherpa-ONNX** uses ONNX models via the `sherpa-onnx` C library. Supports three model architectures (Whisper, Moonshine, SenseVoice) with automatic detection. Whisper ONNX supports all sizes except `large-v3`. Requires auto-segmentation at 30s due to Whisper ONNX limitations. Supports VAD-based segmentation via `--vad-model` for cleaner speech boundaries (recommended). Also supports speaker diarization via `--speakers`. The `sherpa-onnx` feature is optional (enabled by default); build without it using `cargo build --no-default-features`.
+- **Sherpa-ONNX** uses ONNX models via the `sherpa-onnx` C library. Supports three model architectures (Whisper, Moonshine, SenseVoice) with automatic detection. Whisper ONNX supports all sizes except `large-v3`. Requires auto-segmentation at 30s due to Whisper ONNX limitations. Supports VAD-based segmentation via `--vad-model` for cleaner speech boundaries (recommended). Also supports speaker diarization via `--speakers`. The `sherpa-onnx` feature is optional; enable it with `cargo build --features sherpa-onnx`.
 
 ### Segmentation: VAD vs FFmpeg silencedetect
 

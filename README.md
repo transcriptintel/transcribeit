@@ -15,11 +15,11 @@ Accepts any audio or video format — FFmpeg handles conversion automatically.
 ## Quick start
 
 ```bash
-# Build (reads SHERPA_ONNX_LIB_DIR from .env automatically via build.rs)
+# Build the default binary
 cargo build --release
 
-# Build without sherpa-onnx (no shared library dependency needed)
-cargo build --release --no-default-features
+# Build with sherpa-onnx (reads SHERPA_ONNX_LIB_DIR from .env automatically via build.rs)
+cargo build --release --features sherpa-onnx
 
 # Download a GGML model (default format, for --provider local)
 transcribeit download-model -s base
@@ -100,7 +100,7 @@ transcribeit run -i interview.mp3 -m base --speakers 2 \
 - **VAD-based segmentation** — Speech-aware segmentation via Silero VAD (sherpa-onnx). Detects speech boundaries with padding and gap merging to avoid mid-word cuts. Use `--vad-model .cache/silero_vad.onnx`.
 - **Silence-based segmentation** — Fallback segmentation via FFmpeg `silencedetect` for API providers or when VAD model is not available.
 - **sherpa-onnx auto-segmentation** — Whisper ONNX models only support ≤30s per call; segmentation is enabled automatically.
-- **sherpa-onnx is optional** — Enabled by default as a Cargo feature. Build without it: `cargo build --no-default-features`.
+- **sherpa-onnx is optional** — Enable it explicitly with `cargo build --features sherpa-onnx` when you need ONNX providers or Sherpa-backed diarization.
 - **Auto-split for API limits** — Files exceeding 25MB are automatically segmented when using remote providers.
 - **Progress spinner** — Shows live terminal feedback during transcription (single file and segmented mode).
 - **Parallel API segment transcription** — Multiple segment requests can be processed concurrently with `--segment-concurrency`.
@@ -161,7 +161,7 @@ On first run, use `transcribeit setup` to download models and additional compone
 To build a distributable binary:
 
 ```bash
-cargo build --release
+cargo build --release --features sherpa-onnx
 # Copy binary + libs
 cp target/release/transcribeit dist/
 cp vendor/sherpa-onnx-*/lib/lib*.dylib dist/lib/
@@ -170,7 +170,7 @@ cp vendor/sherpa-onnx-*/lib/lib*.dylib dist/lib/
 To build without sherpa-onnx (no shared library dependency):
 
 ```bash
-cargo build --release --no-default-features
+cargo build --release
 ```
 
 ## License

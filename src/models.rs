@@ -295,6 +295,7 @@ async fn write_response_to_path(
     Ok(())
 }
 
+#[cfg(feature = "sherpa-onnx")]
 async fn extract_archive(archive_path: &Path, extract_to: &Path) -> Result<()> {
     let archive_path = archive_path.to_path_buf();
     let extract_to = extract_to.to_path_buf();

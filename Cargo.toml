@@ -14,7 +14,7 @@ strip = "symbols"
 incremental = false
 
 [features]
-default = ["sherpa-onnx"]
+default = []
 
 [build-dependencies]
 dotenvy = "0.15"

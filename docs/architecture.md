@@ -230,7 +230,7 @@ OpenAI/Azure engines can send file uploads directly and choose the correct conta
 
 ## Build requirements
 
-The `sherpa-onnx` Cargo feature is **enabled by default**. It requires the sherpa-onnx shared libraries at both compile time and runtime. The `build.rs` script loads a `.env` file and reads `SHERPA_ONNX_LIB_DIR` to configure the linker search path and embed an `rpath` so the binary can find the dylibs at runtime.
+The `sherpa-onnx` Cargo feature is opt-in. It requires the sherpa-onnx shared libraries at both compile time and runtime. The `build.rs` script loads a `.env` file and reads `SHERPA_ONNX_LIB_DIR` to configure the linker search path and embed an `rpath` so the binary can find the dylibs at runtime.
 
 Set `SHERPA_ONNX_LIB_DIR` in your `.env` file or environment before building:
 
@@ -239,13 +239,13 @@ Set `SHERPA_ONNX_LIB_DIR` in your `.env` file or environment before building:
 SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
 ```
 
-To build without the sherpa-onnx dependency entirely:
+To build with sherpa-onnx enabled:
 
 ```bash
-cargo build --release --no-default-features
+cargo build --release --features sherpa-onnx
 ```
 
-This removes the sherpa-onnx provider and eliminates the need for `SHERPA_ONNX_LIB_DIR`.
+The default build omits the sherpa-onnx provider and eliminates the need for `SHERPA_ONNX_LIB_DIR`.
 
 ## VAD-based segmentation (`audio/vad.rs`)
 
