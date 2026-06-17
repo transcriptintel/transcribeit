@@ -9,6 +9,7 @@ use anyhow::Result;
 use futures_util::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
 
+use crate::analysis::{AnalysisConfig, TranscriptAnalyzer};
 use crate::audio::extract::{extract_to_mp3, extract_to_wav, needs_conversion};
 use crate::audio::segment::{compute_segments, detect_silence, get_duration, split_audio};
 use crate::pipeline_output::write_outputs;
@@ -46,6 +47,9 @@ pub struct PipelineConfig {
     pub upload_as_mp3: bool,
     pub segment_concurrency: usize,
     pub normalize_audio: bool,
+    pub analysis: AnalysisConfig,
+    #[cfg_attr(not(feature = "sherpa-onnx"), allow(dead_code))]
+    pub diarize: bool,
     #[cfg_attr(not(feature = "sherpa-onnx"), allow(dead_code))]
     pub speakers: Option<i32>,
     #[cfg_attr(not(feature = "sherpa-onnx"), allow(dead_code))]
@@ -57,7 +61,11 @@ pub struct PipelineConfig {
     pub vad_model: Option<String>,
 }
 
-pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> Result<()> {
+pub async fn run_pipeline(
+    engine: &dyn Transcriber,
+    analyzer: Option<&dyn TranscriptAnalyzer>,
+    config: PipelineConfig,
+) -> Result<()> {
     let started = Instant::now();
 
     let (input_path, _tmp_path) = if config.upload_as_mp3 {
@@ -78,6 +86,7 @@ pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> R
     // Decide whether to segment
     let should_segment = config.segment
         || (config.auto_split_for_api && estimate_wav_bytes(total_duration) > API_MAX_BYTES);
+    let mut used_segmentation = should_segment;
 
     if should_segment && !config.segment {
         eprintln!(
@@ -99,20 +108,47 @@ pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> R
         #[cfg(not(feature = "sherpa-onnx"))]
         transcribe_segmented(engine, input_path, total_duration, &config).await?
     } else {
-        transcribe_with_spinner("Transcribing...", engine.transcribe_path(input_path)).await?
+        match transcribe_with_spinner("Transcribing...", engine.transcribe_path(input_path)).await {
+            Ok(transcript) => transcript,
+            Err(err) if should_fallback_to_segmented_gemini(&config, total_duration) => {
+                eprintln!(
+                    "Gemini whole-file transcription failed: {err:#}. Falling back to segmented transcription; speaker identity may not be stable across segments."
+                );
+                used_segmentation = true;
+                let mut transcript =
+                    transcribe_segmented(engine, input_path, total_duration, &config).await?;
+                transcript.provider_metadata = Some(serde_json::json!({
+                    "provider": "gemini",
+                    "schema_version": "gemini.metadata.v1",
+                    "data": {
+                        "model": &config.model_name,
+                        "response": {
+                            "streaming": true,
+                            "segmented_fallback": true,
+                            "whole_file_error": err.to_string(),
+                        }
+                    }
+                }));
+                transcript
+            }
+            Err(err) => return Err(err),
+        }
     };
 
     // Speaker diarization (if requested)
     #[cfg(feature = "sherpa-onnx")]
-    if let Some(num_speakers) = config.speakers {
+    if config.diarize || config.speakers.is_some() {
+        let num_speakers = config.speakers.context(
+            "--speakers is required for local diarization because the current Sherpa diarizer requires a fixed cluster count",
+        )?;
         let seg_model = config
             .diarize_segmentation_model
             .as_deref()
-            .context("--diarize-segmentation-model is required when --speakers is set")?;
+            .context("--diarize-segmentation-model is required when --diarize is set")?;
         let emb_model = config
             .diarize_embedding_model
             .as_deref()
-            .context("--diarize-embedding-model is required when --speakers is set")?;
+            .context("--diarize-embedding-model is required when --diarize is set")?;
 
         eprintln!("Running speaker diarization ({num_speakers} speakers)...");
 
@@ -142,15 +178,40 @@ pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> R
         crate::diarize::assign_speakers(&mut transcript, &diarized);
     }
 
+    let analysis = if config.analysis.is_enabled() {
+        let analyzer = analyzer.ok_or_else(|| {
+            anyhow::anyhow!(
+                "--analysis was requested, but provider '{}' does not support transcript analysis yet",
+                config.provider_name
+            )
+        })?;
+        Some(
+            transcribe_with_spinner(
+                "Analyzing transcript...",
+                analyzer.analyze_transcript(&transcript, &config.analysis),
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
     write_outputs(
         &config,
         &transcript,
+        analysis.as_ref(),
         total_duration,
-        should_segment,
+        used_segmentation,
         started.elapsed().as_secs_f64(),
     )?;
 
     Ok(())
+}
+
+fn should_fallback_to_segmented_gemini(config: &PipelineConfig, total_duration: f64) -> bool {
+    config.provider_name == "gemini"
+        && !config.segment
+        && estimate_wav_bytes(total_duration) > API_MAX_BYTES
 }
 
 #[cfg(feature = "sherpa-onnx")]

@@ -111,7 +111,9 @@ impl OpenAiApi {
             };
 
             match result {
-                Ok(body) => return Ok(parse_response_bytes(&body)),
+                Ok(body) => {
+                    return Ok(self.with_provider_metadata(parse_response_bytes(&body), &body));
+                }
                 Err((_, ref body_text))
                     if response_format.is_some() && is_response_format_not_supported(body_text) =>
                 {
@@ -125,6 +127,25 @@ impl OpenAiApi {
         let (status, body) =
             last_error.context("No compatible response format found for transcription API")?;
         anyhow::bail!("API returned {status}: {body}");
+    }
+
+    fn with_provider_metadata(&self, mut transcript: Transcript, body: &[u8]) -> Transcript {
+        let response = serde_json::from_slice::<Value>(body).ok();
+        transcript.provider_metadata = Some(serde_json::json!({
+            "provider": "openai",
+            "schema_version": "openai.metadata.v1",
+            "data": {
+                "model": self.model,
+                "base_url": self.base_url,
+                "response": {
+                    "usage": response
+                        .as_ref()
+                        .and_then(|value| value.get("usage").cloned())
+                        .unwrap_or(Value::Null),
+                }
+            }
+        }));
+        transcript
     }
 }
 

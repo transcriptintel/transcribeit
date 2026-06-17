@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 
+use crate::analysis::AnalysisResult;
 use crate::output::manifest::{
-    Capabilities, InputInfo, Manifest, ProcessingConfig, ProviderMetadata, QualityInfo,
-    SegmentInfo, Stats, TranscriptInfo, WordInfo, write_manifest,
+    CacheEntry, CacheInfo, Capabilities, InputInfo, Manifest, ProcessingConfig, ProviderMetadata,
+    QualityInfo, SegmentInfo, Stats, TranscriptInfo, WordInfo, write_manifest,
 };
 use crate::output::{srt::write_srt, vtt::write_vtt};
 use crate::pipeline::{OutputFormat, PipelineConfig};
@@ -12,6 +13,7 @@ use crate::transcriber::Transcript;
 pub(crate) fn write_outputs(
     config: &PipelineConfig,
     transcript: &Transcript,
+    analysis: Option<&AnalysisResult>,
     total_duration: f64,
     should_segment: bool,
     processing_time: f64,
@@ -33,6 +35,7 @@ pub(crate) fn write_outputs(
         let manifest = build_manifest(
             config,
             transcript,
+            analysis,
             total_duration,
             should_segment,
             processing_time,
@@ -109,6 +112,7 @@ fn write_srt_output(config: &PipelineConfig, transcript: &Transcript) -> Result<
 fn build_manifest(
     config: &PipelineConfig,
     transcript: &Transcript,
+    analysis: Option<&AnalysisResult>,
     total_duration: f64,
     should_segment: bool,
     processing_time: f64,
@@ -145,6 +149,8 @@ fn build_manifest(
             processing_time_secs: processing_time,
             processing_time_ms: secs_to_ms(processing_time),
         },
+        cache: build_cache_info(config, transcript, analysis),
+        analysis: analysis.cloned(),
         provider_metadata: build_provider_metadata(
             &config.provider_name,
             transcript.provider_metadata.clone(),
@@ -238,12 +244,37 @@ fn build_quality(config: &PipelineConfig, transcript: &Transcript) -> QualityInf
                 .to_string(),
         );
     }
+    if metadata_bool(
+        transcript.provider_metadata.as_ref(),
+        &[
+            "/data/response/segmented_fallback",
+            "/gemini/response/segmented_fallback",
+            "/response/segmented_fallback",
+        ],
+    ) {
+        warnings.push(
+            "Gemini fell back to segmented transcription; speaker identity may not be stable across segments."
+                .to_string(),
+        );
+    }
     if transcript
         .segments
         .iter()
         .any(|segment| segment.end_ms < segment.start_ms)
     {
         warnings.push("One or more segments has end_ms earlier than start_ms.".to_string());
+    }
+    if has_non_monotonic_timestamps(transcript) {
+        warnings.push(
+            "Segment timestamps are not monotonic; subtitle cue order may not match playback time."
+                .to_string(),
+        );
+    }
+    let zero_duration_segments = zero_duration_segment_count(transcript);
+    if zero_duration_segments > 0 {
+        warnings.push(format!(
+            "{zero_duration_segments} segment(s) have zero-duration timestamps."
+        ));
     }
     if !transcript.segments.is_empty() && !has_durations {
         warnings.push("No positive-duration segment timestamps were returned.".to_string());
@@ -262,6 +293,162 @@ fn build_quality(config: &PipelineConfig, transcript: &Transcript) -> QualityInf
             .then(|| speaker_source(&config.provider_name).to_string()),
         warnings,
     }
+}
+
+fn has_non_monotonic_timestamps(transcript: &Transcript) -> bool {
+    transcript
+        .segments
+        .windows(2)
+        .any(|segments| segments[1].start_ms < segments[0].start_ms)
+}
+
+fn zero_duration_segment_count(transcript: &Transcript) -> usize {
+    transcript
+        .segments
+        .iter()
+        .filter(|segment| segment.end_ms == segment.start_ms)
+        .count()
+}
+
+fn build_cache_info(
+    config: &PipelineConfig,
+    transcript: &Transcript,
+    analysis: Option<&AnalysisResult>,
+) -> CacheInfo {
+    CacheInfo {
+        transcription: cache_entry_for_provider(
+            &config.provider_name,
+            transcript.provider_metadata.as_ref(),
+            "transcription",
+        ),
+        analysis: analysis.map(|analysis| {
+            cache_entry_for_provider(
+                &analysis.provider,
+                analysis.provider_metadata.as_ref(),
+                "analysis",
+            )
+        }),
+    }
+}
+
+fn cache_entry_for_provider(provider: &str, metadata: Option<&Value>, source: &str) -> CacheEntry {
+    match provider {
+        "gemini" => gemini_cache_entry(provider, metadata, source),
+        "openai" | "azure" => openai_cache_entry(provider, metadata, source),
+        "qwen-filetrans" | "nvidia-riva" | "local" | "sherpa-onnx" => CacheEntry {
+            provider: provider.to_string(),
+            mode: "none".to_string(),
+            hit: false,
+            input_tokens: None,
+            cached_tokens: None,
+            cached_fraction: None,
+            token_details: None,
+            source: Some(source.to_string()),
+        },
+        _ => CacheEntry {
+            provider: provider.to_string(),
+            mode: "unknown".to_string(),
+            hit: false,
+            input_tokens: None,
+            cached_tokens: None,
+            cached_fraction: None,
+            token_details: None,
+            source: Some(source.to_string()),
+        },
+    }
+}
+
+fn gemini_cache_entry(provider: &str, metadata: Option<&Value>, source: &str) -> CacheEntry {
+    let explicit_cache = metadata.is_some_and(|metadata| {
+        metadata
+            .pointer("/data/cached_content/enabled")
+            .or_else(|| metadata.pointer("/gemini/cached_content/enabled"))
+            .or_else(|| metadata.pointer("/cached_content/enabled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
+    let usage = metadata.and_then(|metadata| {
+        metadata
+            .pointer("/data/response/usage_metadata")
+            .or_else(|| metadata.pointer("/gemini/response/usage_metadata"))
+            .or_else(|| metadata.pointer("/response/usage_metadata"))
+    });
+    let input_tokens = usage
+        .and_then(|usage| usage.get("promptTokenCount"))
+        .and_then(Value::as_u64);
+    let cached_tokens = usage
+        .and_then(|usage| usage.get("cachedContentTokenCount"))
+        .and_then(Value::as_u64);
+    let token_details = usage
+        .and_then(|usage| usage.get("cacheTokensDetails").cloned())
+        .filter(|details| !details.is_null());
+
+    CacheEntry {
+        provider: provider.to_string(),
+        mode: if explicit_cache {
+            "explicit"
+        } else {
+            "implicit"
+        }
+        .to_string(),
+        hit: cached_tokens.is_some_and(|tokens| tokens > 0),
+        input_tokens,
+        cached_tokens,
+        cached_fraction: cache_fraction(cached_tokens, input_tokens),
+        token_details,
+        source: Some(source.to_string()),
+    }
+}
+
+fn openai_cache_entry(provider: &str, metadata: Option<&Value>, source: &str) -> CacheEntry {
+    let usage = metadata.and_then(|metadata| {
+        metadata
+            .pointer("/data/response/usage")
+            .or_else(|| metadata.pointer("/openai/response/usage"))
+            .or_else(|| metadata.pointer("/azure/response/usage"))
+            .or_else(|| metadata.pointer("/response/usage"))
+            .or_else(|| metadata.pointer("/usage"))
+    });
+    let input_tokens = usage
+        .and_then(|usage| {
+            usage
+                .get("prompt_tokens")
+                .or_else(|| usage.get("input_tokens"))
+        })
+        .and_then(Value::as_u64);
+    let cached_tokens = usage
+        .and_then(|usage| {
+            usage
+                .pointer("/prompt_tokens_details/cached_tokens")
+                .or_else(|| usage.pointer("/input_tokens_details/cached_tokens"))
+        })
+        .and_then(Value::as_u64);
+    let token_details = usage.and_then(|usage| {
+        usage
+            .get("prompt_tokens_details")
+            .or_else(|| usage.get("input_tokens_details"))
+            .cloned()
+    });
+
+    CacheEntry {
+        provider: provider.to_string(),
+        mode: "implicit".to_string(),
+        hit: cached_tokens.is_some_and(|tokens| tokens > 0),
+        input_tokens,
+        cached_tokens,
+        cached_fraction: cache_fraction(cached_tokens, input_tokens),
+        token_details,
+        source: Some(source.to_string()),
+    }
+}
+
+fn cache_fraction(cached_tokens: Option<u64>, input_tokens: Option<u64>) -> Option<f64> {
+    let cached_tokens = cached_tokens?;
+    let input_tokens = input_tokens?;
+    if input_tokens == 0 || cached_tokens > input_tokens {
+        return None;
+    }
+    Some(cached_tokens as f64 / input_tokens as f64)
 }
 
 fn build_provider_metadata(provider: &str, metadata: Option<Value>) -> Option<ProviderMetadata> {
@@ -308,13 +495,16 @@ fn metadata_bool(metadata: Option<&Value>, pointers: &[&str]) -> bool {
 }
 
 fn native_timestamps(provider: &str) -> bool {
-    matches!(provider, "local" | "openai" | "azure" | "qwen-filetrans")
+    matches!(
+        provider,
+        "local" | "openai" | "azure" | "qwen-filetrans" | "nvidia-riva"
+    )
 }
 
 fn timing_source(provider: &str) -> &'static str {
     match provider {
         "gemini" => "model_generated",
-        "qwen-filetrans" | "openai" | "azure" => "provider_native",
+        "qwen-filetrans" | "openai" | "azure" | "nvidia-riva" => "provider_native",
         "local" | "sherpa-onnx" => "model_native",
         _ => "unknown",
     }
@@ -332,10 +522,233 @@ fn speaker_source(provider: &str) -> &'static str {
 fn provider_key(provider: &str) -> Option<&'static str> {
     match provider {
         "qwen-filetrans" => Some("qwen"),
+        "nvidia-riva" => Some("nvidia"),
         _ => None,
     }
 }
 
 fn secs_to_ms(seconds: f64) -> i64 {
     (seconds * 1000.0).round() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_cache_info, build_quality};
+    use crate::analysis::AnalysisConfig;
+    use crate::pipeline::{OutputFormat, PipelineConfig};
+    use crate::transcriber::{Segment, Transcript};
+    use std::path::PathBuf;
+
+    #[test]
+    fn quality_warns_on_zero_duration_and_non_monotonic_timestamps() {
+        let transcript = Transcript {
+            segments: vec![
+                Segment {
+                    start_ms: 1000,
+                    end_ms: 2000,
+                    text: "first".to_string(),
+                    ..Default::default()
+                },
+                Segment {
+                    start_ms: 500,
+                    end_ms: 500,
+                    text: "second".to_string(),
+                    ..Default::default()
+                },
+            ],
+            provider_metadata: None,
+        };
+        let config = PipelineConfig {
+            input: PathBuf::from("sample.wav"),
+            output_dir: None,
+            output_format: OutputFormat::Vtt,
+            language: None,
+            normalize_audio: false,
+            segment: false,
+            silence_threshold: -40.0,
+            min_silence_duration: 0.8,
+            max_segment_secs: 600.0,
+            segment_concurrency: 1,
+            auto_split_for_api: false,
+            upload_as_mp3: false,
+            vad_model: None,
+            diarize: false,
+            analysis: AnalysisConfig::default(),
+            speakers: None,
+            diarize_segmentation_model: None,
+            diarize_embedding_model: None,
+            provider_name: "gemini".to_string(),
+            model_name: "gemini-test".to_string(),
+        };
+
+        let quality = build_quality(&config, &transcript);
+
+        assert!(
+            quality
+                .warnings
+                .iter()
+                .any(|warning| { warning.contains("Segment timestamps are not monotonic") })
+        );
+        assert!(
+            quality
+                .warnings
+                .iter()
+                .any(|warning| { warning.contains("1 segment(s) have zero-duration timestamps") })
+        );
+    }
+
+    #[test]
+    fn cache_info_extracts_gemini_cached_tokens() {
+        let transcript = Transcript {
+            segments: vec![Segment {
+                start_ms: 0,
+                end_ms: 1000,
+                text: "hello".to_string(),
+                ..Default::default()
+            }],
+            provider_metadata: Some(serde_json::json!({
+                "provider": "gemini",
+                "schema_version": "gemini.metadata.v1",
+                "data": {
+                    "response": {
+                        "usage_metadata": {
+                            "promptTokenCount": 100,
+                            "cachedContentTokenCount": 80,
+                            "cacheTokensDetails": [{"modality": "AUDIO", "tokenCount": 80}]
+                        }
+                    }
+                }
+            })),
+        };
+        let config = test_config("gemini");
+
+        let cache = build_cache_info(&config, &transcript, None);
+
+        assert_eq!(cache.transcription.mode, "implicit");
+        assert!(cache.transcription.hit);
+        assert_eq!(cache.transcription.input_tokens, Some(100));
+        assert_eq!(cache.transcription.cached_tokens, Some(80));
+        assert_eq!(cache.transcription.cached_fraction, Some(0.8));
+        assert!(cache.transcription.token_details.is_some());
+    }
+
+    #[test]
+    fn cache_info_marks_gemini_explicit_cache_without_invalid_fraction() {
+        let transcript = Transcript {
+            segments: vec![Segment {
+                start_ms: 0,
+                end_ms: 1000,
+                text: "hello".to_string(),
+                ..Default::default()
+            }],
+            provider_metadata: Some(serde_json::json!({
+                "provider": "gemini",
+                "schema_version": "gemini.metadata.v1",
+                "data": {
+                    "cached_content": {
+                        "enabled": true,
+                        "name": "cachedContents/test"
+                    },
+                    "response": {
+                        "usage_metadata": {
+                            "promptTokenCount": 100,
+                            "cachedContentTokenCount": 120,
+                            "cacheTokensDetails": [{"modality": "AUDIO", "tokenCount": 120}]
+                        }
+                    }
+                }
+            })),
+        };
+        let config = test_config("gemini");
+
+        let cache = build_cache_info(&config, &transcript, None);
+
+        assert_eq!(cache.transcription.mode, "explicit");
+        assert!(cache.transcription.hit);
+        assert_eq!(cache.transcription.input_tokens, Some(100));
+        assert_eq!(cache.transcription.cached_tokens, Some(120));
+        assert_eq!(cache.transcription.cached_fraction, None);
+        assert!(cache.transcription.token_details.is_some());
+    }
+
+    #[test]
+    fn cache_info_extracts_openai_cached_tokens() {
+        let transcript = Transcript {
+            segments: vec![Segment {
+                start_ms: 0,
+                end_ms: 1000,
+                text: "hello".to_string(),
+                ..Default::default()
+            }],
+            provider_metadata: Some(serde_json::json!({
+                "provider": "openai",
+                "schema_version": "openai.metadata.v1",
+                "data": {
+                    "response": {
+                        "usage": {
+                            "prompt_tokens": 2048,
+                            "prompt_tokens_details": {
+                                "cached_tokens": 1024
+                            }
+                        }
+                    }
+                }
+            })),
+        };
+        let config = test_config("openai");
+
+        let cache = build_cache_info(&config, &transcript, None);
+
+        assert_eq!(cache.transcription.mode, "implicit");
+        assert!(cache.transcription.hit);
+        assert_eq!(cache.transcription.input_tokens, Some(2048));
+        assert_eq!(cache.transcription.cached_tokens, Some(1024));
+        assert_eq!(cache.transcription.cached_fraction, Some(0.5));
+    }
+
+    #[test]
+    fn cache_info_marks_qwen_as_no_provider_cache() {
+        let transcript = Transcript {
+            segments: vec![Segment {
+                start_ms: 0,
+                end_ms: 1000,
+                text: "hello".to_string(),
+                ..Default::default()
+            }],
+            provider_metadata: None,
+        };
+        let config = test_config("qwen-filetrans");
+
+        let cache = build_cache_info(&config, &transcript, None);
+
+        assert_eq!(cache.transcription.mode, "none");
+        assert!(!cache.transcription.hit);
+        assert_eq!(cache.transcription.input_tokens, None);
+        assert_eq!(cache.transcription.cached_tokens, None);
+    }
+
+    fn test_config(provider: &str) -> PipelineConfig {
+        PipelineConfig {
+            input: PathBuf::from("sample.wav"),
+            output_dir: None,
+            output_format: OutputFormat::Vtt,
+            language: None,
+            normalize_audio: false,
+            segment: false,
+            silence_threshold: -40.0,
+            min_silence_duration: 0.8,
+            max_segment_secs: 600.0,
+            segment_concurrency: 1,
+            auto_split_for_api: false,
+            upload_as_mp3: false,
+            vad_model: None,
+            diarize: false,
+            analysis: AnalysisConfig::default(),
+            speakers: None,
+            diarize_segmentation_model: None,
+            diarize_embedding_model: None,
+            provider_name: provider.to_string(),
+            model_name: "test-model".to_string(),
+        }
+    }
 }

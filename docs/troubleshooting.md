@@ -79,11 +79,16 @@ If you do not have a VAD model, omit `--vad-model` and the pipeline will fall ba
 
 Symptoms:
 - `Failed to create speaker diarization engine`
-- `--diarize-segmentation-model is required when --speakers is set`
-- `--diarize-embedding-model is required when --speakers is set`
+- `--speakers is required for local diarization because the current Sherpa diarizer requires a fixed cluster count`
+- `--diarize-segmentation-model is required when --diarize is set`
+- `--diarize-embedding-model is required when --diarize is set`
+- `--diarize for provider 'qwen-filetrans' requires local Sherpa diarization`
 
 Fix:
-- When using `--speakers N`, both `--diarize-segmentation-model` and `--diarize-embedding-model` are required.
+- When using local post-processing diarization, pass `--diarize --speakers N`; both `--diarize-segmentation-model` and `--diarize-embedding-model` are required.
+- When using NVIDIA Riva, `--diarize` can be used without `--speakers`; the CLI sends a default max-speaker hint of 4.
+- When using OpenAI, `--diarize` selects `gpt-4o-transcribe-diarize` by default. If you explicitly choose another OpenAI model, local Sherpa diarization is required.
+- Qwen file transcription and Azure do not currently provide native diarization through this CLI; use local Sherpa diarization for those providers.
 - Ensure both model paths point to valid ONNX files:
   - **Segmentation model:** a pyannote speaker segmentation ONNX model.
   - **Embedding model:** a speaker embedding extraction ONNX model.
@@ -186,6 +191,53 @@ transcribeit run -p openai -i long.wav \
   --retry-wait-base-secs 12 \
   --retry-wait-max-secs 180
 ```
+
+### Gemini summary analysis errors
+
+Symptoms:
+- `--analysis requires --output-dir so results can be written to the manifest`
+- `--analysis is currently supported only with --provider gemini`
+
+Fix:
+- Use `--analysis summary` only with Gemini for now.
+- Always provide `-o` / `--output-dir`; analysis is written into `<input_stem>.manifest.json`.
+
+Example:
+
+```bash
+transcribeit run -p gemini --analysis summary \
+  --remote-model gemini-3.5-flash \
+  -i interview.mp4 -f vtt -o ./output
+```
+
+### Cache telemetry looks empty
+
+Symptoms:
+- `cache.transcription.hit` is `false`
+- `cache.transcription.cached_tokens` is `null`
+- `cache.transcription.mode` is `none`
+
+Explanation:
+- `cache` is telemetry for most providers. Gemini also supports explicit cached-content integration through `--gemini-explicit-cache`.
+- Gemini and OpenAI/Azure cache hits depend on provider-side behavior and prompt length. Short audio/transcript prompts often do not produce cache hits.
+- Qwen file transcription, NVIDIA Riva, local Whisper, and Sherpa-ONNX do not expose token-cache telemetry through the current transcription paths, so their manifest cache mode is `none`.
+
+### Gemini file cache reuses uploads but token cache still misses
+
+Symptoms:
+- `provider_metadata.data.file.cache_enabled` is `true`
+- `provider_metadata.data.file.cache_reused` is `true`
+- `cache.transcription.hit` is still `false`
+
+Explanation:
+- `--gemini-file-cache` reuses the Gemini Files API upload by prepared-byte SHA-256 hash. It prevents repeated upload and keeps the same Gemini `file_uri` while the Files API object exists.
+- This is not the same as Gemini explicit cached content. Gemini implicit token caching can still miss even when the same file is reused.
+- A missing `usage_metadata.cachedContentTokenCount` means Gemini did not report a token-cache hit for that request.
+
+Fix:
+- For upload reuse, keep `--gemini-file-cache` enabled and avoid `--gemini-autoclean`.
+- For deterministic token-cache reuse, run with `--gemini-explicit-cache`. This creates or reuses a Gemini `cachedContent` object and should produce `cache.transcription.mode = "explicit"` plus `cachedContentTokenCount` when Gemini accepts the cache.
+- Explicit cached content has TTL and billing behavior. Use `--gemini-cache-ttl-secs` to control how long the cache is retained by Gemini.
 
 ### Qwen file transcription rejects async calls
 
