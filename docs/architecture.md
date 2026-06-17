@@ -26,7 +26,8 @@ src/
     ├── sherpa_onnx.rs     # Local sherpa-onnx engine (auto-detects Whisper, Moonshine, SenseVoice)
     ├── openai_api.rs      # OpenAI-compatible REST API
     ├── azure_openai.rs    # Azure OpenAI REST API
-    ├── gemini.rs          # Gemini Files API + generateContent
+    ├── gemini.rs          # Gemini Files API + streamed generateContent
+    ├── nvidia_riva.rs     # NVIDIA hosted Riva gRPC ASR
     ├── qwen_filetrans.rs  # Qwen async file transcription provider
     ├── qwen_filetrans/    # Qwen request/response types and model limits
     ├── rate_limit.rs      # Retry logic and 429 handling
@@ -56,7 +57,8 @@ pub trait Transcriber: Send + Sync {
 - **Sherpa-ONNX engine** (`sherpa_onnx`) uses `transcribe()` — it needs decoded samples for the ONNX runtime.
 - **OpenAI/Azure API engines** override `transcribe_path()` to upload files directly via multipart, and `transcribe_wav()` to upload in-memory bytes — avoiding the decode→re-encode round-trip.
 - **Qwen file transcription** overrides `transcribe_path()` to upload prepared audio to S3-compatible storage, generate a pre-signed URL, and submit that URL to DashScope.
-- **Gemini** overrides `transcribe_path()` to upload prepared audio through Gemini Files API and call `generateContent` with structured JSON output.
+- **Gemini** overrides `transcribe_path()` to upload prepared audio through Gemini Files API and call streamed `streamGenerateContent` with structured JSON output.
+- **NVIDIA Riva** overrides `transcribe_path()` and `transcribe_wav()` to send WAV bytes to a hosted Riva gRPC endpoint with provider-native timestamps.
 
 ## Processing pipeline
 
@@ -67,12 +69,13 @@ Input file (any format)
   │
   ├─ needs_conversion()? ──→ extract_to_wav(normalize) for local provider
   ├─ upload_as_mp3(normalize) for OpenAI/Azure, Qwen filetrans, and Gemini (16kHz mono MP3)
+  ├─ hosted Riva path keeps WAV audio for gRPC recognition
   │
   ├─ get_duration() via ffprobe
   │
   ├─ Should segment?
   │   ├─ --segment flag explicitly set
-  │   ├─ Auto: OpenAI/Azure provider + estimated size > 25MB
+  │   ├─ Auto: OpenAI/Azure/Qwen filetrans/NVIDIA Riva provider + estimated size > 25MB
   │   └─ Auto: sherpa-onnx provider (always segments; max 30s per chunk)
   │
   ├─ If segmenting:
@@ -92,7 +95,7 @@ Input file (any format)
   │   └─ API: transcribe_path() with prepared file or staged pre-signed URL
   │
   ├─ normalize_audio? ──→ optional loudnorm filter in ffmpeg conversion pipeline
-  ├─ Speaker diarization? (when --speakers N is set)
+  ├─ Speaker diarization? (when --diarize or --speakers N is set)
   │   ├─ read audio samples for diarization
   │   ├─ Diarizer.diarize() → speaker-labeled time spans
   │   └─ assign_speakers() overlays speaker labels onto transcript segments
@@ -163,17 +166,30 @@ Short synchronous Qwen models such as `qwen3-asr-flash` use a different API path
 
 ### Gemini (`gemini.rs`)
 
-Uses Gemini Files API and `generateContent` for whole-file multimodal transcription. The provider:
+Uses Gemini Files API and streamed `streamGenerateContent` for whole-file multimodal transcription. The provider:
 
 - converts input audio/video to 16 kHz mono MP3
 - uploads the prepared file with a resumable Files API upload
 - waits for the file to become `ACTIVE`
 - requests structured JSON with `text`, segment timestamps, speaker, language, and emotion fields
-- maps valid segments into the normalized transcript/manifest model
+- joins streamed response text chunks and maps valid segments into the normalized transcript/manifest model
 - falls back to generated transcript text when structured JSON is missing or invalid
 - deletes the temporary Gemini file after the transcription request
 
-Gemini is not a dedicated ASR endpoint. Timestamp, speaker, language, and emotion values come from the model's structured output, so benchmark quality before relying on them for subtitle workflows.
+Gemini is not a dedicated ASR endpoint. Timestamp, speaker, language, and emotion values come from the model's structured output, so benchmark quality before relying on them for subtitle workflows. The default path keeps Gemini whole-file for speaker continuity; explicit segmentation and long-input fallback are available with the expected risk that speakers may not remain stable between chunks.
+
+### NVIDIA Riva (`nvidia_riva.rs`)
+
+Uses hosted NVIDIA Riva ASR over gRPC through generated protobuf bindings in `proto/riva/proto/`. The provider:
+
+- connects to `grpc.nvcf.nvidia.com:443` by default
+- sends `function-id` and Bearer authorization metadata
+- submits `RecognizeRequest` with WAV bytes, language, sample rate, channel count, automatic punctuation, and word timestamp settings
+- enables Riva diarization when `--diarize` is provided, using `--speakers N` as an optional maximum speaker hint
+- maps Riva alternatives and word offsets into normalized segments and words
+- records request ids, audio info, feature flags, response counts, elapsed time, and confidence under `provider_metadata.data`
+
+The provider is implemented entirely in Rust with `tonic`/`prost`. It does not download local NVIDIA NIM containers or require Python clients.
 
 ### Sherpa-ONNX (`sherpa_onnx.rs`)
 
@@ -218,7 +234,7 @@ All settings (timeout, retries, wait times) are configurable via CLI flags and e
 
 ### Shared WAV encoding
 
-OpenAI/Azure engines can send file uploads directly and choose the correct container format for compatibility (WAV for local transcribe path, MP3 for API provider uploads). Qwen file transcription stages MP3 in S3-compatible storage and sends DashScope a pre-signed URL. Gemini uploads MP3 through Gemini Files API. The `audio::wav::encode_wav()` helper is still used by local engines and non-file upload paths.
+OpenAI/Azure engines can send file uploads directly and choose the correct container format for compatibility (WAV for local transcribe path, MP3 for API provider uploads). Qwen file transcription stages MP3 in S3-compatible storage and sends DashScope a pre-signed URL. Gemini uploads MP3 through Gemini Files API. NVIDIA Riva sends WAV bytes through gRPC. The `audio::wav::encode_wav()` helper is still used by local engines and non-file upload paths.
 
 ## Model cache (`model_cache.rs`)
 

@@ -73,8 +73,12 @@ pub enum RateLimitCheck {
     Ok(bytes::Bytes),
     /// Non-429 error.
     Error(reqwest::StatusCode, String),
-    /// Rate limited, should retry after this duration.
-    RetryAfter(Duration),
+    /// Request can be retried after this duration.
+    RetryAfter {
+        status: reqwest::StatusCode,
+        wait: Duration,
+        reason: &'static str,
+    },
 }
 
 /// Check a response for rate limiting. Returns the appropriate action.
@@ -95,7 +99,17 @@ pub async fn check_response(
 
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
         let wait = parse_retry_after(&headers, &body, settings);
-        RateLimitCheck::RetryAfter(wait)
+        RateLimitCheck::RetryAfter {
+            status,
+            wait,
+            reason: "rate limited",
+        }
+    } else if status.is_server_error() {
+        RateLimitCheck::RetryAfter {
+            status,
+            wait: settings.default_retry_wait.min(settings.max_retry_wait),
+            reason: "server error",
+        }
     } else {
         RateLimitCheck::Error(status, body)
     }
@@ -119,28 +133,47 @@ where
         let resp = match build_request().await {
             Ok(r) => r,
             Err(e) => {
-                return Err((
-                    reqwest::StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to send request to {api_label}: {e}"),
-                ));
+                let error = e.to_string();
+                if attempt == settings.max_retries {
+                    return Err((
+                        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+                        format!(
+                            "Failed to send request to {api_label} after {} retries: {}",
+                            settings.max_retries, error
+                        ),
+                    ));
+                }
+                let wait = settings.default_retry_wait.min(settings.max_retry_wait);
+                eprintln!(
+                    "    Request to {api_label} failed, retrying in {}s (attempt {}/{})...",
+                    wait.as_secs(),
+                    attempt + 1,
+                    settings.max_retries
+                );
+                tokio::time::sleep(wait).await;
+                continue;
             }
         };
 
         match check_response(resp, settings).await {
             RateLimitCheck::Ok(body) => return Ok(body),
-            RateLimitCheck::RetryAfter(wait) => {
+            RateLimitCheck::RetryAfter {
+                status,
+                wait,
+                reason,
+            } => {
                 if attempt == settings.max_retries {
                     return Err((
-                        reqwest::StatusCode::TOO_MANY_REQUESTS,
+                        status,
                         format!(
-                            "Rate limited after {} retries, last wait was {}s",
+                            "{api_label} returned retryable {status} ({reason}) after {} retries, last wait was {}s",
                             settings.max_retries,
                             wait.as_secs()
                         ),
                     ));
                 }
                 eprintln!(
-                    "    Rate limited, retrying in {}s (attempt {}/{})...",
+                    "    {api_label} returned {status} ({reason}), retrying in {}s (attempt {}/{})...",
                     wait.as_secs(),
                     attempt + 1,
                     settings.max_retries

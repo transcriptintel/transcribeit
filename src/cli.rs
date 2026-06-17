@@ -79,8 +79,11 @@ pub(crate) enum Provider {
     /// Qwen3-ASR-Flash-Filetrans via DashScope and S3 pre-signed URLs
     #[value(name = "qwen-filetrans")]
     QwenFiletrans,
-    /// Gemini multimodal transcription through generateContent and Files API
+    /// Gemini multimodal transcription through Files API and streamed generateContent
     Gemini,
+    /// NVIDIA-hosted Riva ASR over gRPC
+    #[value(name = "nvidia-riva")]
+    NvidiaRiva,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -195,11 +198,23 @@ pub(crate) enum Command {
         #[arg(long, env = "GEMINI_API_KEY")]
         gemini_api_key: Option<String>,
 
+        /// NVIDIA API key for hosted Riva endpoints (or set NVIDIA_API_KEY)
+        #[arg(long, env = "NVIDIA_API_KEY")]
+        nvidia_api_key: Option<String>,
+
+        /// NVIDIA hosted Riva function id (or set NVIDIA_RIVA_FUNCTION_ID)
+        #[arg(long, env = "NVIDIA_RIVA_FUNCTION_ID")]
+        nvidia_riva_function_id: Option<String>,
+
+        /// NVIDIA Riva gRPC server (hosted default: grpc.nvcf.nvidia.com:443)
+        #[arg(long, env = "NVIDIA_RIVA_SERVER")]
+        nvidia_riva_server: Option<String>,
+
         /// Azure API key (or set AZURE_API_KEY env var)
         #[arg(long, env = "AZURE_API_KEY")]
         azure_api_key: Option<String>,
 
-        /// Remote model name (for --provider openai, qwen-filetrans, or gemini)
+        /// Remote model name (for --provider openai, qwen-filetrans, gemini, or nvidia-riva)
         #[arg(long)]
         remote_model: Option<String>,
 
@@ -279,7 +294,11 @@ pub(crate) enum Command {
         #[arg(long)]
         normalize: bool,
 
-        /// Number of speakers for diarization (requires sherpa-onnx feature and models)
+        /// Enable speaker diarization
+        #[arg(long)]
+        diarize: bool,
+
+        /// Speaker count or provider-specific maximum speaker hint for diarization
         #[arg(long)]
         speakers: Option<i32>,
 

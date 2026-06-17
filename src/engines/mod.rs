@@ -1,6 +1,7 @@
 pub mod azure_openai;
 pub mod gemini;
 pub mod model_cache;
+pub mod nvidia_riva;
 pub mod openai_api;
 pub mod qwen_filetrans;
 pub mod rate_limit;

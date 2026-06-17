@@ -264,6 +264,7 @@ fn test_config(input: PathBuf, output_dir: PathBuf, output_format: OutputFormat)
         upload_as_mp3: false,
         segment_concurrency: 1,
         normalize_audio: false,
+        diarize: false,
         speakers: None,
         diarize_segmentation_model: None,
         diarize_embedding_model: None,

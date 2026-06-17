@@ -23,6 +23,7 @@ use crate::cli::{Cli, Command, ModelFormat, OutputFormatArg, Provider, SetupComp
 use crate::engines::azure_openai::AzureOpenAi;
 use crate::engines::gemini::GeminiApi;
 use crate::engines::model_cache::ModelCache;
+use crate::engines::nvidia_riva::NvidiaRiva;
 use crate::engines::openai_api::OpenAiApi;
 use crate::engines::qwen_filetrans::QwenFileTrans;
 use crate::engines::qwen_filetrans::limits::{
@@ -133,6 +134,9 @@ async fn main() -> Result<()> {
             api_key,
             dashscope_api_key,
             gemini_api_key,
+            nvidia_api_key,
+            nvidia_riva_function_id,
+            nvidia_riva_server,
             azure_api_key,
             remote_model,
             qwen_api_base_url,
@@ -152,6 +156,7 @@ async fn main() -> Result<()> {
             request_timeout_secs,
             retry_wait_base_secs,
             retry_wait_max_secs,
+            diarize,
             speakers,
             diarize_segmentation_model,
             diarize_embedding_model,
@@ -189,6 +194,7 @@ async fn main() -> Result<()> {
             let qwen_needs_mp3_staging = matches!(provider, Provider::QwenFiletrans)
                 && is_qwen_filetrans_model(qwen_filetrans_model);
             let openai_style_upload = matches!(provider, Provider::Openai | Provider::Azure);
+            let nvidia_riva_upload = matches!(provider, Provider::NvidiaRiva);
             let gemini_needs_mp3_upload = matches!(provider, Provider::Gemini);
             let upload_as_mp3 =
                 openai_style_upload || qwen_needs_mp3_staging || gemini_needs_mp3_upload;
@@ -196,7 +202,8 @@ async fn main() -> Result<()> {
             let is_sherpa = matches!(provider, Provider::SherpaOnnx);
             #[cfg(not(feature = "sherpa-onnx"))]
             let is_sherpa = false;
-            let auto_split = openai_style_upload || qwen_needs_mp3_staging || is_sherpa;
+            let auto_split =
+                openai_style_upload || qwen_needs_mp3_staging || nvidia_riva_upload || is_sherpa;
             let max_segment_secs = if is_sherpa {
                 // sherpa-onnx Whisper only supports ≤30s per call
                 max_segment_secs.min(30.0)
@@ -241,7 +248,13 @@ async fn main() -> Result<()> {
                             "--api-key or OPENAI_API_KEY is required for --provider openai",
                         )?;
                         let url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
-                        let model_name = remote_model.unwrap_or_else(|| "whisper-1".to_string());
+                        let model_name = remote_model.unwrap_or_else(|| {
+                            if diarize || speakers.is_some() {
+                                "gpt-4o-transcribe-diarize".to_string()
+                            } else {
+                                "whisper-1".to_string()
+                            }
+                        });
                         (
                             Box::new(OpenAiApi::new(
                                 url,
@@ -340,7 +353,47 @@ async fn main() -> Result<()> {
                             model_name,
                         )
                     }
+                    Provider::NvidiaRiva => {
+                        let key = nvidia_api_key.or(api_key).context(
+                            "--nvidia-api-key, NVIDIA_API_KEY, --api-key, or OPENAI_API_KEY is required for --provider nvidia-riva",
+                        )?;
+                        let function_id = nvidia_riva_function_id.context(
+                            "--nvidia-riva-function-id or NVIDIA_RIVA_FUNCTION_ID is required for --provider nvidia-riva",
+                        )?;
+                        let riva_speakers = if diarize || speakers.is_some() {
+                            Some(speakers.unwrap_or(4))
+                        } else {
+                            None
+                        };
+                        let riva_model = remote_model.clone();
+                        let model_name = remote_model.unwrap_or_else(|| {
+                            let prefix = function_id.chars().take(8).collect::<String>();
+                            format!("function:{prefix}")
+                        });
+                        (
+                            Box::new(NvidiaRiva::new(
+                                nvidia_riva_server,
+                                key,
+                                function_id,
+                                riva_model,
+                                language.clone(),
+                                api_settings.request_timeout,
+                                riva_speakers,
+                            )),
+                            "nvidia-riva".into(),
+                            model_name,
+                        )
+                    }
                 };
+            let requested_diarization = diarize || speakers.is_some();
+            let provider_native_diarization =
+                provider_handles_diarization(&provider_name, &model_name);
+            let local_diarize = requested_diarization && !provider_native_diarization;
+            if local_diarize && !cfg!(feature = "sherpa-onnx") {
+                anyhow::bail!(
+                    "--diarize for provider '{provider_name}' requires local Sherpa diarization. Build with --features sherpa-onnx and pass --speakers plus diarization models, or use provider-native diarization with nvidia-riva or openai --remote-model gpt-4o-transcribe-diarize."
+                );
+            }
 
             for (index, input_path) in input_paths.iter().enumerate() {
                 if input_paths.len() > 1 {
@@ -375,7 +428,8 @@ async fn main() -> Result<()> {
                     upload_as_mp3,
                     segment_concurrency,
                     normalize_audio: normalize,
-                    speakers,
+                    diarize: local_diarize,
+                    speakers: local_diarize.then_some(speakers).flatten(),
                     diarize_segmentation_model: diarize_segmentation_model.clone(),
                     diarize_embedding_model: diarize_embedding_model.clone(),
                     vad_model: vad_model.clone(),
@@ -387,4 +441,12 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn provider_handles_diarization(provider_name: &str, model_name: &str) -> bool {
+    match provider_name {
+        "nvidia-riva" | "gemini" => true,
+        "openai" => model_name.eq_ignore_ascii_case("gpt-4o-transcribe-diarize"),
+        _ => false,
+    }
 }

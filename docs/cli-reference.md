@@ -46,7 +46,7 @@ transcribeit run [OPTIONS] --input <FILE_OR_PATH_OR_GLOB>
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-i, --input` | Input path, directory, or glob pattern for audio/video files | required |
-| `-p, --provider` | `local`, `sherpa-onnx`, `openai`, `azure`, `qwen-filetrans`, or `gemini` | `local` |
+| `-p, --provider` | `local`, `sherpa-onnx`, `openai`, `azure`, `qwen-filetrans`, `gemini`, or `nvidia-riva` | `local` |
 
 #### Local provider options (`-p local`)
 
@@ -82,7 +82,7 @@ Sherpa-ONNX automatically enables segmentation and caps segment length at 30 sec
 
 Supported hosted OpenAI transcription models include `whisper-1`, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`, and `gpt-4o-transcribe-diarize`.
 
-`whisper-1` returns timestamped segments through the default `verbose_json` request path. `gpt-4o-mini-transcribe` and `gpt-4o-transcribe` return plain transcript text through the current CLI. When `--remote-model gpt-4o-transcribe-diarize` is selected, the provider requests `diarized_json` with `chunking_strategy=auto` and maps speaker labels into VTT/SRT/manifest output.
+`whisper-1` returns timestamped segments through the default `verbose_json` request path. `gpt-4o-mini-transcribe` and `gpt-4o-transcribe` return plain transcript text through the current CLI. When `--diarize` is set and no `--remote-model` is provided, the CLI selects `gpt-4o-transcribe-diarize`. When `gpt-4o-transcribe-diarize` is selected, the provider requests `diarized_json` with `chunking_strategy=auto` and maps speaker labels into VTT/SRT/manifest output.
 
 #### Azure provider options
 
@@ -125,11 +125,24 @@ If a short-audio `qwen3-asr-flash` model is selected with `-p qwen-filetrans`, t
 | `--gemini-api-base-url` | Gemini API base URL | `GEMINI_API_BASE_URL` env var, or `https://generativelanguage.googleapis.com/v1beta` |
 | `--remote-model` | Gemini model name | `gemini-3.5-flash` |
 
-The Gemini provider uses the Gemini Files API plus `generateContent` with structured JSON output. It converts input audio/video to 16 kHz mono MP3 before upload, then asks Gemini for a transcript object with `text`, `segments`, timestamps, speaker, language, and emotion fields.
+The Gemini provider uses the Gemini Files API plus streamed `streamGenerateContent` with structured JSON output. It converts input audio/video to 16 kHz mono MP3 before upload, then asks Gemini for a transcript object with `text`, `segments`, timestamps, speaker, language, and emotion fields.
 
 Current model candidates verified through the Gemini models API include `gemini-3.5-flash`, `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3-pro-preview`, and `gemini-2.5-flash`. Prefer stable `gemini-3.5-flash` for the default path and benchmark preview models before adopting them in production workflows.
 
-Gemini timestamps and speaker labels are generated structured output rather than a dedicated ASR response schema. The parser is defensive: invalid JSON, missing fields, empty segments, and unknown future response fields fall back to transcript text instead of failing the run.
+Gemini timestamps and speaker labels are generated structured output rather than a dedicated ASR response schema. The parser is defensive: invalid JSON, missing fields, empty segments, unknown future response fields, and streamed response shape changes fall back to transcript text instead of failing the run.
+
+#### NVIDIA Riva provider options (`-p nvidia-riva`)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--nvidia-api-key` | NVIDIA API key | `NVIDIA_API_KEY` env var |
+| `--nvidia-riva-function-id` | Hosted Riva function id | `NVIDIA_RIVA_FUNCTION_ID` env var |
+| `--nvidia-riva-server` | Riva gRPC server | `NVIDIA_RIVA_SERVER` env var, or `grpc.nvcf.nvidia.com:443` |
+| `--remote-model` | Optional Riva model name sent in `RecognitionConfig.model` | none |
+
+The NVIDIA Riva provider uses gRPC and sends `function-id` plus Bearer authorization metadata. It converts input audio/video to 16 kHz mono WAV and requests provider-native word timestamps and automatic punctuation. If `--diarize` is set, it enables Riva speaker diarization with a default maximum of 4 speakers. Use `--speakers N` to override that maximum.
+
+Manifests include `provider_metadata.provider = "nvidia-riva"`, audio details, request ids, feature flags, detected languages, response counts, elapsed time, and mean confidence when returned.
 
 #### Output options
 
@@ -142,11 +155,11 @@ Gemini timestamps and speaker labels are generated structured output rather than
 
 #### API resilience options
 
-These options apply to OpenAI, Azure, Qwen file transcription, and Gemini providers:
+These options apply to OpenAI, Azure, Qwen file transcription, Gemini, and NVIDIA Riva providers where supported:
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--max-retries` | Maximum request retries on 429 responses | `5` |
+| `--max-retries` | Maximum request retries on 429 responses for REST API providers | `5` |
 | `--request-timeout-secs` | Timeout in seconds for each API request | `120` |
 | `--retry-wait-base-secs` | Initial wait time used when rate-limited | `10` |
 | `--retry-wait-max-secs` | Maximum wait time when parsing retry delay | `120` |
@@ -162,7 +175,7 @@ These options apply to OpenAI, Azure, Qwen file transcription, and Gemini provid
 | `--segment-concurrency` | Max parallel segment requests (API providers only) | `2` |
 | `--vad-model` | Path to Silero VAD ONNX model (`silero_vad.onnx`) for speech-aware segmentation | `VAD_MODEL` env var |
 
-When using `openai` or `azure` providers, files exceeding 25MB are automatically segmented even without `--segment`. When using `sherpa-onnx`, segmentation is always enabled with a maximum segment length of 30 seconds.
+When using `openai`, `azure`, `qwen-filetrans`, or `nvidia-riva` providers, files exceeding the conservative 25MB auto-split threshold are automatically segmented even without `--segment`. This keeps long remote requests smaller and more reliable. Gemini stays whole-file by default to preserve model-level speaker continuity; use `--segment` only when you want independent chunk requests, or let the provider fall back to segmentation if a long whole-file request fails. When using `sherpa-onnx`, segmentation is always enabled with a maximum segment length of 30 seconds.
 
 When `--vad-model` is set and segmentation is needed, VAD-based segmentation is used instead of FFmpeg `silencedetect`. VAD detects actual speech boundaries using Silero VAD, avoiding mid-word cuts. It pads chunks by 250ms, merges gaps shorter than 200ms, and splits long chunks at low-energy points. This requires the `sherpa-onnx` feature to be enabled. When `--vad-model` is not set, the original FFmpeg silence-based segmentation is used as a fallback.
 
@@ -170,11 +183,18 @@ When `--vad-model` is set and segmentation is needed, VAD-based segmentation is 
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--speakers` | Number of speakers for diarization | disabled |
+| `--diarize` | Enable speaker diarization | disabled |
+| `--speakers` | Speaker count or provider-specific maximum speaker hint | none |
 | `--diarize-segmentation-model` | Path to pyannote segmentation ONNX model | `DIARIZE_SEGMENTATION_MODEL` env var |
 | `--diarize-embedding-model` | Path to speaker embedding ONNX model | `DIARIZE_EMBEDDING_MODEL` env var |
 
-When `--speakers N` is set, speaker diarization runs after transcription to label each segment with a speaker identity. Both `--diarize-segmentation-model` and `--diarize-embedding-model` are required. Speaker labels appear in VTT output as `<v Speaker 0>`, in SRT output as `[Speaker 0]`, and in manifest JSON as a `"speaker"` field on each segment. Requires the `sherpa-onnx` feature.
+For local post-processing diarization, use `--diarize --speakers N`. Both `--diarize-segmentation-model` and `--diarize-embedding-model` are required because the current Sherpa diarizer needs a fixed speaker count. Speaker labels appear in VTT output as `<v Speaker 0>`, in SRT output as `[Speaker 0]`, and in manifest JSON as a `"speaker"` field on each segment. Requires the `sherpa-onnx` feature.
+
+For OpenAI, `--diarize` uses provider-native diarization through `gpt-4o-transcribe-diarize` unless a different `--remote-model` is explicitly selected.
+
+For NVIDIA Riva, use `--diarize` when the exact speaker count is unknown. The provider uses `--speakers N` as a maximum speaker hint; if omitted, the CLI sends a default maximum of 4 speakers.
+
+For Gemini, speaker labels are model-generated structured output and may be present even without local diarization. For Qwen file transcription, Azure, local Whisper, and non-diarizing OpenAI models, `--diarize` requires the local Sherpa diarizer.
 
 ## Output behavior
 
@@ -207,6 +227,9 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 | `OPENAI_API_KEY` | OpenAI API key | none |
 | `GEMINI_API_KEY` | Gemini API key | none |
 | `GEMINI_API_BASE_URL` | Gemini API base URL | `https://generativelanguage.googleapis.com/v1beta` |
+| `NVIDIA_API_KEY` | NVIDIA hosted Riva API key | none |
+| `NVIDIA_RIVA_FUNCTION_ID` | NVIDIA hosted Riva function id | none |
+| `NVIDIA_RIVA_SERVER` | NVIDIA Riva gRPC server | `grpc.nvcf.nvidia.com:443` |
 | `AZURE_API_KEY` | Azure API key fallback for Azure provider if `--azure-api-key` is unset | none |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | none |
 | `AZURE_DEPLOYMENT_NAME` | Azure deployment name | `whisper` |
@@ -290,7 +313,7 @@ VAD_MODEL=/path/to/silero_vad.onnx transcribeit run -p sherpa-onnx -i recording.
 
 # Speaker diarization (2 speakers)
 transcribeit run -p sherpa-onnx -i meeting.mp4 -m base.en \
-  --speakers 2 \
+  --diarize --speakers 2 \
   --diarize-segmentation-model /path/to/segmentation.onnx \
   --diarize-embedding-model /path/to/embedding.onnx \
   -f vtt -o ./output
@@ -298,7 +321,7 @@ transcribeit run -p sherpa-onnx -i meeting.mp4 -m base.en \
 # VAD + speaker diarization combined
 transcribeit run -p sherpa-onnx -i interview.wav -m base.en \
   --vad-model /path/to/silero_vad.onnx \
-  --speakers 2 \
+  --diarize --speakers 2 \
   --diarize-segmentation-model /path/to/segmentation.onnx \
   --diarize-embedding-model /path/to/embedding.onnx \
   -f srt -o ./output
@@ -323,6 +346,12 @@ transcribeit run -p qwen-filetrans -i recording.mp3 \
   --s3-access-key-id "$S3_ACCESS_KEY_ID" \
   --s3-secret-access-key "$S3_SECRET_ACCESS_KEY" \
   -f vtt -o ./output
+
+# NVIDIA hosted Riva ASR
+transcribeit run -p nvidia-riva -i recording.wav \
+  --nvidia-api-key "$NVIDIA_API_KEY" \
+  --nvidia-riva-function-id "$NVIDIA_RIVA_FUNCTION_ID" \
+  --language en-US -f vtt -o ./output
 ```
 
 ### Provider behavior
@@ -334,7 +363,8 @@ transcribeit run -p qwen-filetrans -i recording.mp3 \
 - **Azure** (`-p azure`) uses `--azure-deployment` and calls:
   `POST {base-url}/openai/deployments/{deployment}/audio/transcriptions?api-version={version}`.
 - **Qwen file transcription** (`-p qwen-filetrans`) uploads audio to S3-compatible storage, passes a pre-signed URL to DashScope, and polls the async transcription task.
-- **Gemini** (`-p gemini`) uploads audio through Gemini Files API, calls `generateContent`, and parses structured transcript JSON defensively.
+- **Gemini** (`-p gemini`) uploads audio through Gemini Files API, calls streamed `streamGenerateContent`, and parses structured transcript JSON defensively.
+- **NVIDIA Riva** (`-p nvidia-riva`) sends WAV audio to hosted Riva gRPC, requesting native word timestamps and optional server-side diarization.
 
 For the full matrix and upload/auth notes, see: [Provider behavior](provider-behavior.md).  
 For benchmark guidance and result templates, see: [Performance benchmarks](performance-benchmarks.md).

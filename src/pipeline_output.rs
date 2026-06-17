@@ -238,12 +238,37 @@ fn build_quality(config: &PipelineConfig, transcript: &Transcript) -> QualityInf
                 .to_string(),
         );
     }
+    if metadata_bool(
+        transcript.provider_metadata.as_ref(),
+        &[
+            "/data/response/segmented_fallback",
+            "/gemini/response/segmented_fallback",
+            "/response/segmented_fallback",
+        ],
+    ) {
+        warnings.push(
+            "Gemini fell back to segmented transcription; speaker identity may not be stable across segments."
+                .to_string(),
+        );
+    }
     if transcript
         .segments
         .iter()
         .any(|segment| segment.end_ms < segment.start_ms)
     {
         warnings.push("One or more segments has end_ms earlier than start_ms.".to_string());
+    }
+    if has_non_monotonic_timestamps(transcript) {
+        warnings.push(
+            "Segment timestamps are not monotonic; subtitle cue order may not match playback time."
+                .to_string(),
+        );
+    }
+    let zero_duration_segments = zero_duration_segment_count(transcript);
+    if zero_duration_segments > 0 {
+        warnings.push(format!(
+            "{zero_duration_segments} segment(s) have zero-duration timestamps."
+        ));
     }
     if !transcript.segments.is_empty() && !has_durations {
         warnings.push("No positive-duration segment timestamps were returned.".to_string());
@@ -262,6 +287,21 @@ fn build_quality(config: &PipelineConfig, transcript: &Transcript) -> QualityInf
             .then(|| speaker_source(&config.provider_name).to_string()),
         warnings,
     }
+}
+
+fn has_non_monotonic_timestamps(transcript: &Transcript) -> bool {
+    transcript
+        .segments
+        .windows(2)
+        .any(|segments| segments[1].start_ms < segments[0].start_ms)
+}
+
+fn zero_duration_segment_count(transcript: &Transcript) -> usize {
+    transcript
+        .segments
+        .iter()
+        .filter(|segment| segment.end_ms == segment.start_ms)
+        .count()
 }
 
 fn build_provider_metadata(provider: &str, metadata: Option<Value>) -> Option<ProviderMetadata> {
@@ -308,13 +348,16 @@ fn metadata_bool(metadata: Option<&Value>, pointers: &[&str]) -> bool {
 }
 
 fn native_timestamps(provider: &str) -> bool {
-    matches!(provider, "local" | "openai" | "azure" | "qwen-filetrans")
+    matches!(
+        provider,
+        "local" | "openai" | "azure" | "qwen-filetrans" | "nvidia-riva"
+    )
 }
 
 fn timing_source(provider: &str) -> &'static str {
     match provider {
         "gemini" => "model_generated",
-        "qwen-filetrans" | "openai" | "azure" => "provider_native",
+        "qwen-filetrans" | "openai" | "azure" | "nvidia-riva" => "provider_native",
         "local" | "sherpa-onnx" => "model_native",
         _ => "unknown",
     }
@@ -332,10 +375,76 @@ fn speaker_source(provider: &str) -> &'static str {
 fn provider_key(provider: &str) -> Option<&'static str> {
     match provider {
         "qwen-filetrans" => Some("qwen"),
+        "nvidia-riva" => Some("nvidia"),
         _ => None,
     }
 }
 
 fn secs_to_ms(seconds: f64) -> i64 {
     (seconds * 1000.0).round() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_quality;
+    use crate::pipeline::{OutputFormat, PipelineConfig};
+    use crate::transcriber::{Segment, Transcript};
+    use std::path::PathBuf;
+
+    #[test]
+    fn quality_warns_on_zero_duration_and_non_monotonic_timestamps() {
+        let transcript = Transcript {
+            segments: vec![
+                Segment {
+                    start_ms: 1000,
+                    end_ms: 2000,
+                    text: "first".to_string(),
+                    ..Default::default()
+                },
+                Segment {
+                    start_ms: 500,
+                    end_ms: 500,
+                    text: "second".to_string(),
+                    ..Default::default()
+                },
+            ],
+            provider_metadata: None,
+        };
+        let config = PipelineConfig {
+            input: PathBuf::from("sample.wav"),
+            output_dir: None,
+            output_format: OutputFormat::Vtt,
+            language: None,
+            normalize_audio: false,
+            segment: false,
+            silence_threshold: -40.0,
+            min_silence_duration: 0.8,
+            max_segment_secs: 600.0,
+            segment_concurrency: 1,
+            auto_split_for_api: false,
+            upload_as_mp3: false,
+            vad_model: None,
+            diarize: false,
+            speakers: None,
+            diarize_segmentation_model: None,
+            diarize_embedding_model: None,
+            provider_name: "gemini".to_string(),
+            model_name: "gemini-test".to_string(),
+        };
+
+        let quality = build_quality(&config, &transcript);
+
+        assert!(
+            quality
+                .warnings
+                .iter()
+                .any(|warning| { warning.contains("Segment timestamps are not monotonic") })
+        );
+        assert!(
+            quality
+                .warnings
+                .iter()
+                .any(|warning| { warning.contains("1 segment(s) have zero-duration timestamps") })
+        );
+    }
 }
