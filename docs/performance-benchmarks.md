@@ -162,6 +162,30 @@ Record:
 - manifest `quality.timing_reliable`
 - whether server-side speaker labels were useful
 
+### 8. Deepgram
+
+Benchmark Deepgram as a whole-file batch provider with both plain Nova-3 and medical/intelligence options:
+
+```bash
+time transcribeit run -p deepgram --remote-model nova-3 \
+  -i <input_file> --diarize -f vtt -o ./output
+
+time transcribeit run -p deepgram --remote-model nova-3-medical \
+  --diarize --deepgram-intelligence \
+  --deepgram-keyterm Ofev --deepgram-keyterm Esbriet --deepgram-keyterm IPF \
+  -i <input_file> -f vtt -o ./output
+```
+
+Record:
+- model name and `provider_metadata.data.metadata.model_info`
+- wall-clock time and realtime factor
+- manifest `provider_metadata.data.response.mean_confidence`
+- manifest `provider_metadata.data.intelligence.summary`
+- counts for returned topics, intents, sentiments, and entities
+- whether keyterm prompting improved domain terms or brand names
+- diarization behavior, especially unexpected extra speakers
+- whether `quality.timestamps_clamped` was triggered
+
 ## Suggested result format
 
 ```text
@@ -176,6 +200,22 @@ Output size: 4.6 MB
 ```
 
 Keep rows in a simple table (date + commit hash + environment + results) in your preferred tracker so regressions are easy to catch.
+
+## Current provider assessment
+
+Based on the provider evaluations captured so far, Deepgram is currently the most advanced provider for Transcript Intelligence workflows, especially `nova-3-medical` with domain keyterms. It is the only tested provider that returned high-quality ASR together with provider-native utterances, word timestamps, diarization, summary, topics, intents, sentiment, entity extraction, model metadata, and intelligence token usage in one transcription response.
+
+This does not mean every Deepgram intelligence field should be treated as ground truth. In the 5-minute medical interview sample, `nova-3-medical` returned useful entities, topics, intents, and sentiment, but its summary made a role error. Without keyterms it also misheard `Ofev` as `OFAP`; adding keyterms such as `Ofev`, `Esbriet`, `IPF`, and `Producta` corrected the medical brand terms and improved speaker consistency in the observed run.
+
+Use this working ranking until broader benchmark data says otherwise:
+
+| Rank | Provider / Model | Current assessment |
+|---|---|---|
+| 1 | Deepgram `nova-3-medical` + keyterms | Best Transcript Intelligence candidate; strongest structured metadata and good ASR when keyterms are supplied. |
+| 2 | Qwen `qwen3-asr-flash-filetrans` | Strong pure ASR baseline with word timestamps, but less downstream intelligence metadata. |
+| 3 | OpenAI hosted transcription | Strong general ASR, but less structured transcript intelligence in the current CLI path. |
+| 4 | Gemini | Useful whole-file multimodal transcription and summary path, but timestamps/speakers are model-generated rather than dedicated ASR metadata. |
+| 5 | NVIDIA Riva | Provider-native timestamps/diarization through hosted Riva, but less transcript intelligence returned through the current provider path. |
 
 ## Reference benchmark results
 

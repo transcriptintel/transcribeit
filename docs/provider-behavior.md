@@ -1,6 +1,17 @@
 # Provider behavior
 
-This project supports seven providers. They share the same input/output surface, but engine type, API shape, and credentials differ.
+This project supports eight providers. They share the same input/output surface, but engine type, API shape, and credentials differ.
+
+## Remote URL input support
+
+| Provider | Pre-signed URL support in this CLI | Notes |
+|----------|------------------------------------|-------|
+| `qwen-filetrans` | Required | Stages prepared MP3 audio in S3/R2 and passes the pre-signed URL to DashScope async ASR. |
+| `deepgram` | Optional | Direct byte upload is the default. `--deepgram-use-presigned-url` stages prepared WAV audio in S3/R2 and sends Deepgram `{"url":"..."}`. |
+| `gemini` | Not currently implemented | The current implementation uses Gemini Files API upload/cache because that path supports file reuse and explicit cached-content workflows. |
+| `openai` | No | Uses multipart transcription upload. |
+| `azure` | No | Uses Azure OpenAI multipart transcription upload. |
+| `nvidia-riva` | No | Uses hosted Riva gRPC audio streaming/buffers. |
 
 ## Local (`-p local`)
 
@@ -183,6 +194,53 @@ Gemini summary analysis includes:
   - `provider_metadata.data.response` with result/word counts, elapsed time, and mean confidence
 - Riva does not expose token-cache telemetry through this path, so manifests use `cache.transcription.mode = "none"`.
 - The implementation targets hosted Riva gRPC. Local/self-hosted NIM REST transcription is not wired into this provider yet.
+
+## Deepgram (`-p deepgram`)
+
+- Uses Deepgram batch speech-to-text through `POST {deepgram-api-base-url}/listen`.
+- Authentication:
+  - `--deepgram-api-key` or `DEEPGRAM_API_KEY`
+  - `--api-key`/`OPENAI_API_KEY` is accepted as an API key fallback for scripting consistency.
+- Base URL defaults to `https://api.deepgram.com/v1` and can be overridden with `--deepgram-api-base-url` or `DEEPGRAM_API_BASE_URL`.
+- Default model: `nova-3`. Use `--remote-model nova-3-medical` for Deepgram's medical-domain Nova-3 model when enabled for the account.
+- The request always enables `smart_format=true` and `utterances=true` so the provider returns readable utterance segments plus word-level timestamps.
+- Input audio/video is converted with FFmpeg to 16 kHz mono WAV when it is not already compatible with the internal pipeline format.
+- By default, the provider uploads audio bytes directly. With `--deepgram-use-presigned-url` or `DEEPGRAM_USE_PRESIGNED_URL=true`, the CLI stages the prepared WAV in S3-compatible storage, generates a pre-signed GET URL, and sends Deepgram a JSON body containing that URL.
+- Deepgram URL mode uses the shared S3 settings:
+  - `S3_BUCKET`
+  - `S3_REGION` or `AWS_REGION`
+  - `S3_ACCESS_KEY_ID` or `AWS_ACCESS_KEY_ID`
+  - `S3_SECRET_ACCESS_KEY` or `AWS_SECRET_ACCESS_KEY`
+  - `S3_ENDPOINT_URL` for S3-compatible providers such as Cloudflare R2
+  - `S3_SESSION_TOKEN` or `AWS_SESSION_TOKEN`
+  - `S3_PREFIX` (defaults to `transcribeit/deepgram` for this mode when unset)
+  - `S3_PRESIGN_EXPIRES_SECS` (defaults to `3600`, minimum `300`)
+  - `S3_FORCE_PATH_STYLE=true` for providers that require path-style URLs
+- When `--diarize` is set, the request uses `diarize_model=latest`. `--speakers N` is treated as a request to enable diarization, but Deepgram does not accept a fixed speaker-count hint through this provider path.
+- `--deepgram-intelligence` enables `summarize=v2`, `topics=true`, `intents=true`, `detect_entities=true`, and `sentiment=true`.
+- Individual feature flags are also available:
+  - `--deepgram-summarize`
+  - `--deepgram-topics`
+  - `--deepgram-intents`
+  - `--deepgram-detect-entities`
+  - `--deepgram-sentiment`
+  - `--deepgram-filler-words`
+  - `--deepgram-numerals`
+- Custom vocabulary and downstream-processing flags:
+  - `--deepgram-keyterm TERM` for Nova-3 keyterm prompting; repeat or comma-separate terms.
+  - `--deepgram-search TERM` for provider search hits.
+  - `--deepgram-redact TARGET` for redaction targets such as `pii`, `phi`, `pci`, `numbers`, or entity classes.
+  - `--deepgram-replace FIND:REPLACE` for find-and-replace rules.
+- Manifests include Deepgram provider metadata when available:
+  - `provider_metadata.provider = "deepgram"`
+  - `provider_metadata.schema_version = "deepgram.metadata.v1"`
+  - `provider_metadata.data.request` with `audio_source` (`direct_upload` or `presigned_url`) and `file_url_present`; the actual pre-signed URL is not persisted.
+  - `provider_metadata.data.metadata` with Deepgram request id, duration, channel count, model ids, `model_info`, and intelligence token usage metadata.
+  - `provider_metadata.data.response` with channel, utterance, and alternative counts, mean confidence, and timestamp clamping telemetry.
+  - `provider_metadata.data.intelligence` with returned `summary`, `topics`, `intents`, `sentiments`, `entities`, `summaries`, `search`, and warnings.
+- If Deepgram returns timestamps beyond its reported media duration, the provider clamps segment and word times to the duration and records `provider_metadata.data.response.timestamps_clamped = true`.
+- Deepgram intelligence output is valuable for Transcript Intelligence workflows, but summaries/topics/intents/entities are still model output. Treat them as provider metadata for downstream review rather than as validated facts.
+- Deepgram does not expose token-cache telemetry through this path, so manifests use `cache.transcription.mode = "none"`.
 
 ## Why providers differ
 

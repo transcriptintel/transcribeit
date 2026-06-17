@@ -28,6 +28,7 @@ src/
     ├── azure_openai.rs    # Azure OpenAI REST API
     ├── gemini.rs          # Gemini Files API + streamed generateContent
     ├── nvidia_riva.rs     # NVIDIA hosted Riva gRPC ASR
+    ├── deepgram.rs        # Deepgram Nova batch ASR + audio intelligence
     ├── qwen_filetrans.rs  # Qwen async file transcription provider
     ├── qwen_filetrans/    # Qwen request/response types and model limits
     ├── rate_limit.rs      # Retry logic and 429 handling
@@ -59,6 +60,7 @@ pub trait Transcriber: Send + Sync {
 - **Qwen file transcription** overrides `transcribe_path()` to upload prepared audio to S3-compatible storage, generate a pre-signed URL, and submit that URL to DashScope.
 - **Gemini** overrides `transcribe_path()` to upload prepared audio through Gemini Files API and call streamed `streamGenerateContent` with structured JSON output.
 - **NVIDIA Riva** overrides `transcribe_path()` and `transcribe_wav()` to send WAV bytes to a hosted Riva gRPC endpoint with provider-native timestamps.
+- **Deepgram** overrides `transcribe_path()` and `transcribe_wav()` to post WAV bytes to Deepgram's `/listen` endpoint with utterances, word timestamps, optional diarization, and optional audio intelligence flags. In URL mode, it stages the prepared WAV in S3-compatible storage and sends Deepgram a pre-signed URL JSON request instead.
 
 ## Processing pipeline
 
@@ -69,7 +71,7 @@ Input file (any format)
   │
   ├─ needs_conversion()? ──→ extract_to_wav(normalize) for local provider
   ├─ upload_as_mp3(normalize) for OpenAI/Azure, Qwen filetrans, and Gemini (16kHz mono MP3)
-  ├─ hosted Riva path keeps WAV audio for gRPC recognition
+  ├─ hosted Riva and Deepgram paths keep WAV audio for recognition
   │
   ├─ get_duration() via ffprobe
   │
@@ -206,6 +208,22 @@ Uses hosted NVIDIA Riva ASR over gRPC through generated protobuf bindings in `pr
 
 The provider is implemented entirely in Rust with `tonic`/`prost`. It does not download local NVIDIA NIM containers or require Python clients.
 
+### Deepgram (`deepgram.rs`)
+
+Uses Deepgram's pre-recorded `/listen` REST API for batch transcription. The provider:
+
+- defaults to `nova-3`, with `nova-3-medical` available through `--remote-model` when enabled for the account
+- requests `smart_format=true` and `utterances=true`
+- enables provider-native diarization with `diarize_model=latest` when `--diarize` or `--speakers` is set
+- can send either direct audio bytes or a staged pre-signed S3/R2 URL with `--deepgram-use-presigned-url`
+- accepts Nova-3 keyterm prompts through `--deepgram-keyterm`
+- can enable Deepgram audio intelligence through `--deepgram-intelligence` or individual flags for summary, topics, intents, entities, and sentiment
+- maps Deepgram utterances and word timestamps into normalized segments and words
+- preserves returned intelligence blocks under `provider_metadata.data.intelligence`
+- clamps provider timestamps to `metadata.duration` when necessary and records that under `provider_metadata.data.response.timestamps_clamped`
+
+Deepgram's intelligence JSON is intentionally kept as provider metadata because it is richer than the normalized transcript schema and because downstream Transcript Intelligence consumers may want to inspect provider-native topics, intents, sentiments, entities, and token usage. URL-mode metadata records only that a file URL was used; temporary pre-signed URLs are not persisted.
+
 ## Analysis (`analysis.rs`)
 
 Post-transcription analysis is separate from transcription. The first supported analysis is `--analysis summary`, which currently uses Gemini to run a second structured JSON call over the transcript text. Results are written to the manifest only when `--output-dir` is set:
@@ -263,7 +281,7 @@ All settings (timeout, retries, wait times) are configurable via CLI flags and e
 
 ### Shared WAV encoding
 
-OpenAI/Azure engines can send file uploads directly and choose the correct container format for compatibility (WAV for local transcribe path, MP3 for API provider uploads). Qwen file transcription stages MP3 in S3-compatible storage and sends DashScope a pre-signed URL. Gemini uploads MP3 through Gemini Files API. NVIDIA Riva sends WAV bytes through gRPC. The `audio::wav::encode_wav()` helper is still used by local engines and non-file upload paths.
+OpenAI/Azure engines can send file uploads directly and choose the correct container format for compatibility (WAV for local transcribe path, MP3 for API provider uploads). Qwen file transcription stages MP3 in S3-compatible storage and sends DashScope a pre-signed URL. Gemini uploads MP3 through Gemini Files API. NVIDIA Riva sends WAV bytes through gRPC. Deepgram posts WAV bytes to `/listen` by default, or stages WAV in S3-compatible storage and sends a pre-signed URL when URL mode is enabled. The `audio::wav::encode_wav()` helper is still used by local engines and non-file upload paths.
 
 ## Model cache (`model_cache.rs`)
 

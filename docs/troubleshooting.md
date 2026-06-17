@@ -87,6 +87,8 @@ Symptoms:
 Fix:
 - When using local post-processing diarization, pass `--diarize --speakers N`; both `--diarize-segmentation-model` and `--diarize-embedding-model` are required.
 - When using NVIDIA Riva, `--diarize` can be used without `--speakers`; the CLI sends a default max-speaker hint of 4.
+- When using Deepgram, `--diarize` enables `diarize_model=latest`; `--speakers N` is treated only as a request to enable diarization because Deepgram does not accept a fixed speaker-count hint here.
+- If Deepgram URL mode fails before transcription, confirm `--deepgram-use-presigned-url` has valid `S3_*` or AWS-compatible credentials and that Deepgram can fetch the generated pre-signed URL before it expires.
 - When using OpenAI, `--diarize` selects `gpt-4o-transcribe-diarize` by default. If you explicitly choose another OpenAI model, local Sherpa diarization is required.
 - Qwen file transcription and Azure do not currently provide native diarization through this CLI; use local Sherpa diarization for those providers.
 - Ensure both model paths point to valid ONNX files:
@@ -291,7 +293,7 @@ Common symptoms:
 Fix:
 - Use `--normalize` to reduce volume inconsistency from recorded content.
 - Ensure input is not corrupted and ffmpeg conversion succeeds.
-- For OpenAI/Azure providers, MP3 conversion is used internally; local provider uses WAV input internally. Qwen file transcription stages a prepared MP3 in S3-compatible storage and passes a pre-signed URL to DashScope.
+- For OpenAI/Azure providers, MP3 conversion is used internally; local provider uses WAV input internally. Qwen file transcription stages a prepared MP3 in S3-compatible storage and passes a pre-signed URL to DashScope. Deepgram and NVIDIA Riva use WAV input internally; Deepgram can optionally stage that prepared WAV in S3/R2 and submit a pre-signed URL with `--deepgram-use-presigned-url`.
 
 ### Empty or tiny transcript outputs
 

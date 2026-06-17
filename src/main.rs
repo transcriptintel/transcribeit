@@ -25,6 +25,7 @@ use crate::cli::{
     AnalysisKind, Cli, Command, ModelFormat, OutputFormatArg, Provider, SetupComponent,
 };
 use crate::engines::azure_openai::AzureOpenAi;
+use crate::engines::deepgram::DeepgramApi;
 use crate::engines::gemini::GeminiApi;
 use crate::engines::model_cache::ModelCache;
 use crate::engines::nvidia_riva::NvidiaRiva;
@@ -148,10 +149,25 @@ async fn main() -> Result<()> {
             nvidia_api_key,
             nvidia_riva_function_id,
             nvidia_riva_server,
+            deepgram_api_key,
             azure_api_key,
             remote_model,
             qwen_api_base_url,
             gemini_api_base_url,
+            deepgram_api_base_url,
+            deepgram_intelligence,
+            deepgram_summarize,
+            deepgram_topics,
+            deepgram_intents,
+            deepgram_detect_entities,
+            deepgram_sentiment,
+            deepgram_keyterm,
+            deepgram_search,
+            deepgram_redact,
+            deepgram_replace,
+            deepgram_filler_words,
+            deepgram_numerals,
+            deepgram_use_presigned_url,
             gemini_file_cache,
             gemini_file_cache_index,
             gemini_autoclean,
@@ -326,30 +342,20 @@ async fn main() -> Result<()> {
                     let key = dashscope_api_key.or(api_key).context(
                             "--dashscope-api-key, --api-key, DASHSCOPE_API_KEY, or OPENAI_API_KEY is required for --provider qwen-filetrans",
                         )?;
-                    let s3_config = s3_config_from_input(S3ConfigInput {
-                            bucket: s3_bucket.context(
-                                "--s3-bucket or S3_BUCKET is required for --provider qwen-filetrans",
-                            )?,
-                            region: s3_region.or_else(|| std::env::var("AWS_REGION").ok()).context(
-                                "--s3-region, S3_REGION, or AWS_REGION is required for --provider qwen-filetrans",
-                            )?,
-                            endpoint_url: s3_endpoint_url,
-                            access_key_id: s3_access_key_id
-                                .or_else(|| std::env::var("AWS_ACCESS_KEY_ID").ok())
-                                .context(
-                                "--s3-access-key-id, S3_ACCESS_KEY_ID, or AWS_ACCESS_KEY_ID is required for --provider qwen-filetrans",
-                            )?,
-                            secret_access_key: s3_secret_access_key
-                                .or_else(|| std::env::var("AWS_SECRET_ACCESS_KEY").ok())
-                                .context(
-                                "--s3-secret-access-key, S3_SECRET_ACCESS_KEY, or AWS_SECRET_ACCESS_KEY is required for --provider qwen-filetrans",
-                            )?,
-                            session_token: s3_session_token.or_else(|| std::env::var("AWS_SESSION_TOKEN").ok()),
-                            prefix: s3_prefix,
-                            presign_expires_secs: s3_presign_expires_secs,
-                            force_path_style: s3_force_path_style,
-                        })?;
-                    let uploader = S3Uploader::new(s3_config).await?;
+                    let uploader = build_s3_uploader(S3UploaderArgs {
+                        bucket: s3_bucket,
+                        region: s3_region,
+                        endpoint_url: s3_endpoint_url,
+                        access_key_id: s3_access_key_id,
+                        secret_access_key: s3_secret_access_key,
+                        session_token: s3_session_token,
+                        prefix: s3_prefix,
+                        default_prefix: "transcribeit/qwen-filetrans",
+                        presign_expires_secs: s3_presign_expires_secs,
+                        force_path_style: s3_force_path_style,
+                        context_label: "--provider qwen-filetrans",
+                    })
+                    .await?;
                     let model_name =
                         remote_model.unwrap_or_else(|| "qwen3-asr-flash-filetrans".into());
                     ProviderRuntime {
@@ -443,6 +449,72 @@ async fn main() -> Result<()> {
                         model_name,
                     }
                 }
+                Provider::Deepgram => {
+                    let key = deepgram_api_key.or(api_key).context(
+                        "--deepgram-api-key, DEEPGRAM_API_KEY, --api-key, or OPENAI_API_KEY is required for --provider deepgram",
+                    )?;
+                    let model_name = remote_model.unwrap_or_else(|| "nova-3".into());
+                    if speakers.is_some() && !diarize {
+                        eprintln!(
+                            "--speakers was provided for Deepgram, so provider-native diarization will be enabled with diarize_model=latest."
+                        );
+                    }
+                    if speakers.is_some() {
+                        eprintln!(
+                            "Deepgram does not accept an exact speaker-count hint for batch diarization; --speakers is treated as a request to enable diarization."
+                        );
+                    }
+                    ProviderRuntime {
+                        engine: Box::new(DeepgramApi::new(
+                            deepgram_api_base_url,
+                            key,
+                            model_name.clone(),
+                            language.clone(),
+                            api_settings,
+                            crate::engines::deepgram::DeepgramOptions {
+                                diarize: diarize || speakers.is_some(),
+                                intelligence: deepgram_intelligence,
+                                summarize: deepgram_summarize,
+                                topics: deepgram_topics,
+                                intents: deepgram_intents,
+                                detect_entities: deepgram_detect_entities,
+                                sentiment: deepgram_sentiment,
+                                keyterms: deepgram_keyterm,
+                                search: deepgram_search,
+                                redact: deepgram_redact,
+                                replace: deepgram_replace,
+                                filler_words: deepgram_filler_words,
+                                numerals: deepgram_numerals,
+                            },
+                            if deepgram_use_presigned_url {
+                                Some(
+                                    build_s3_uploader(
+                                        S3UploaderArgs {
+                                            bucket: s3_bucket,
+                                            region: s3_region,
+                                            endpoint_url: s3_endpoint_url,
+                                            access_key_id: s3_access_key_id,
+                                            secret_access_key: s3_secret_access_key,
+                                            session_token: s3_session_token,
+                                            prefix: s3_prefix,
+                                            default_prefix: "transcribeit/deepgram",
+                                            presign_expires_secs: s3_presign_expires_secs,
+                                            force_path_style: s3_force_path_style,
+                                            context_label:
+                                                "--provider deepgram --deepgram-use-presigned-url",
+                                        },
+                                    )
+                                    .await?,
+                                )
+                            } else {
+                                None
+                            },
+                        )?),
+                        analyzer: None,
+                        provider_name: "deepgram".into(),
+                        model_name,
+                    }
+                }
             };
             let requested_diarization = diarize || speakers.is_some();
             let provider_native_diarization =
@@ -509,7 +581,65 @@ async fn main() -> Result<()> {
 fn provider_handles_diarization(provider_name: &str, model_name: &str) -> bool {
     match provider_name {
         "nvidia-riva" | "gemini" => true,
+        "deepgram" => true,
         "openai" => model_name.eq_ignore_ascii_case("gpt-4o-transcribe-diarize"),
         _ => false,
     }
+}
+
+struct S3UploaderArgs {
+    bucket: Option<String>,
+    region: Option<String>,
+    endpoint_url: Option<String>,
+    access_key_id: Option<String>,
+    secret_access_key: Option<String>,
+    session_token: Option<String>,
+    prefix: Option<String>,
+    default_prefix: &'static str,
+    presign_expires_secs: u64,
+    force_path_style: bool,
+    context_label: &'static str,
+}
+
+async fn build_s3_uploader(args: S3UploaderArgs) -> Result<S3Uploader> {
+    let context_label = args.context_label;
+
+    let s3_config = s3_config_from_input(S3ConfigInput {
+        bucket: args
+            .bucket
+            .with_context(|| format!("--s3-bucket or S3_BUCKET is required for {context_label}"))?,
+        region: args
+            .region
+            .or_else(|| std::env::var("AWS_REGION").ok())
+            .with_context(|| {
+                format!("--s3-region, S3_REGION, or AWS_REGION is required for {context_label}")
+            })?,
+        endpoint_url: args.endpoint_url,
+        access_key_id: args
+            .access_key_id
+            .or_else(|| std::env::var("AWS_ACCESS_KEY_ID").ok())
+            .with_context(|| {
+                format!(
+                    "--s3-access-key-id, S3_ACCESS_KEY_ID, or AWS_ACCESS_KEY_ID is required for {context_label}"
+                )
+            })?,
+        secret_access_key: args
+            .secret_access_key
+            .or_else(|| std::env::var("AWS_SECRET_ACCESS_KEY").ok())
+            .with_context(|| {
+                format!(
+                    "--s3-secret-access-key, S3_SECRET_ACCESS_KEY, or AWS_SECRET_ACCESS_KEY is required for {context_label}"
+                )
+            })?,
+        session_token: args
+            .session_token
+            .or_else(|| std::env::var("AWS_SESSION_TOKEN").ok()),
+        prefix: args
+            .prefix
+            .or_else(|| Some(args.default_prefix.to_string())),
+        presign_expires_secs: args.presign_expires_secs,
+        force_path_style: args.force_path_style,
+    })?;
+
+    S3Uploader::new(s3_config).await
 }
