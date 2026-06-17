@@ -335,7 +335,7 @@ fn cache_entry_for_provider(provider: &str, metadata: Option<&Value>, source: &s
     match provider {
         "gemini" => gemini_cache_entry(provider, metadata, source),
         "openai" | "azure" => openai_cache_entry(provider, metadata, source),
-        "qwen-filetrans" | "nvidia-riva" | "local" | "sherpa-onnx" => CacheEntry {
+        "qwen-filetrans" | "nvidia-riva" | "deepgram" | "local" | "sherpa-onnx" => CacheEntry {
             provider: provider.to_string(),
             mode: "none".to_string(),
             hit: false,
@@ -497,14 +497,14 @@ fn metadata_bool(metadata: Option<&Value>, pointers: &[&str]) -> bool {
 fn native_timestamps(provider: &str) -> bool {
     matches!(
         provider,
-        "local" | "openai" | "azure" | "qwen-filetrans" | "nvidia-riva"
+        "local" | "openai" | "azure" | "qwen-filetrans" | "nvidia-riva" | "deepgram"
     )
 }
 
 fn timing_source(provider: &str) -> &'static str {
     match provider {
         "gemini" => "model_generated",
-        "qwen-filetrans" | "openai" | "azure" | "nvidia-riva" => "provider_native",
+        "qwen-filetrans" | "openai" | "azure" | "nvidia-riva" | "deepgram" => "provider_native",
         "local" | "sherpa-onnx" => "model_native",
         _ => "unknown",
     }

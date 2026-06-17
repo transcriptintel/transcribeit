@@ -1,6 +1,6 @@
 # transcribeit
 
-A Rust CLI for speech-to-text transcription. Supports local inference via [whisper.cpp](https://github.com/ggerganov/whisper.cpp), local inference via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), remote transcription via OpenAI-compatible APIs, Azure OpenAI, Qwen ASR file transcription, Gemini multimodal transcription, and NVIDIA hosted Riva ASR.
+A Rust CLI for speech-to-text transcription. Supports local inference via [whisper.cpp](https://github.com/ggerganov/whisper.cpp), local inference via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), remote transcription via OpenAI-compatible APIs, Azure OpenAI, Qwen ASR file transcription, Gemini multimodal transcription, NVIDIA hosted Riva ASR, and Deepgram.
 
 Accepts any audio or video format — FFmpeg handles conversion automatically.
 
@@ -10,8 +10,9 @@ Accepts any audio or video format — FFmpeg handles conversion automatically.
 - [FFmpeg](https://ffmpeg.org/) installed and on PATH
 - C/C++ toolchain and CMake (for building whisper.cpp)
 - sherpa-onnx shared libraries (if using the `sherpa-onnx` provider) — set `SHERPA_ONNX_LIB_DIR` in `.env` to the directory containing them
-- S3-compatible storage credentials when using `qwen-filetrans`; Cloudflare R2 is supported through `S3_ENDPOINT_URL`
+- S3-compatible storage credentials when using `qwen-filetrans` or Deepgram pre-signed URL mode; Cloudflare R2 is supported through `S3_ENDPOINT_URL`
 - NVIDIA API key and hosted Riva function id when using `nvidia-riva`
+- Deepgram API key when using `deepgram`
 
 ## Quick start
 
@@ -80,6 +81,14 @@ transcribeit run -p gemini --gemini-file-cache \
 transcribeit run -p gemini --gemini-explicit-cache --gemini-cache-ttl-secs 3600 \
   -i recording.mp3 -f vtt -o ./output
 
+# Use S3/R2 pre-signed URL input for a one-off Gemini run
+transcribeit run -p gemini --gemini-use-presigned-url \
+  -i recording.mp3 -f vtt -o ./output
+
+# Delete temporary staged provider resources after the provider consumes them
+transcribeit run -p qwen-filetrans --autoclean \
+  -i recording.mp3 -f vtt -o ./output
+
 # Transcribe with Gemini and add a structured summary to the manifest
 transcribeit run -p gemini --analysis summary \
   -i interview.mp4 -f vtt -o ./output
@@ -89,6 +98,20 @@ transcribeit run -p nvidia-riva -i recording.wav \
   --nvidia-api-key "$NVIDIA_API_KEY" \
   --nvidia-riva-function-id "$NVIDIA_RIVA_FUNCTION_ID" \
   -f vtt -o ./output
+
+# Transcribe with Deepgram Nova-3 batch ASR and provider-native diarization
+transcribeit run -p deepgram --remote-model nova-3 --diarize \
+  -i recording.wav -f vtt -o ./output
+
+# Transcribe with Deepgram by staging the prepared audio in S3/R2 first
+transcribeit run -p deepgram --remote-model nova-3 --deepgram-use-presigned-url \
+  -i recording.wav -f vtt -o ./output
+
+# Transcribe with Deepgram Nova-3 Medical, intelligence metadata, and domain keyterms
+transcribeit run -p deepgram --remote-model nova-3-medical \
+  --diarize --deepgram-intelligence \
+  --deepgram-keyterm Ofev --deepgram-keyterm Esbriet --deepgram-keyterm IPF \
+  -i interview.wav -f vtt -o ./output
 
 # Force language and normalize before transcription
 transcribeit run -i recording.wav -m base --language en --normalize
@@ -105,7 +128,7 @@ transcribeit run -i interview.mp3 -m base --diarize --speakers 2 \
 ## Features
 
 - **Any input format** — MP3, MP4, WAV, FLAC, OGG, etc. FFmpeg converts to mono 16kHz WAV automatically.
-- **7 providers** — Local whisper.cpp, sherpa-onnx, OpenAI API, Azure OpenAI, Qwen file transcription, Gemini, and NVIDIA Riva. Extensible via the `Transcriber` trait.
+- **8 providers** — Local whisper.cpp, sherpa-onnx, OpenAI API, Azure OpenAI, Qwen file transcription, Gemini, NVIDIA Riva, and Deepgram. Extensible via the `Transcriber` trait.
 - **Qwen ASR whole-file transcription** — `qwen-filetrans` stages audio in S3-compatible storage, passes a pre-signed URL to DashScope, polls the async task, and maps Qwen timestamps into the transcript model.
 - **Stable manifest schema** — Manifests use `transcribeit.manifest.v2` with canonical millisecond timestamps, provider-neutral capabilities/quality fields, and provider-specific metadata under `provider_metadata.data`.
 - **Cache telemetry** — Manifests normalize provider token-cache signals under `cache`, including Gemini `cachedContentTokenCount` and OpenAI/Azure-style `cached_tokens` when returned.
@@ -113,9 +136,13 @@ transcribeit run -i interview.mp3 -m base --diarize --speakers 2 \
 - **Qwen model guardrails** — Accidental short-audio `qwen3-asr-flash` model selection is rejected before conversion and S3 upload; use `qwen3-asr-flash-filetrans` for this provider.
 - **Gemini whole-file transcription** — `gemini` uploads prepared audio through Gemini Files API, streams `generateContent` response chunks with structured JSON output, and maps segment timestamps, speaker labels, language, and emotion when returned.
 - **Gemini file reuse** — `--gemini-file-cache` keeps a local index of Gemini Files API uploads keyed by SHA-256 of the prepared 16 kHz mono MP3 bytes, verifies the remote file before reuse, and records reuse metadata in the manifest.
+- **Gemini signed URL input** — `--gemini-use-presigned-url` stages prepared MP3 audio in S3/R2 and sends the signed URL as Gemini `file_uri` for one-off inputs up to 100 MB. Files API cache and explicit cached content remain Files API-only.
 - **Gemini explicit cache** — `--gemini-explicit-cache` creates and reuses Gemini `cachedContent` objects with a configurable TTL, producing deterministic `cachedContentTokenCount` telemetry when Gemini accepts the cache.
 - **Gemini summary analysis** — `--analysis summary` runs a second Gemini JSON pass over the transcript and stores a provider-neutral summary, key points, topics, questions, and follow-ups in the manifest.
+- **Temporary resource cleanup** — `--autoclean` performs best-effort cleanup of temporary provider resources created by the run, including S3/R2 staged objects for Qwen, Gemini signed URL mode, and Deepgram signed URL mode.
 - **NVIDIA hosted Riva ASR** — `nvidia-riva` calls hosted NVIDIA Riva gRPC endpoints with provider-native word timestamps, optional server-side diarization, and manifest metadata.
+- **Deepgram Nova batch ASR** — `deepgram` calls Deepgram's `/listen` API, defaults to `nova-3`, requests utterances and smart formatting, supports provider-native diarization through `--diarize`, and can submit either direct audio bytes or an S3/R2 pre-signed URL with `--deepgram-use-presigned-url`.
+- **Deepgram audio intelligence** — `--deepgram-intelligence` captures Deepgram summary, topics, intents, entity detection, and sentiment in `provider_metadata.data.intelligence`; `--deepgram-keyterm` passes Nova-3 keyterm prompts for domain terminology.
 - **3 model architectures via sherpa-onnx** — Whisper, Moonshine, and SenseVoice are auto-detected from the model directory contents. Just point `--model` at any supported model directory.
 - **Model aliases** — `-m base`, `-m tiny`, etc. resolve from `MODEL_CACHE_DIR` for both `local` and `sherpa-onnx` providers. The sherpa-onnx resolver also supports glob matching (e.g., `-m moonshine-base`, `-m sense-voice`).
 - **Language hinting** — Pass `--language` to force local and API transcription language.
@@ -145,9 +172,15 @@ SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
 OPENAI_API_KEY=sk-your_key_here
 GEMINI_API_KEY=your_gemini_key_here
 GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta
+GEMINI_USE_PRESIGNED_URL=false
 NVIDIA_API_KEY=your_nvidia_key_here
 NVIDIA_RIVA_FUNCTION_ID=your_hosted_riva_function_id
 NVIDIA_RIVA_SERVER=grpc.nvcf.nvidia.com:443
+DEEPGRAM_API_KEY=your_deepgram_key_here
+DEEPGRAM_API_BASE_URL=https://api.deepgram.com/v1
+DEEPGRAM_INTELLIGENCE=false
+DEEPGRAM_KEYTERM=Ofev,Esbriet,IPF
+DEEPGRAM_USE_PRESIGNED_URL=false
 AZURE_API_KEY=your_azure_key_here
 AZURE_OPENAI_ENDPOINT=https://myresource.openai.azure.com
 AZURE_DEPLOYMENT_NAME=whisper
@@ -159,9 +192,11 @@ S3_REGION=auto
 S3_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
 S3_ACCESS_KEY_ID=your_s3_access_key
 S3_SECRET_ACCESS_KEY=your_s3_secret_key
+# Optional; when unset, URL-staging providers choose their own prefix.
 S3_PREFIX=transcribeit/qwen-filetrans
 S3_PRESIGN_EXPIRES_SECS=3600
 S3_FORCE_PATH_STYLE=false
+TRANSCRIBEIT_AUTOCLEAN=false
 TRANSCRIBEIT_MAX_RETRIES=5
 TRANSCRIBEIT_REQUEST_TIMEOUT_SECS=120
 TRANSCRIBEIT_RETRY_WAIT_BASE_SECS=10

@@ -46,7 +46,7 @@ transcribeit run [OPTIONS] --input <FILE_OR_PATH_OR_GLOB>
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-i, --input` | Input path, directory, or glob pattern for audio/video files | required |
-| `-p, --provider` | `local`, `sherpa-onnx`, `openai`, `azure`, `qwen-filetrans`, `gemini`, or `nvidia-riva` | `local` |
+| `-p, --provider` | `local`, `sherpa-onnx`, `openai`, `azure`, `qwen-filetrans`, `gemini`, `nvidia-riva`, or `deepgram` | `local` |
 
 #### Local provider options (`-p local`)
 
@@ -125,14 +125,17 @@ If a short-audio `qwen3-asr-flash` model is selected with `-p qwen-filetrans`, t
 | `--gemini-api-base-url` | Gemini API base URL | `GEMINI_API_BASE_URL` env var, or `https://generativelanguage.googleapis.com/v1beta` |
 | `--remote-model` | Gemini model name | `gemini-3.5-flash` |
 | `--gemini-file-cache` | Reuse Gemini Files API uploads keyed by SHA-256 of prepared upload bytes | disabled |
+| `--gemini-use-presigned-url` | Stage prepared audio in S3-compatible storage and pass the pre-signed URL as Gemini `file_uri` | disabled |
 | `--gemini-file-cache-index` | Local Gemini file cache index path | `GEMINI_FILE_CACHE_INDEX` env var, or `.cache/transcribeit/gemini-files.json` |
-| `--gemini-autoclean` | Delete Gemini Files API uploads after transcription even when file cache is enabled | disabled |
+| `--gemini-autoclean` | Deprecated alias for `--autoclean` for Gemini temporary uploads | disabled |
 | `--gemini-explicit-cache` | Create and reuse Gemini explicit `cachedContent` objects for prepared audio | disabled |
 | `--gemini-cache-ttl-secs` | TTL in seconds for Gemini explicit `cachedContent` objects | `3600` |
 
 The Gemini provider uses the Gemini Files API plus streamed `streamGenerateContent` with structured JSON output. It converts input audio/video to 16 kHz mono MP3 before upload, then asks Gemini for a transcript object with `text`, `segments`, timestamps, speaker, language, and emotion fields.
 
-By default, Gemini uploads are deleted after each run. With `--gemini-file-cache`, the CLI stores a local JSON index for the uploaded Gemini file reference and keeps the remote file for reuse within the Gemini Files API retention window. The cache key is the SHA-256 hash of the exact prepared 16 kHz mono MP3 bytes, not the input path. Before reuse, the CLI calls `files.get` and only reuses files that still exist and are `ACTIVE`. Use `--gemini-autoclean` to force deletion after a run while keeping the same command shape for experiments.
+With `--gemini-use-presigned-url`, the CLI uploads the prepared MP3 to S3-compatible storage, generates a pre-signed GET URL, and sends that URL as Gemini `file_uri` instead of using the Gemini Files API. This mode is useful for one-off inputs up to 100 MB when S3/R2 staging is already configured. It is rejected for Gemini 2.0 family models and cannot be combined with `--gemini-file-cache` or `--gemini-explicit-cache`; use the Files API path when Gemini file reuse or explicit cached content is required.
+
+By default, Gemini Files API uploads are deleted after each run. With `--gemini-file-cache`, the CLI stores a local JSON index for the uploaded Gemini file reference and keeps the remote file for reuse within the Gemini Files API retention window. The cache key is the SHA-256 hash of the exact prepared 16 kHz mono MP3 bytes, not the input path. Before reuse, the CLI calls `files.get` and only reuses files that still exist and are `ACTIVE`. Use `--autoclean` to force deletion after a run while keeping the same command shape for experiments; `--gemini-autoclean` remains as a deprecated Gemini-only alias.
 
 With `--gemini-explicit-cache`, the CLI also creates or reuses a Gemini `cachedContent` object for the prepared audio and passes its name as `cachedContent` in the streamed generation request. This automatically enables the local Gemini file cache index because the cached-content handle must be persisted between runs. Explicit cached content has its own TTL and provider billing behavior; it is separate from the 48-hour Files API upload retention window.
 
@@ -153,6 +156,39 @@ The NVIDIA Riva provider uses gRPC and sends `function-id` plus Bearer authoriza
 
 Manifests include `provider_metadata.provider = "nvidia-riva"`, audio details, request ids, feature flags, detected languages, response counts, elapsed time, and mean confidence when returned.
 
+#### Deepgram provider options (`-p deepgram`)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--deepgram-api-key` | Deepgram API key | `DEEPGRAM_API_KEY` env var |
+| `--deepgram-api-base-url` | Deepgram API base URL | `DEEPGRAM_API_BASE_URL` env var, or `https://api.deepgram.com/v1` |
+| `--remote-model` | Deepgram model name | `nova-3` |
+| `--deepgram-intelligence` | Enable summary, topics, intents, entity detection, and sentiment | disabled |
+| `--deepgram-summarize` | Enable `summarize=v2` | disabled |
+| `--deepgram-topics` | Enable topic detection | disabled |
+| `--deepgram-intents` | Enable intent recognition | disabled |
+| `--deepgram-detect-entities` | Enable entity detection | disabled |
+| `--deepgram-sentiment` | Enable sentiment analysis | disabled |
+| `--deepgram-keyterm` | Nova-3 keyterm prompt; repeat or comma-separate terms | none |
+| `--deepgram-search` | Search term or phrase; repeat or comma-separate terms | none |
+| `--deepgram-redact` | Redaction target such as `pii`, `phi`, `pci`, `numbers`, or entity class | none |
+| `--deepgram-replace` | Find/replace rule in `FIND:REPLACE` format | none |
+| `--deepgram-filler-words` | Enable filler word transcription | disabled |
+| `--deepgram-numerals` | Enable numerals formatting | disabled |
+| `--deepgram-use-presigned-url` | Stage prepared audio in S3-compatible storage and send Deepgram a JSON URL request | disabled |
+
+The Deepgram provider calls `POST {deepgram-api-base-url}/listen` with `smart_format=true` and `utterances=true`. Input audio/video is converted to 16 kHz mono WAV when needed. The default model is `nova-3`; `nova-3-general` and `nova-3-medical` can be passed through `--remote-model` when available for the account/region.
+
+By default, Deepgram receives direct audio bytes. With `--deepgram-use-presigned-url`, the CLI uploads the prepared audio to S3-compatible storage, generates a pre-signed GET URL, and sends Deepgram `{"url":"..."}`. This uses the same `S3_*` settings as Qwen file transcription; if `S3_PREFIX` is unset, the Deepgram default prefix is `transcribeit/deepgram`. The pre-signed URL itself is not written to manifests.
+
+If `--diarize` is set, the request uses `diarize_model=latest`, which enables Deepgram's current provider-native batch diarizer. `--speakers N` is accepted as a request to enable diarization, but Deepgram does not accept an exact speaker-count hint through this path.
+
+`--deepgram-intelligence` is the convenience switch for Transcript Intelligence workflows. It enables Deepgram summarization, topic detection, intent recognition, entity detection, and sentiment analysis in the same transcription request. Returned intelligence blocks are stored under `provider_metadata.data.intelligence`; they are useful downstream metadata, but should still be treated as model output rather than validated facts.
+
+For Nova-3 and Nova-3 Medical, use `--deepgram-keyterm` for important domain terms and brands. In local benchmarking, keyterms such as `Ofev`, `Esbriet`, `IPF`, and `Producta` materially improved medical brand recognition and speaker consistency.
+
+Manifests include `provider_metadata.provider = "deepgram"`, Deepgram request metadata, channel/utterance/alternative counts, model info, intelligence token usage metadata, mean confidence, extracted intelligence blocks, and `timestamps_clamped` when provider timestamps exceed the reported media duration and are clamped for output safety.
+
 #### Output options
 
 | Option | Description | Default |
@@ -161,13 +197,14 @@ Manifests include `provider_metadata.provider = "nvidia-riva"`, audio details, r
 | `-f, --output-format` | `text`, `vtt`, or `srt` | `vtt` |
 | `--language` | Language hint (e.g. `en`, `es`, `auto`) | `auto` |
 | `--normalize` | Normalize audio with ffmpeg `loudnorm` before transcription | disabled |
+| `--autoclean` | Best-effort cleanup of temporary provider resources created during the run | disabled |
 | `--analysis summary` | Add post-transcription summary analysis to the manifest | disabled |
 
 `--analysis summary` currently requires `--provider gemini` and `--output-dir`. It runs after transcription, uses the transcript text as input, and writes a provider-neutral `analysis` object into the manifest without changing the VTT/SRT/text transcript output.
 
 #### API resilience options
 
-These options apply to OpenAI, Azure, Qwen file transcription, Gemini, and NVIDIA Riva providers where supported:
+These options apply to OpenAI, Azure, Qwen file transcription, Gemini, NVIDIA Riva, and Deepgram providers where supported:
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -189,7 +226,7 @@ REST providers retry HTTP 429, HTTP 5xx, and transport send/stream failures when
 | `--segment-concurrency` | Max parallel segment requests (API providers only) | `2` |
 | `--vad-model` | Path to Silero VAD ONNX model (`silero_vad.onnx`) for speech-aware segmentation | `VAD_MODEL` env var |
 
-When using `openai`, `azure`, `qwen-filetrans`, or `nvidia-riva` providers, files exceeding the conservative 25MB auto-split threshold are automatically segmented even without `--segment`. This keeps long remote requests smaller and more reliable. Gemini stays whole-file by default to preserve model-level speaker continuity; use `--segment` only when you want independent chunk requests, or let the provider fall back to segmentation if a long whole-file request fails. When using `sherpa-onnx`, segmentation is always enabled with a maximum segment length of 30 seconds.
+When using `openai`, `azure`, `qwen-filetrans`, or `nvidia-riva` providers, files exceeding the conservative 25MB auto-split threshold are automatically segmented even without `--segment`. This keeps long remote requests smaller and more reliable. Gemini and Deepgram stay whole-file by default to preserve provider/model-level speaker continuity; use `--segment` only when you want independent chunk requests, or let Gemini fall back to segmented transcription if a long whole-file request fails. When using `sherpa-onnx`, segmentation is always enabled with a maximum segment length of 30 seconds.
 
 When `--vad-model` is set and segmentation is needed, VAD-based segmentation is used instead of FFmpeg `silencedetect`. VAD detects actual speech boundaries using Silero VAD, avoiding mid-word cuts. It pads chunks by 250ms, merges gaps shorter than 200ms, and splits long chunks at low-energy points. This requires the `sherpa-onnx` feature to be enabled. When `--vad-model` is not set, the original FFmpeg silence-based segmentation is used as a fallback.
 
@@ -207,6 +244,8 @@ For local post-processing diarization, use `--diarize --speakers N`. Both `--dia
 For OpenAI, `--diarize` uses provider-native diarization through `gpt-4o-transcribe-diarize` unless a different `--remote-model` is explicitly selected.
 
 For NVIDIA Riva, use `--diarize` when the exact speaker count is unknown. The provider uses `--speakers N` as a maximum speaker hint; if omitted, the CLI sends a default maximum of 4 speakers.
+
+For Deepgram, `--diarize` enables provider-native diarization with `diarize_model=latest`. `--speakers N` is treated as a request to enable diarization, but no fixed speaker count is sent.
 
 For Gemini, speaker labels are model-generated structured output and may be present even without local diarization. For Qwen file transcription, Azure, local Whisper, and non-diarizing OpenAI models, `--diarize` requires the local Sherpa diarizer.
 
@@ -242,26 +281,42 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 | `GEMINI_API_KEY` | Gemini API key | none |
 | `GEMINI_API_BASE_URL` | Gemini API base URL | `https://generativelanguage.googleapis.com/v1beta` |
 | `GEMINI_FILE_CACHE` | Enable Gemini Files API upload reuse | disabled |
+| `GEMINI_USE_PRESIGNED_URL` | Stage Gemini input in S3-compatible storage and submit a pre-signed URL | disabled |
 | `GEMINI_FILE_CACHE_INDEX` | Local Gemini file cache index path | `.cache/transcribeit/gemini-files.json` |
-| `GEMINI_AUTOCLEAN` | Delete Gemini uploads after each run, even with file cache enabled | disabled |
+| `GEMINI_AUTOCLEAN` | Deprecated Gemini cleanup alias; prefer `TRANSCRIBEIT_AUTOCLEAN` / `--autoclean` | disabled |
 | `GEMINI_EXPLICIT_CACHE` | Enable Gemini explicit `cachedContent` reuse | disabled |
 | `GEMINI_CACHE_TTL_SECS` | Gemini explicit `cachedContent` TTL in seconds | `3600` |
 | `NVIDIA_API_KEY` | NVIDIA hosted Riva API key | none |
 | `NVIDIA_RIVA_FUNCTION_ID` | NVIDIA hosted Riva function id | none |
 | `NVIDIA_RIVA_SERVER` | NVIDIA Riva gRPC server | `grpc.nvcf.nvidia.com:443` |
+| `DEEPGRAM_API_KEY` | Deepgram API key | none |
+| `DEEPGRAM_API_BASE_URL` | Deepgram API base URL | `https://api.deepgram.com/v1` |
+| `DEEPGRAM_INTELLIGENCE` | Enable Deepgram summary/topics/intents/entities/sentiment | disabled |
+| `DEEPGRAM_SUMMARIZE` | Enable Deepgram summarization | disabled |
+| `DEEPGRAM_TOPICS` | Enable Deepgram topic detection | disabled |
+| `DEEPGRAM_INTENTS` | Enable Deepgram intent recognition | disabled |
+| `DEEPGRAM_DETECT_ENTITIES` | Enable Deepgram entity detection | disabled |
+| `DEEPGRAM_SENTIMENT` | Enable Deepgram sentiment analysis | disabled |
+| `DEEPGRAM_KEYTERM` | Comma-separated Deepgram keyterms | none |
+| `DEEPGRAM_SEARCH` | Comma-separated Deepgram search terms | none |
+| `DEEPGRAM_REDACT` | Comma-separated Deepgram redaction targets | none |
+| `DEEPGRAM_REPLACE` | Comma-separated Deepgram find/replace rules | none |
+| `DEEPGRAM_FILLER_WORDS` | Enable Deepgram filler words | disabled |
+| `DEEPGRAM_NUMERALS` | Enable Deepgram numerals | disabled |
+| `DEEPGRAM_USE_PRESIGNED_URL` | Stage Deepgram input in S3-compatible storage and submit a pre-signed URL | disabled |
 | `AZURE_API_KEY` | Azure API key fallback for Azure provider if `--azure-api-key` is unset | none |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint URL | none |
 | `AZURE_DEPLOYMENT_NAME` | Azure deployment name | `whisper` |
 | `AZURE_API_VERSION` | Azure API version | `2024-06-01` |
 | `DASHSCOPE_API_KEY` | DashScope API key for Qwen providers | none |
 | `DASHSCOPE_ASR_BASE_URL` | DashScope async ASR base URL for Qwen file transcription | `https://dashscope-intl.aliyuncs.com/api/v1` |
-| `S3_BUCKET` | S3 bucket for Qwen file transcription staging | none |
-| `S3_REGION` / `AWS_REGION` | S3 region for Qwen file transcription staging | none |
+| `S3_BUCKET` | S3 bucket for remote-provider URL staging | none |
+| `S3_REGION` / `AWS_REGION` | S3 region for remote-provider URL staging | none |
 | `S3_ENDPOINT_URL` | S3-compatible endpoint URL | none |
 | `S3_ACCESS_KEY_ID` / `AWS_ACCESS_KEY_ID` | S3 access key ID | none |
 | `S3_SECRET_ACCESS_KEY` / `AWS_SECRET_ACCESS_KEY` | S3 secret access key | none |
 | `S3_SESSION_TOKEN` / `AWS_SESSION_TOKEN` | S3 session token | none |
-| `S3_PREFIX` | S3 object prefix for Qwen staging uploads | `transcribeit/qwen-filetrans` |
+| `S3_PREFIX` | S3 object prefix for remote-provider uploads | Provider-specific if unset: `transcribeit/qwen-filetrans` for Qwen, `transcribeit/gemini` for Gemini URL mode, `transcribeit/deepgram` for Deepgram URL mode |
 | `S3_PRESIGN_EXPIRES_SECS` | S3 pre-signed URL expiry in seconds | `3600` |
 | `S3_FORCE_PATH_STYLE` | Force path-style URLs for S3-compatible storage | `false` |
 | `VAD_MODEL` | Path to Silero VAD ONNX model for speech-aware segmentation | none |
@@ -271,6 +326,7 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 | `TRANSCRIBEIT_REQUEST_TIMEOUT_SECS` | API request timeout in seconds | `120` |
 | `TRANSCRIBEIT_RETRY_WAIT_BASE_SECS` | Base retry wait time in seconds | `10` |
 | `TRANSCRIBEIT_RETRY_WAIT_MAX_SECS` | Maximum retry wait time in seconds | `120` |
+| `TRANSCRIBEIT_AUTOCLEAN` | Enable best-effort cleanup of temporary provider resources created during the run | disabled |
 
 All variables can be set in a `.env` file in the project root.
 
@@ -382,11 +438,30 @@ transcribeit run -p gemini --gemini-explicit-cache \
   --remote-model gemini-3.5-flash \
   -i interview.mp4 -f vtt -o ./output
 
+# Gemini using S3/R2 pre-signed URL input instead of Gemini Files API upload
+transcribeit run -p gemini --gemini-use-presigned-url \
+  --remote-model gemini-3.5-flash \
+  -i interview.mp4 -f vtt -o ./output
+
 # NVIDIA hosted Riva ASR
 transcribeit run -p nvidia-riva -i recording.wav \
   --nvidia-api-key "$NVIDIA_API_KEY" \
   --nvidia-riva-function-id "$NVIDIA_RIVA_FUNCTION_ID" \
   --language en-US -f vtt -o ./output
+
+# Deepgram Nova-3 ASR with provider-native diarization
+transcribeit run -p deepgram --remote-model nova-3 --diarize \
+  --language en -i recording.wav -f vtt -o ./output
+
+# Deepgram Nova-3 using S3/R2 pre-signed URL input instead of direct bytes
+transcribeit run -p deepgram --remote-model nova-3 --deepgram-use-presigned-url \
+  --language en -i recording.wav -f vtt -o ./output
+
+# Deepgram Nova-3 Medical with intelligence metadata and domain keyterms
+transcribeit run -p deepgram --remote-model nova-3-medical \
+  --diarize --deepgram-intelligence \
+  --deepgram-keyterm Ofev --deepgram-keyterm Esbriet --deepgram-keyterm IPF \
+  -i interview.wav -f vtt -o ./output
 ```
 
 ### Provider behavior
@@ -398,11 +473,12 @@ transcribeit run -p nvidia-riva -i recording.wav \
 - **Azure** (`-p azure`) uses `--azure-deployment` and calls:
   `POST {base-url}/openai/deployments/{deployment}/audio/transcriptions?api-version={version}`.
 - **Qwen file transcription** (`-p qwen-filetrans`) uploads audio to S3-compatible storage, passes a pre-signed URL to DashScope, and polls the async transcription task.
-- **Gemini** (`-p gemini`) uploads audio through Gemini Files API, calls streamed `streamGenerateContent`, and parses structured transcript JSON defensively.
+- **Gemini** (`-p gemini`) uploads audio through Gemini Files API by default, calls streamed `streamGenerateContent`, and parses structured transcript JSON defensively. With `--gemini-use-presigned-url`, it stages the prepared MP3 in S3/R2 and sends the signed URL as `file_uri`; Files API cache and explicit cached content are unavailable in that mode.
 - **Gemini file cache** (`--gemini-file-cache`) reuses verified Gemini Files API uploads by prepared-byte SHA-256 hash; this avoids repeated uploads and may improve implicit cache locality, but provider cache hits still depend on Gemini returning `cachedContentTokenCount`.
 - **Gemini explicit cache** (`--gemini-explicit-cache`) creates/reuses Gemini `cachedContent` objects and sends `cachedContent` in the streamed generation request. Manifests report `cache.transcription.mode = "explicit"` when this path is used.
 - **Analysis** (`--analysis summary`) runs a second Gemini structured JSON pass over the transcript and stores summary results in the manifest.
 - **NVIDIA Riva** (`-p nvidia-riva`) sends WAV audio to hosted Riva gRPC, requesting native word timestamps and optional server-side diarization.
+- **Deepgram** (`-p deepgram`) posts audio to Deepgram `/listen`, requesting smart formatting, utterances, word timestamps, and optional provider-native diarization. With `--deepgram-use-presigned-url`, it stages the prepared audio in S3/R2 and submits a JSON URL request.
 
 For the full matrix and upload/auth notes, see: [Provider behavior](provider-behavior.md).  
 For benchmark guidance and result templates, see: [Performance benchmarks](performance-benchmarks.md).

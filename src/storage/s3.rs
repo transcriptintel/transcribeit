@@ -9,6 +9,7 @@ use aws_sdk_s3::Client;
 use aws_sdk_s3::config::Builder;
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::primitives::ByteStream;
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -36,11 +37,50 @@ pub struct S3ConfigInput {
     pub force_path_style: bool,
 }
 
+#[derive(Clone)]
 pub struct S3Uploader {
     client: Client,
     bucket: String,
     prefix: String,
     presign_expires: Duration,
+}
+
+#[derive(Debug, Clone)]
+pub struct S3UploadedObject {
+    pub url: String,
+    pub bucket: String,
+    pub key: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct S3CleanupResult {
+    pub attempted: bool,
+    pub deleted: bool,
+    pub bucket: String,
+    pub key: String,
+    pub error: Option<String>,
+}
+
+impl S3CleanupResult {
+    pub fn skipped(upload: &S3UploadedObject) -> Self {
+        Self {
+            attempted: false,
+            deleted: false,
+            bucket: upload.bucket.clone(),
+            key: upload.key.clone(),
+            error: None,
+        }
+    }
+
+    pub fn to_metadata(&self) -> Value {
+        json!({
+            "attempted": self.attempted,
+            "deleted": self.deleted,
+            "bucket": self.bucket,
+            "key": self.key,
+            "error": self.error,
+        })
+    }
 }
 
 impl S3Uploader {
@@ -74,7 +114,7 @@ impl S3Uploader {
         })
     }
 
-    pub async fn upload_and_presign(&self, path: &Path) -> Result<String> {
+    pub async fn upload_and_presign_object(&self, path: &Path) -> Result<S3UploadedObject> {
         let key = self.object_key(path);
         let body = ByteStream::from_path(path)
             .await
@@ -102,7 +142,30 @@ impl S3Uploader {
                 format!("Failed to presign S3 object: s3://{}/{}", self.bucket, key)
             })?;
 
-        Ok(presigned.uri().to_string())
+        Ok(S3UploadedObject {
+            url: presigned.uri().to_string(),
+            bucket: self.bucket.clone(),
+            key,
+        })
+    }
+
+    pub async fn cleanup_uploaded_object(&self, upload: &S3UploadedObject) -> S3CleanupResult {
+        let delete_result = self
+            .client
+            .delete_object()
+            .bucket(&upload.bucket)
+            .key(&upload.key)
+            .send()
+            .await;
+
+        let deleted = delete_result.is_ok();
+        S3CleanupResult {
+            attempted: true,
+            deleted,
+            bucket: upload.bucket.clone(),
+            key: upload.key.clone(),
+            error: delete_result.err().map(|err| err.to_string()),
+        }
     }
 
     fn object_key(&self, path: &Path) -> String {

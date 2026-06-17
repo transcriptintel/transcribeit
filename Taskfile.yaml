@@ -68,3 +68,16 @@ tasks:
                 "enable_itn": false
             }
         }'
+  test-deepgram:
+    cmds:
+      - |
+        test -n "$DEEPGRAM_API_KEY" || (echo "DEEPGRAM_API_KEY is not set" >&2; exit 1)
+        DEEPGRAM_API_BASE_URL="${DEEPGRAM_API_BASE_URL:-https://api.deepgram.com/v1}"
+
+        curl --silent --show-error --location \
+          --request POST \
+          --write-out "\nHTTP_STATUS:%{http_code}\n" \
+          --header "Authorization: Token ${DEEPGRAM_API_KEY}" \
+          --header "Content-Type: application/json" \
+          --data '{"url":"https://dpgr.am/spacewalk.wav"}' \
+          "${DEEPGRAM_API_BASE_URL%/}/listen?model=nova-3&smart_format=true"

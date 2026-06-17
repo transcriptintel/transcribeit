@@ -2,15 +2,19 @@ use serde_json::{Map, Value, json};
 
 use crate::transcriber::{Segment, Transcript};
 
+#[derive(Clone, Copy)]
+pub(super) struct GeminiResponseContext<'a> {
+    pub(super) model: &'a str,
+    pub(super) api_base_url: &'a str,
+    pub(super) mime_type: &'a str,
+    pub(super) input_bytes: u64,
+    pub(super) duration_secs: Option<f64>,
+    pub(super) upload_method: &'a str,
+    pub(super) file_url_present: bool,
+}
+
 #[cfg(test)]
-pub fn parse_generate_response(
-    body: &[u8],
-    model: &str,
-    api_base_url: &str,
-    mime_type: &str,
-    input_bytes: u64,
-    duration_secs: Option<f64>,
-) -> Transcript {
+pub fn parse_generate_response(body: &[u8], context: GeminiResponseContext<'_>) -> Transcript {
     let response_value = serde_json::from_slice::<Value>(body).unwrap_or_else(|_| {
         json!({
             "raw_text": String::from_utf8_lossy(body).to_string()
@@ -48,22 +52,14 @@ pub fn parse_generate_response(
 
     build_transcript_from_generated_text(
         &generated_text(&response_value).unwrap_or_default(),
-        model,
-        api_base_url,
-        mime_type,
-        input_bytes,
-        duration_secs,
+        context,
         response_metadata,
     )
 }
 
 pub fn parse_stream_generate_response(
     chunks: &[Value],
-    model: &str,
-    api_base_url: &str,
-    mime_type: &str,
-    input_bytes: u64,
-    duration_secs: Option<f64>,
+    context: GeminiResponseContext<'_>,
 ) -> Transcript {
     let generated_text = chunks
         .iter()
@@ -104,30 +100,18 @@ pub fn parse_stream_generate_response(
         prompt_feedback.unwrap_or(Value::Null),
     );
 
-    build_transcript_from_generated_text(
-        &generated_text,
-        model,
-        api_base_url,
-        mime_type,
-        input_bytes,
-        duration_secs,
-        response_metadata,
-    )
+    build_transcript_from_generated_text(&generated_text, context, response_metadata)
 }
 
 fn build_transcript_from_generated_text(
     generated_text: &str,
-    model: &str,
-    api_base_url: &str,
-    mime_type: &str,
-    input_bytes: u64,
-    duration_secs: Option<f64>,
+    context: GeminiResponseContext<'_>,
     mut response_metadata: Map<String, Value>,
 ) -> Transcript {
     let generated_json = parse_generated_json(generated_text);
     let segments = generated_json
         .as_ref()
-        .and_then(|value| parse_transcript_segments(value, duration_secs))
+        .and_then(|value| parse_transcript_segments(value, context.duration_secs))
         .filter(|segments| !segments.is_empty())
         .or_else(|| {
             generated_json
@@ -146,7 +130,7 @@ fn build_transcript_from_generated_text(
         Value::Bool(
             generated_json
                 .as_ref()
-                .is_some_and(|value| timestamps_need_clamp(value, duration_secs)),
+                .is_some_and(|value| timestamps_need_clamp(value, context.duration_secs)),
         ),
     );
 
@@ -154,13 +138,16 @@ fn build_transcript_from_generated_text(
         segments,
         provider_metadata: Some(json!({
             "gemini": {
-                "model": model,
-                "api_base_url": api_base_url,
-                "upload_method": "files_api",
+                "model": context.model,
+                "api_base_url": context.api_base_url,
+                "upload_method": context.upload_method,
+                "request": {
+                    "file_url_present": context.file_url_present,
+                },
                 "input": {
-                    "mime_type": mime_type,
-                    "bytes": input_bytes,
-                    "duration_secs": duration_secs,
+                    "mime_type": context.mime_type,
+                    "bytes": context.input_bytes,
+                    "duration_secs": context.duration_secs,
                 },
                 "response": Value::Object(response_metadata)
             }

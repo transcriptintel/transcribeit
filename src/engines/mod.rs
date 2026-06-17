@@ -1,4 +1,5 @@
 pub mod azure_openai;
+pub mod deepgram;
 pub mod gemini;
 pub mod model_cache;
 pub mod nvidia_riva;

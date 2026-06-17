@@ -25,7 +25,8 @@ use crate::cli::{
     AnalysisKind, Cli, Command, ModelFormat, OutputFormatArg, Provider, SetupComponent,
 };
 use crate::engines::azure_openai::AzureOpenAi;
-use crate::engines::gemini::GeminiApi;
+use crate::engines::deepgram::{DeepgramApi, DeepgramConfig};
+use crate::engines::gemini::{GeminiApi, GeminiConfig};
 use crate::engines::model_cache::ModelCache;
 use crate::engines::nvidia_riva::NvidiaRiva;
 use crate::engines::openai_api::OpenAiApi;
@@ -148,11 +149,27 @@ async fn main() -> Result<()> {
             nvidia_api_key,
             nvidia_riva_function_id,
             nvidia_riva_server,
+            deepgram_api_key,
             azure_api_key,
             remote_model,
             qwen_api_base_url,
             gemini_api_base_url,
+            deepgram_api_base_url,
+            deepgram_intelligence,
+            deepgram_summarize,
+            deepgram_topics,
+            deepgram_intents,
+            deepgram_detect_entities,
+            deepgram_sentiment,
+            deepgram_keyterm,
+            deepgram_search,
+            deepgram_redact,
+            deepgram_replace,
+            deepgram_filler_words,
+            deepgram_numerals,
+            deepgram_use_presigned_url,
             gemini_file_cache,
+            gemini_use_presigned_url,
             gemini_file_cache_index,
             gemini_autoclean,
             gemini_explicit_cache,
@@ -169,6 +186,7 @@ async fn main() -> Result<()> {
             max_segment_secs,
             segment_concurrency,
             normalize,
+            autoclean,
             max_retries,
             request_timeout_secs,
             retry_wait_base_secs,
@@ -326,30 +344,20 @@ async fn main() -> Result<()> {
                     let key = dashscope_api_key.or(api_key).context(
                             "--dashscope-api-key, --api-key, DASHSCOPE_API_KEY, or OPENAI_API_KEY is required for --provider qwen-filetrans",
                         )?;
-                    let s3_config = s3_config_from_input(S3ConfigInput {
-                            bucket: s3_bucket.context(
-                                "--s3-bucket or S3_BUCKET is required for --provider qwen-filetrans",
-                            )?,
-                            region: s3_region.or_else(|| std::env::var("AWS_REGION").ok()).context(
-                                "--s3-region, S3_REGION, or AWS_REGION is required for --provider qwen-filetrans",
-                            )?,
-                            endpoint_url: s3_endpoint_url,
-                            access_key_id: s3_access_key_id
-                                .or_else(|| std::env::var("AWS_ACCESS_KEY_ID").ok())
-                                .context(
-                                "--s3-access-key-id, S3_ACCESS_KEY_ID, or AWS_ACCESS_KEY_ID is required for --provider qwen-filetrans",
-                            )?,
-                            secret_access_key: s3_secret_access_key
-                                .or_else(|| std::env::var("AWS_SECRET_ACCESS_KEY").ok())
-                                .context(
-                                "--s3-secret-access-key, S3_SECRET_ACCESS_KEY, or AWS_SECRET_ACCESS_KEY is required for --provider qwen-filetrans",
-                            )?,
-                            session_token: s3_session_token.or_else(|| std::env::var("AWS_SESSION_TOKEN").ok()),
-                            prefix: s3_prefix,
-                            presign_expires_secs: s3_presign_expires_secs,
-                            force_path_style: s3_force_path_style,
-                        })?;
-                    let uploader = S3Uploader::new(s3_config).await?;
+                    let uploader = build_s3_uploader(S3UploaderArgs {
+                        bucket: s3_bucket,
+                        region: s3_region,
+                        endpoint_url: s3_endpoint_url,
+                        access_key_id: s3_access_key_id,
+                        secret_access_key: s3_secret_access_key,
+                        session_token: s3_session_token,
+                        prefix: s3_prefix,
+                        default_prefix: "transcribeit/qwen-filetrans",
+                        presign_expires_secs: s3_presign_expires_secs,
+                        force_path_style: s3_force_path_style,
+                        context_label: "--provider qwen-filetrans",
+                    })
+                    .await?;
                     let model_name =
                         remote_model.unwrap_or_else(|| "qwen3-asr-flash-filetrans".into());
                     ProviderRuntime {
@@ -360,6 +368,7 @@ async fn main() -> Result<()> {
                             language.clone(),
                             api_settings,
                             uploader,
+                            autoclean,
                         )?),
                         analyzer: None,
                         provider_name: "qwen-filetrans".into(),
@@ -373,6 +382,37 @@ async fn main() -> Result<()> {
                                 "--gemini-api-key, GEMINI_API_KEY, --api-key, or OPENAI_API_KEY is required for --provider gemini",
                             )?;
                     let model_name = remote_model.unwrap_or_else(|| "gemini-3.5-flash".into());
+                    let gemini_autoclean = autoclean || gemini_autoclean;
+                    if gemini_use_presigned_url && (gemini_file_cache || gemini_explicit_cache) {
+                        anyhow::bail!(
+                            "--gemini-use-presigned-url cannot be combined with --gemini-file-cache or --gemini-explicit-cache because signed URLs do not create reusable Gemini Files API handles"
+                        );
+                    }
+                    if gemini_use_presigned_url && is_gemini_2_0_model(&model_name) {
+                        anyhow::bail!(
+                            "--gemini-use-presigned-url is not supported for Gemini 2.0 family models; use Gemini Files API mode instead"
+                        );
+                    }
+                    let signed_url_uploader = if gemini_use_presigned_url {
+                        Some(
+                            build_s3_uploader(S3UploaderArgs {
+                                bucket: s3_bucket,
+                                region: s3_region,
+                                endpoint_url: s3_endpoint_url,
+                                access_key_id: s3_access_key_id,
+                                secret_access_key: s3_secret_access_key,
+                                session_token: s3_session_token,
+                                prefix: s3_prefix,
+                                default_prefix: "transcribeit/gemini",
+                                presign_expires_secs: s3_presign_expires_secs,
+                                force_path_style: s3_force_path_style,
+                                context_label: "--provider gemini --gemini-use-presigned-url",
+                            })
+                            .await?,
+                        )
+                    } else {
+                        None
+                    };
                     let gemini_file_cache = if gemini_file_cache || gemini_explicit_cache {
                         Some(crate::engines::gemini::GeminiFileCacheConfig {
                             index_path: gemini_file_cache_index,
@@ -386,26 +426,30 @@ async fn main() -> Result<()> {
                     let analyzer = analysis_config
                         .is_enabled()
                         .then(|| {
-                            GeminiApi::new(
-                                gemini_api_base_url.clone(),
-                                key.clone(),
-                                model_name.clone(),
-                                language.clone(),
-                                api_settings,
-                                None,
-                            )
+                            GeminiApi::new(GeminiConfig {
+                                api_base_url: gemini_api_base_url.clone(),
+                                api_key: key.clone(),
+                                model: model_name.clone(),
+                                language: language.clone(),
+                                settings: api_settings,
+                                file_cache: None,
+                                signed_url_uploader: None,
+                                autoclean: false,
+                            })
                             .map(|api| Box::new(api) as Box<dyn TranscriptAnalyzer>)
                         })
                         .transpose()?;
                     ProviderRuntime {
-                        engine: Box::new(GeminiApi::new(
-                            gemini_api_base_url,
-                            key,
-                            model_name.clone(),
-                            language.clone(),
-                            api_settings,
-                            gemini_file_cache,
-                        )?),
+                        engine: Box::new(GeminiApi::new(GeminiConfig {
+                            api_base_url: gemini_api_base_url,
+                            api_key: key,
+                            model: model_name.clone(),
+                            language: language.clone(),
+                            settings: api_settings,
+                            file_cache: gemini_file_cache,
+                            signed_url_uploader,
+                            autoclean: gemini_autoclean,
+                        })?),
                         analyzer,
                         provider_name: "gemini".into(),
                         model_name,
@@ -440,6 +484,73 @@ async fn main() -> Result<()> {
                         )),
                         analyzer: None,
                         provider_name: "nvidia-riva".into(),
+                        model_name,
+                    }
+                }
+                Provider::Deepgram => {
+                    let key = deepgram_api_key.or(api_key).context(
+                        "--deepgram-api-key, DEEPGRAM_API_KEY, --api-key, or OPENAI_API_KEY is required for --provider deepgram",
+                    )?;
+                    let model_name = remote_model.unwrap_or_else(|| "nova-3".into());
+                    if speakers.is_some() && !diarize {
+                        eprintln!(
+                            "--speakers was provided for Deepgram, so provider-native diarization will be enabled with diarize_model=latest."
+                        );
+                    }
+                    if speakers.is_some() {
+                        eprintln!(
+                            "Deepgram does not accept an exact speaker-count hint for batch diarization; --speakers is treated as a request to enable diarization."
+                        );
+                    }
+                    ProviderRuntime {
+                        engine: Box::new(DeepgramApi::new(DeepgramConfig {
+                            base_url: deepgram_api_base_url,
+                            api_key: key,
+                            model: model_name.clone(),
+                            language: language.clone(),
+                            settings: api_settings,
+                            options: crate::engines::deepgram::DeepgramOptions {
+                                diarize: diarize || speakers.is_some(),
+                                intelligence: deepgram_intelligence,
+                                summarize: deepgram_summarize,
+                                topics: deepgram_topics,
+                                intents: deepgram_intents,
+                                detect_entities: deepgram_detect_entities,
+                                sentiment: deepgram_sentiment,
+                                keyterms: deepgram_keyterm,
+                                search: deepgram_search,
+                                redact: deepgram_redact,
+                                replace: deepgram_replace,
+                                filler_words: deepgram_filler_words,
+                                numerals: deepgram_numerals,
+                            },
+                            presigned_url_uploader: if deepgram_use_presigned_url {
+                                Some(
+                                    build_s3_uploader(
+                                        S3UploaderArgs {
+                                            bucket: s3_bucket,
+                                            region: s3_region,
+                                            endpoint_url: s3_endpoint_url,
+                                            access_key_id: s3_access_key_id,
+                                            secret_access_key: s3_secret_access_key,
+                                            session_token: s3_session_token,
+                                            prefix: s3_prefix,
+                                            default_prefix: "transcribeit/deepgram",
+                                            presign_expires_secs: s3_presign_expires_secs,
+                                            force_path_style: s3_force_path_style,
+                                            context_label:
+                                                "--provider deepgram --deepgram-use-presigned-url",
+                                        },
+                                    )
+                                    .await?,
+                                )
+                            } else {
+                                None
+                            },
+                            autoclean,
+                        })?),
+                        analyzer: None,
+                        provider_name: "deepgram".into(),
                         model_name,
                     }
                 }
@@ -509,7 +620,73 @@ async fn main() -> Result<()> {
 fn provider_handles_diarization(provider_name: &str, model_name: &str) -> bool {
     match provider_name {
         "nvidia-riva" | "gemini" => true,
+        "deepgram" => true,
         "openai" => model_name.eq_ignore_ascii_case("gpt-4o-transcribe-diarize"),
         _ => false,
     }
+}
+
+fn is_gemini_2_0_model(model: &str) -> bool {
+    let model = model
+        .strip_prefix("models/")
+        .unwrap_or(model)
+        .to_ascii_lowercase();
+    model.starts_with("gemini-2.0")
+}
+
+struct S3UploaderArgs {
+    bucket: Option<String>,
+    region: Option<String>,
+    endpoint_url: Option<String>,
+    access_key_id: Option<String>,
+    secret_access_key: Option<String>,
+    session_token: Option<String>,
+    prefix: Option<String>,
+    default_prefix: &'static str,
+    presign_expires_secs: u64,
+    force_path_style: bool,
+    context_label: &'static str,
+}
+
+async fn build_s3_uploader(args: S3UploaderArgs) -> Result<S3Uploader> {
+    let context_label = args.context_label;
+
+    let s3_config = s3_config_from_input(S3ConfigInput {
+        bucket: args
+            .bucket
+            .with_context(|| format!("--s3-bucket or S3_BUCKET is required for {context_label}"))?,
+        region: args
+            .region
+            .or_else(|| std::env::var("AWS_REGION").ok())
+            .with_context(|| {
+                format!("--s3-region, S3_REGION, or AWS_REGION is required for {context_label}")
+            })?,
+        endpoint_url: args.endpoint_url,
+        access_key_id: args
+            .access_key_id
+            .or_else(|| std::env::var("AWS_ACCESS_KEY_ID").ok())
+            .with_context(|| {
+                format!(
+                    "--s3-access-key-id, S3_ACCESS_KEY_ID, or AWS_ACCESS_KEY_ID is required for {context_label}"
+                )
+            })?,
+        secret_access_key: args
+            .secret_access_key
+            .or_else(|| std::env::var("AWS_SECRET_ACCESS_KEY").ok())
+            .with_context(|| {
+                format!(
+                    "--s3-secret-access-key, S3_SECRET_ACCESS_KEY, or AWS_SECRET_ACCESS_KEY is required for {context_label}"
+                )
+            })?,
+        session_token: args
+            .session_token
+            .or_else(|| std::env::var("AWS_SESSION_TOKEN").ok()),
+        prefix: args
+            .prefix
+            .or_else(|| Some(args.default_prefix.to_string())),
+        presign_expires_secs: args.presign_expires_secs,
+        force_path_style: args.force_path_style,
+    })?;
+
+    S3Uploader::new(s3_config).await
 }

@@ -117,10 +117,12 @@ Gemini is a whole-file multimodal provider with streamed response tokens and mod
 ```bash
 time transcribeit run -p gemini --remote-model gemini-3.5-flash -i <input_file> -f vtt -o ./output
 time transcribeit run -p gemini --remote-model gemini-3.1-pro-preview -i <input_file> -f vtt -o ./output
+time transcribeit run -p gemini --remote-model gemini-3.5-flash --gemini-use-presigned-url -i <input_file> -f vtt -o ./output
 ```
 
 Record:
 - model name
+- upload method from `provider_metadata.data.upload_method`
 - wall-clock time
 - manifest `quality.timing_reliable`
 - manifest `quality.timestamps_clamped`
@@ -162,6 +164,30 @@ Record:
 - manifest `quality.timing_reliable`
 - whether server-side speaker labels were useful
 
+### 8. Deepgram
+
+Benchmark Deepgram as a whole-file batch provider with both plain Nova-3 and medical/intelligence options:
+
+```bash
+time transcribeit run -p deepgram --remote-model nova-3 \
+  -i <input_file> --diarize -f vtt -o ./output
+
+time transcribeit run -p deepgram --remote-model nova-3-medical \
+  --diarize --deepgram-intelligence \
+  --deepgram-keyterm Ofev --deepgram-keyterm Esbriet --deepgram-keyterm IPF \
+  -i <input_file> -f vtt -o ./output
+```
+
+Record:
+- model name and `provider_metadata.data.metadata.model_info`
+- wall-clock time and realtime factor
+- manifest `provider_metadata.data.response.mean_confidence`
+- manifest `provider_metadata.data.intelligence.summary`
+- counts for returned topics, intents, sentiments, and entities
+- whether keyterm prompting improved domain terms or brand names
+- diarization behavior, especially unexpected extra speakers
+- whether `quality.timestamps_clamped` was triggered
+
 ## Suggested result format
 
 ```text
@@ -176,6 +202,34 @@ Output size: 4.6 MB
 ```
 
 Keep rows in a simple table (date + commit hash + environment + results) in your preferred tracker so regressions are easy to catch.
+
+## Current provider assessment
+
+Based on the provider evaluations captured so far, Deepgram is currently the most advanced provider for Transcript Intelligence workflows, especially `nova-3-medical` with domain keyterms. It is the only tested provider that returned high-quality ASR together with provider-native utterances, word timestamps, diarization, summary, topics, intents, sentiment, entity extraction, model metadata, and intelligence token usage in one transcription response.
+
+This does not mean every Deepgram intelligence field should be treated as ground truth. In the 5-minute medical interview sample, `nova-3-medical` returned useful entities, topics, intents, and sentiment, but its summary made a role error. Without keyterms it also misheard `Ofev` as `OFAP`; adding keyterms such as `Ofev`, `Esbriet`, `IPF`, and `Producta` corrected the medical brand terms and improved speaker consistency in the observed run.
+
+Use this working ranking until broader benchmark data says otherwise:
+
+| Rank | Provider / Model | Current assessment |
+|---|---|---|
+| 1 | Deepgram `nova-3-medical` + keyterms | Best Transcript Intelligence candidate; strongest structured metadata and good ASR when keyterms are supplied. |
+| 2 | Qwen `qwen3-asr-flash-filetrans` | Strong pure ASR baseline with word timestamps, but less downstream intelligence metadata. |
+| 3 | OpenAI hosted transcription | Strong general ASR, but less structured transcript intelligence in the current CLI path. |
+| 4 | Gemini | Useful whole-file multimodal transcription and summary path, but timestamps/speakers are model-generated rather than dedicated ASR metadata. |
+| 5 | NVIDIA Riva | Provider-native timestamps/diarization through hosted Riva, but less transcript intelligence returned through the current provider path. |
+
+### Clean 5-minute remote provider comparison (2026-06-17)
+
+Measured on `samples/4289US19IPFSegA17Apr20256.45am_5m.wav` after the Deepgram, Gemini signed URL, and generic `--autoclean` provider updates.
+
+| Provider / model | Processing time | RTF | Segments | Timing | Speakers | Word timestamps | Assessment |
+|---|---:|---:|---:|---|---|---|---|
+| Deepgram `nova-3-medical` + keyterms | 23.33s | 0.078 | 68 | provider-native, clamped | provider-native | yes | Best overall Transcript Intelligence candidate; preserved key medical terms and returned rich intelligence metadata. Summary still had a role error. |
+| Qwen `qwen3-asr-flash-filetrans` | 11.15s | 0.037 | 71 | provider-native, reliable | none | yes | Strong pure ASR baseline; preserved key terms including `Producta`; no speaker labels or intelligence metadata. |
+| OpenAI `gpt-4o-transcribe-diarize` | 115.21s | 0.384 | 85 | provider-native, reliable | provider-native | no | Good timing and diarization, but slowest hosted run in this pass. |
+| Gemini `gemini-3.5-flash` | 35.29s | 0.118 | 29 | model-generated, clamped | model-generated | no | Useful role labels and multimodal path, but timestamps remain unreliable for subtitle-grade output. |
+| NVIDIA Riva hosted function | 5.83s | 0.019 | 38 | provider-native, reliable | provider-native | yes | Fastest run, but weaker domain term recognition and speaker separation on this sample. |
 
 ## Reference benchmark results
 
