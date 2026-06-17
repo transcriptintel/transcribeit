@@ -219,6 +219,18 @@ Use this working ranking until broader benchmark data says otherwise:
 | 4 | Gemini | Useful whole-file multimodal transcription and summary path, but timestamps/speakers are model-generated rather than dedicated ASR metadata. |
 | 5 | NVIDIA Riva | Provider-native timestamps/diarization through hosted Riva, but less transcript intelligence returned through the current provider path. |
 
+### Clean 5-minute remote provider comparison (2026-06-17)
+
+Measured on `samples/4289US19IPFSegA17Apr20256.45am_5m.wav` after the Deepgram, Gemini signed URL, and generic `--autoclean` provider updates.
+
+| Provider / model | Processing time | RTF | Segments | Timing | Speakers | Word timestamps | Assessment |
+|---|---:|---:|---:|---|---|---|---|
+| Deepgram `nova-3-medical` + keyterms | 23.33s | 0.078 | 68 | provider-native, clamped | provider-native | yes | Best overall Transcript Intelligence candidate; preserved key medical terms and returned rich intelligence metadata. Summary still had a role error. |
+| Qwen `qwen3-asr-flash-filetrans` | 11.15s | 0.037 | 71 | provider-native, reliable | none | yes | Strong pure ASR baseline; preserved key terms including `Producta`; no speaker labels or intelligence metadata. |
+| OpenAI `gpt-4o-transcribe-diarize` | 115.21s | 0.384 | 85 | provider-native, reliable | provider-native | no | Good timing and diarization, but slowest hosted run in this pass. |
+| Gemini `gemini-3.5-flash` | 35.29s | 0.118 | 29 | model-generated, clamped | model-generated | no | Useful role labels and multimodal path, but timestamps remain unreliable for subtitle-grade output. |
+| NVIDIA Riva hosted function | 5.83s | 0.019 | 38 | provider-native, reliable | provider-native | yes | Fastest run, but weaker domain term recognition and speaker separation on this sample. |
+
 ## Reference benchmark results
 
 These results were measured on a 5-minute medical interview recording.
