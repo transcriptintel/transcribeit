@@ -117,10 +117,12 @@ Gemini is a whole-file multimodal provider with streamed response tokens and mod
 ```bash
 time transcribeit run -p gemini --remote-model gemini-3.5-flash -i <input_file> -f vtt -o ./output
 time transcribeit run -p gemini --remote-model gemini-3.1-pro-preview -i <input_file> -f vtt -o ./output
+time transcribeit run -p gemini --remote-model gemini-3.5-flash --gemini-use-presigned-url -i <input_file> -f vtt -o ./output
 ```
 
 Record:
 - model name
+- upload method from `provider_metadata.data.upload_method`
 - wall-clock time
 - manifest `quality.timing_reliable`
 - manifest `quality.timestamps_clamped`

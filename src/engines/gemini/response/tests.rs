@@ -1,5 +1,17 @@
-use super::{parse_generate_response, parse_stream_generate_response};
+use super::{GeminiResponseContext, parse_generate_response, parse_stream_generate_response};
 use serde_json::json;
+
+fn context(upload_method: &'static str, file_url_present: bool) -> GeminiResponseContext<'static> {
+    GeminiResponseContext {
+        model: "gemini-test",
+        api_base_url: "https://example.com",
+        mime_type: "audio/mp3",
+        input_bytes: 12,
+        duration_secs: None,
+        upload_method,
+        file_url_present,
+    }
+}
 
 #[test]
 fn parses_structured_transcript_segments() {
@@ -15,14 +27,7 @@ fn parses_structured_transcript_segments() {
         "usageMetadata": {"totalTokenCount": 42}
     }"#;
 
-    let transcript = parse_generate_response(
-        body,
-        "gemini-test",
-        "https://example.com",
-        "audio/mp3",
-        12,
-        None,
-    );
+    let transcript = parse_generate_response(body, context("files_api", false));
     assert_eq!(transcript.segments.len(), 1);
     assert_eq!(transcript.segments[0].text, "hello");
     assert_eq!(transcript.segments[0].speaker.as_deref(), Some("A"));
@@ -44,14 +49,7 @@ fn falls_back_to_top_level_text_when_segments_are_invalid() {
         }]
     }"#;
 
-    let transcript = parse_generate_response(
-        body,
-        "gemini-test",
-        "https://example.com",
-        "audio/mp3",
-        12,
-        None,
-    );
+    let transcript = parse_generate_response(body, context("files_api", false));
     assert_eq!(transcript.segments.len(), 1);
     assert_eq!(transcript.segments[0].text, "fallback text");
     assert_eq!(transcript.segments[0].start_ms, 0);
@@ -67,14 +65,7 @@ fn falls_back_to_raw_generated_text_when_json_is_invalid() {
         }]
     }"#;
 
-    let transcript = parse_generate_response(
-        body,
-        "gemini-test",
-        "https://example.com",
-        "audio/mp3",
-        12,
-        None,
-    );
+    let transcript = parse_generate_response(body, context("files_api", false));
     assert_eq!(transcript.segments.len(), 1);
     assert_eq!(transcript.segments[0].text, "plain transcript");
 }
@@ -93,11 +84,10 @@ fn clamps_timestamps_to_known_audio_duration() {
 
     let transcript = parse_generate_response(
         body,
-        "gemini-test",
-        "https://example.com",
-        "audio/mp3",
-        12,
-        Some(300.0),
+        GeminiResponseContext {
+            duration_secs: Some(300.0),
+            ..context("files_api", false)
+        },
     );
     assert_eq!(transcript.segments[0].start_ms, 299000);
     assert_eq!(transcript.segments[0].end_ms, 300000);
@@ -128,14 +118,7 @@ fn parses_streamed_response_chunks() {
         }),
     ];
 
-    let transcript = parse_stream_generate_response(
-        &chunks,
-        "gemini-test",
-        "https://example.com",
-        "audio/mp3",
-        12,
-        None,
-    );
+    let transcript = parse_stream_generate_response(&chunks, context("files_api", false));
     assert_eq!(transcript.segments.len(), 1);
     assert_eq!(transcript.segments[0].text, "hello world");
     assert_eq!(transcript.segments[0].speaker.as_deref(), Some("A"));
@@ -155,4 +138,35 @@ fn parses_streamed_response_chunks() {
             .and_then(serde_json::Value::as_u64),
         Some(2)
     );
+}
+
+#[test]
+fn records_signed_url_upload_method_without_persisting_url() {
+    let body = br#"{
+        "candidates": [{
+            "content": {
+                "parts": [{"text": "{\"text\":\"signed url transcript\",\"segments\":[{\"text\":\"signed url transcript\"}]}"}]
+            }
+        }]
+    }"#;
+
+    let transcript = parse_generate_response(body, context("signed_url", true));
+    let metadata = transcript
+        .provider_metadata
+        .as_ref()
+        .expect("metadata should exist");
+
+    assert_eq!(
+        metadata
+            .pointer("/gemini/upload_method")
+            .and_then(serde_json::Value::as_str),
+        Some("signed_url")
+    );
+    assert_eq!(
+        metadata
+            .pointer("/gemini/request/file_url_present")
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+    assert!(!metadata.to_string().contains("X-Amz-Signature"));
 }

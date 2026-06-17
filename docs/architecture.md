@@ -58,7 +58,7 @@ pub trait Transcriber: Send + Sync {
 - **Sherpa-ONNX engine** (`sherpa_onnx`) uses `transcribe()` — it needs decoded samples for the ONNX runtime.
 - **OpenAI/Azure API engines** override `transcribe_path()` to upload files directly via multipart, and `transcribe_wav()` to upload in-memory bytes — avoiding the decode→re-encode round-trip.
 - **Qwen file transcription** overrides `transcribe_path()` to upload prepared audio to S3-compatible storage, generate a pre-signed URL, and submit that URL to DashScope.
-- **Gemini** overrides `transcribe_path()` to upload prepared audio through Gemini Files API and call streamed `streamGenerateContent` with structured JSON output.
+- **Gemini** overrides `transcribe_path()` to upload prepared audio through Gemini Files API and call streamed `streamGenerateContent` with structured JSON output. In signed URL mode, it stages the prepared MP3 in S3-compatible storage and sends the pre-signed URL as Gemini `file_uri` instead.
 - **NVIDIA Riva** overrides `transcribe_path()` and `transcribe_wav()` to send WAV bytes to a hosted Riva gRPC endpoint with provider-native timestamps.
 - **Deepgram** overrides `transcribe_path()` and `transcribe_wav()` to post WAV bytes to Deepgram's `/listen` endpoint with utterances, word timestamps, optional diarization, and optional audio intelligence flags. In URL mode, it stages the prepared WAV in S3-compatible storage and sends Deepgram a pre-signed URL JSON request instead.
 
@@ -192,8 +192,13 @@ Uses Gemini Files API and streamed `streamGenerateContent` for whole-file multim
 - deletes the temporary Gemini file after the transcription request by default
 - optionally reuses Gemini Files API uploads with `--gemini-file-cache`, using a local index keyed by SHA-256 of the exact prepared upload bytes
 - optionally creates and reuses Gemini explicit `cachedContent` objects with `--gemini-explicit-cache`
+- optionally bypasses Gemini Files API upload with `--gemini-use-presigned-url`, staging the prepared MP3 in S3/R2 and passing the signed URL as `file_uri`
 
 Gemini is not a dedicated ASR endpoint. Timestamp, speaker, language, and emotion values come from the model's structured output, so benchmark quality before relying on them for subtitle workflows. The default path keeps Gemini whole-file for speaker continuity; explicit segmentation and long-input fallback are available with the expected risk that speakers may not remain stable between chunks.
+
+Gemini signed URL mode is for one-off prepared inputs up to 100 MB. It is rejected for Gemini 2.0 family models and cannot be combined with Gemini Files API cache or explicit cached content.
+
+`--autoclean` deletes temporary provider resources created during a run when the provider lifecycle makes that safe. For S3/R2 URL-staging providers, cleanup runs after the provider has consumed the URL and records best-effort cleanup metadata without failing a successful transcription.
 
 ### NVIDIA Riva (`nvidia_riva.rs`)
 
@@ -281,7 +286,7 @@ All settings (timeout, retries, wait times) are configurable via CLI flags and e
 
 ### Shared WAV encoding
 
-OpenAI/Azure engines can send file uploads directly and choose the correct container format for compatibility (WAV for local transcribe path, MP3 for API provider uploads). Qwen file transcription stages MP3 in S3-compatible storage and sends DashScope a pre-signed URL. Gemini uploads MP3 through Gemini Files API. NVIDIA Riva sends WAV bytes through gRPC. Deepgram posts WAV bytes to `/listen` by default, or stages WAV in S3-compatible storage and sends a pre-signed URL when URL mode is enabled. The `audio::wav::encode_wav()` helper is still used by local engines and non-file upload paths.
+OpenAI/Azure engines can send file uploads directly and choose the correct container format for compatibility (WAV for local transcribe path, MP3 for API provider uploads). Qwen file transcription stages MP3 in S3-compatible storage and sends DashScope a pre-signed URL. Gemini uploads MP3 through Gemini Files API by default, or stages MP3 in S3-compatible storage and sends a pre-signed URL when signed URL mode is enabled. NVIDIA Riva sends WAV bytes through gRPC. Deepgram posts WAV bytes to `/listen` by default, or stages WAV in S3-compatible storage and sends a pre-signed URL when URL mode is enabled. The `audio::wav::encode_wav()` helper is still used by local engines and non-file upload paths.
 
 ## Model cache (`model_cache.rs`)
 

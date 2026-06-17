@@ -25,8 +25,8 @@ use crate::cli::{
     AnalysisKind, Cli, Command, ModelFormat, OutputFormatArg, Provider, SetupComponent,
 };
 use crate::engines::azure_openai::AzureOpenAi;
-use crate::engines::deepgram::DeepgramApi;
-use crate::engines::gemini::GeminiApi;
+use crate::engines::deepgram::{DeepgramApi, DeepgramConfig};
+use crate::engines::gemini::{GeminiApi, GeminiConfig};
 use crate::engines::model_cache::ModelCache;
 use crate::engines::nvidia_riva::NvidiaRiva;
 use crate::engines::openai_api::OpenAiApi;
@@ -169,6 +169,7 @@ async fn main() -> Result<()> {
             deepgram_numerals,
             deepgram_use_presigned_url,
             gemini_file_cache,
+            gemini_use_presigned_url,
             gemini_file_cache_index,
             gemini_autoclean,
             gemini_explicit_cache,
@@ -185,6 +186,7 @@ async fn main() -> Result<()> {
             max_segment_secs,
             segment_concurrency,
             normalize,
+            autoclean,
             max_retries,
             request_timeout_secs,
             retry_wait_base_secs,
@@ -366,6 +368,7 @@ async fn main() -> Result<()> {
                             language.clone(),
                             api_settings,
                             uploader,
+                            autoclean,
                         )?),
                         analyzer: None,
                         provider_name: "qwen-filetrans".into(),
@@ -379,6 +382,37 @@ async fn main() -> Result<()> {
                                 "--gemini-api-key, GEMINI_API_KEY, --api-key, or OPENAI_API_KEY is required for --provider gemini",
                             )?;
                     let model_name = remote_model.unwrap_or_else(|| "gemini-3.5-flash".into());
+                    let gemini_autoclean = autoclean || gemini_autoclean;
+                    if gemini_use_presigned_url && (gemini_file_cache || gemini_explicit_cache) {
+                        anyhow::bail!(
+                            "--gemini-use-presigned-url cannot be combined with --gemini-file-cache or --gemini-explicit-cache because signed URLs do not create reusable Gemini Files API handles"
+                        );
+                    }
+                    if gemini_use_presigned_url && is_gemini_2_0_model(&model_name) {
+                        anyhow::bail!(
+                            "--gemini-use-presigned-url is not supported for Gemini 2.0 family models; use Gemini Files API mode instead"
+                        );
+                    }
+                    let signed_url_uploader = if gemini_use_presigned_url {
+                        Some(
+                            build_s3_uploader(S3UploaderArgs {
+                                bucket: s3_bucket,
+                                region: s3_region,
+                                endpoint_url: s3_endpoint_url,
+                                access_key_id: s3_access_key_id,
+                                secret_access_key: s3_secret_access_key,
+                                session_token: s3_session_token,
+                                prefix: s3_prefix,
+                                default_prefix: "transcribeit/gemini",
+                                presign_expires_secs: s3_presign_expires_secs,
+                                force_path_style: s3_force_path_style,
+                                context_label: "--provider gemini --gemini-use-presigned-url",
+                            })
+                            .await?,
+                        )
+                    } else {
+                        None
+                    };
                     let gemini_file_cache = if gemini_file_cache || gemini_explicit_cache {
                         Some(crate::engines::gemini::GeminiFileCacheConfig {
                             index_path: gemini_file_cache_index,
@@ -392,26 +426,30 @@ async fn main() -> Result<()> {
                     let analyzer = analysis_config
                         .is_enabled()
                         .then(|| {
-                            GeminiApi::new(
-                                gemini_api_base_url.clone(),
-                                key.clone(),
-                                model_name.clone(),
-                                language.clone(),
-                                api_settings,
-                                None,
-                            )
+                            GeminiApi::new(GeminiConfig {
+                                api_base_url: gemini_api_base_url.clone(),
+                                api_key: key.clone(),
+                                model: model_name.clone(),
+                                language: language.clone(),
+                                settings: api_settings,
+                                file_cache: None,
+                                signed_url_uploader: None,
+                                autoclean: false,
+                            })
                             .map(|api| Box::new(api) as Box<dyn TranscriptAnalyzer>)
                         })
                         .transpose()?;
                     ProviderRuntime {
-                        engine: Box::new(GeminiApi::new(
-                            gemini_api_base_url,
-                            key,
-                            model_name.clone(),
-                            language.clone(),
-                            api_settings,
-                            gemini_file_cache,
-                        )?),
+                        engine: Box::new(GeminiApi::new(GeminiConfig {
+                            api_base_url: gemini_api_base_url,
+                            api_key: key,
+                            model: model_name.clone(),
+                            language: language.clone(),
+                            settings: api_settings,
+                            file_cache: gemini_file_cache,
+                            signed_url_uploader,
+                            autoclean: gemini_autoclean,
+                        })?),
                         analyzer,
                         provider_name: "gemini".into(),
                         model_name,
@@ -465,13 +503,13 @@ async fn main() -> Result<()> {
                         );
                     }
                     ProviderRuntime {
-                        engine: Box::new(DeepgramApi::new(
-                            deepgram_api_base_url,
-                            key,
-                            model_name.clone(),
-                            language.clone(),
-                            api_settings,
-                            crate::engines::deepgram::DeepgramOptions {
+                        engine: Box::new(DeepgramApi::new(DeepgramConfig {
+                            base_url: deepgram_api_base_url,
+                            api_key: key,
+                            model: model_name.clone(),
+                            language: language.clone(),
+                            settings: api_settings,
+                            options: crate::engines::deepgram::DeepgramOptions {
                                 diarize: diarize || speakers.is_some(),
                                 intelligence: deepgram_intelligence,
                                 summarize: deepgram_summarize,
@@ -486,7 +524,7 @@ async fn main() -> Result<()> {
                                 filler_words: deepgram_filler_words,
                                 numerals: deepgram_numerals,
                             },
-                            if deepgram_use_presigned_url {
+                            presigned_url_uploader: if deepgram_use_presigned_url {
                                 Some(
                                     build_s3_uploader(
                                         S3UploaderArgs {
@@ -509,7 +547,8 @@ async fn main() -> Result<()> {
                             } else {
                                 None
                             },
-                        )?),
+                            autoclean,
+                        })?),
                         analyzer: None,
                         provider_name: "deepgram".into(),
                         model_name,
@@ -585,6 +624,14 @@ fn provider_handles_diarization(provider_name: &str, model_name: &str) -> bool {
         "openai" => model_name.eq_ignore_ascii_case("gpt-4o-transcribe-diarize"),
         _ => false,
     }
+}
+
+fn is_gemini_2_0_model(model: &str) -> bool {
+    let model = model
+        .strip_prefix("models/")
+        .unwrap_or(model)
+        .to_ascii_lowercase();
+    model.starts_with("gemini-2.0")
 }
 
 struct S3UploaderArgs {

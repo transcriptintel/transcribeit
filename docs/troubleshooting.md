@@ -204,6 +204,18 @@ Fix:
 - Use `--analysis summary` only with Gemini for now.
 - Always provide `-o` / `--output-dir`; analysis is written into `<input_stem>.manifest.json`.
 
+### Gemini signed URL mode fails before transcription
+
+Symptoms:
+- `--gemini-use-presigned-url` fails before or during the Gemini request
+- error mentions S3 credentials, Gemini 2.0, file cache, explicit cache, or a 100 MB prepared input limit
+
+Fix:
+- Confirm `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` are set, plus `S3_ENDPOINT_URL` when using Cloudflare R2.
+- Use a supported non-Gemini-2.0 model such as `gemini-3.5-flash` or `gemini-2.5-flash`.
+- Do not combine `--gemini-use-presigned-url` with `--gemini-file-cache` or `--gemini-explicit-cache`; signed URL mode does not create reusable Gemini Files API handles.
+- Keep the prepared 16 kHz mono MP3 under 100 MB, or use the default Gemini Files API path for larger or reusable files.
+
 Example:
 
 ```bash
@@ -237,7 +249,7 @@ Explanation:
 - A missing `usage_metadata.cachedContentTokenCount` means Gemini did not report a token-cache hit for that request.
 
 Fix:
-- For upload reuse, keep `--gemini-file-cache` enabled and avoid `--gemini-autoclean`.
+- For upload reuse, keep `--gemini-file-cache` enabled and avoid `--autoclean`.
 - For deterministic token-cache reuse, run with `--gemini-explicit-cache`. This creates or reuses a Gemini `cachedContent` object and should produce `cache.transcription.mode = "explicit"` plus `cachedContentTokenCount` when Gemini accepts the cache.
 - Explicit cached content has TTL and billing behavior. Use `--gemini-cache-ttl-secs` to control how long the cache is retained by Gemini.
 
@@ -293,7 +305,7 @@ Common symptoms:
 Fix:
 - Use `--normalize` to reduce volume inconsistency from recorded content.
 - Ensure input is not corrupted and ffmpeg conversion succeeds.
-- For OpenAI/Azure providers, MP3 conversion is used internally; local provider uses WAV input internally. Qwen file transcription stages a prepared MP3 in S3-compatible storage and passes a pre-signed URL to DashScope. Deepgram and NVIDIA Riva use WAV input internally; Deepgram can optionally stage that prepared WAV in S3/R2 and submit a pre-signed URL with `--deepgram-use-presigned-url`.
+- For OpenAI/Azure providers, MP3 conversion is used internally; local provider uses WAV input internally. Qwen file transcription stages a prepared MP3 in S3-compatible storage and passes a pre-signed URL to DashScope. Gemini uses Gemini Files API by default, but can optionally stage prepared MP3 in S3/R2 and submit a signed URL with `--gemini-use-presigned-url`. Deepgram and NVIDIA Riva use WAV input internally; Deepgram can optionally stage that prepared WAV in S3/R2 and submit a pre-signed URL with `--deepgram-use-presigned-url`.
 
 ### Empty or tiny transcript outputs
 

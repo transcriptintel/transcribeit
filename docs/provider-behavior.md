@@ -8,10 +8,12 @@ This project supports eight providers. They share the same input/output surface,
 |----------|------------------------------------|-------|
 | `qwen-filetrans` | Required | Stages prepared MP3 audio in S3/R2 and passes the pre-signed URL to DashScope async ASR. |
 | `deepgram` | Optional | Direct byte upload is the default. `--deepgram-use-presigned-url` stages prepared WAV audio in S3/R2 and sends Deepgram `{"url":"..."}`. |
-| `gemini` | Not currently implemented | The current implementation uses Gemini Files API upload/cache because that path supports file reuse and explicit cached-content workflows. |
+| `gemini` | Optional | Files API upload/cache remains the default. `--gemini-use-presigned-url` stages prepared MP3 audio in S3/R2 and sends the signed URL as `file_uri`; this path is limited to 100 MB and excludes Gemini 2.0 family models. |
 | `openai` | No | Uses multipart transcription upload. |
 | `azure` | No | Uses Azure OpenAI multipart transcription upload. |
 | `nvidia-riva` | No | Uses hosted Riva gRPC audio streaming/buffers. |
+
+For URL-staging providers, `--autoclean` / `TRANSCRIBEIT_AUTOCLEAN=true` enables best-effort deletion of the S3/R2 object after the provider has consumed it. Cleanup status is written to provider metadata. Cleanup errors are warnings and do not fail an otherwise successful transcription.
 
 ## Local (`-p local`)
 
@@ -106,6 +108,7 @@ This project supports eight providers. They share the same input/output surface,
   - `S3_FORCE_PATH_STYLE=true` for providers that require path-style URLs
 - Input audio/video is converted with FFmpeg to 16 kHz mono MP3 before upload.
 - The engine uploads the prepared file, generates a pre-signed GET URL, submits the Qwen async task, polls until completion, downloads the transcription JSON, and maps Qwen sentence timestamps into the project transcript model.
+- With `--autoclean`, the staged S3/R2 object is deleted after the Qwen result JSON is downloaded.
 - Manifests include Qwen provider metadata when available:
   - `provider_metadata.provider = "qwen-filetrans"`
   - `provider_metadata.schema_version = "qwen-filetrans.metadata.v1"`
@@ -113,6 +116,7 @@ This project supports eight providers. They share the same input/output surface,
   - `provider_metadata.data.result` with audio info and transcript/sentence/word counts
   - per-segment `language`, `emotion`, and `words` with word-level timestamps
 - Temporary pre-signed URLs are not persisted in the manifest; only `file_url_present` is recorded.
+- S3/R2 staging cleanup, when attempted, is recorded under `provider_metadata.data.staging.cleanup`.
 - Qwen file transcription does not expose token-cache telemetry through this path, so manifests use `cache.transcription.mode = "none"`.
 - Qwen file transcription is intended for whole-file processing. Do not enable segmentation unless you explicitly want multiple independent remote tasks.
 - If a short-audio `qwen3-asr-flash` model is accidentally selected with `-p qwen-filetrans`, the CLI validates the local file before upload and fails without staging it to S3. Short flash models have a 10 MB and 300 second limit and use a different API path.
@@ -125,12 +129,20 @@ This project supports eight providers. They share the same input/output surface,
 - Base URL defaults to `https://generativelanguage.googleapis.com/v1beta` and can be overridden with `--gemini-api-base-url` or `GEMINI_API_BASE_URL`.
 - Default model: `gemini-3.5-flash`.
 - Useful benchmark candidates include `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3-pro-preview`, and `gemini-2.5-flash`.
+- By default, Gemini uses the Files API. With `--gemini-use-presigned-url` or `GEMINI_USE_PRESIGNED_URL=true`, the CLI stages the prepared MP3 in S3-compatible storage and sends the pre-signed HTTPS URL directly as `file_uri`.
+- Gemini signed URL mode:
+  - is intended for prepared files up to 100 MB
+  - is rejected for Gemini 2.0 family models
+  - cannot be combined with `--gemini-file-cache` or `--gemini-explicit-cache`
+  - uses `S3_PREFIX=transcribeit/gemini` when no explicit `S3_PREFIX` is provided
+  - records `provider_metadata.data.upload_method = "signed_url"` and `provider_metadata.data.request.file_url_present = true`, but does not persist the pre-signed URL
+  - deletes the staged S3/R2 object after streamed generation when `--autoclean` is set
 - Endpoint flow:
   - `POST {upload-base-url}/files` to start a resumable file upload.
   - Upload bytes to the returned `x-goog-upload-url`.
   - Poll `GET {base-url}/files/{id}` until the file is `ACTIVE`.
   - `POST {base-url}/models/{model}:streamGenerateContent?alt=sse`.
-  - `DELETE {base-url}/files/{id}` after transcription unless `--gemini-file-cache` is enabled without `--gemini-autoclean`.
+  - `DELETE {base-url}/files/{id}` after transcription unless `--gemini-file-cache` is enabled without `--autoclean`.
 - Input audio/video is converted with FFmpeg to 16 kHz mono MP3 before upload.
 - `--gemini-file-cache` stores a local index of Gemini Files API uploads keyed by SHA-256 of the prepared 16 kHz mono MP3 bytes. The CLI verifies an indexed file with `files.get` before reuse and uploads again if the file is missing, expired, failed, or mismatched.
 - The default index path is `.cache/transcribeit/gemini-files.json`, or `--gemini-file-cache-index` / `GEMINI_FILE_CACHE_INDEX`.
@@ -157,6 +169,7 @@ This project supports eight providers. They share the same input/output surface,
   - `provider_metadata.data.file.cache_enabled`
   - `provider_metadata.data.file.cache_reused`
   - `provider_metadata.data.file.cache_hash`
+  - `provider_metadata.data.staging.cleanup` when signed URL S3/R2 staging is used
   - `provider_metadata.data.cached_content` when explicit cached content is used
 - Gemini cache telemetry is normalized into `cache.transcription` from `usageMetadata.cachedContentTokenCount` and `usageMetadata.cacheTokensDetails` when returned.
 
@@ -216,6 +229,7 @@ Gemini summary analysis includes:
   - `S3_PREFIX` (defaults to `transcribeit/deepgram` for this mode when unset)
   - `S3_PRESIGN_EXPIRES_SECS` (defaults to `3600`, minimum `300`)
   - `S3_FORCE_PATH_STYLE=true` for providers that require path-style URLs
+- With `--autoclean`, the staged S3/R2 object is deleted after the Deepgram `/listen` response is received.
 - When `--diarize` is set, the request uses `diarize_model=latest`. `--speakers N` is treated as a request to enable diarization, but Deepgram does not accept a fixed speaker-count hint through this provider path.
 - `--deepgram-intelligence` enables `summarize=v2`, `topics=true`, `intents=true`, `detect_entities=true`, and `sentiment=true`.
 - Individual feature flags are also available:
@@ -235,6 +249,7 @@ Gemini summary analysis includes:
   - `provider_metadata.provider = "deepgram"`
   - `provider_metadata.schema_version = "deepgram.metadata.v1"`
   - `provider_metadata.data.request` with `audio_source` (`direct_upload` or `presigned_url`) and `file_url_present`; the actual pre-signed URL is not persisted.
+  - `provider_metadata.data.staging.cleanup` when signed URL S3/R2 staging is used.
   - `provider_metadata.data.metadata` with Deepgram request id, duration, channel count, model ids, `model_info`, and intelligence token usage metadata.
   - `provider_metadata.data.response` with channel, utterance, and alternative counts, mean confidence, and timestamp clamping telemetry.
   - `provider_metadata.data.intelligence` with returned `summary`, `topics`, `intents`, `sentiments`, `entities`, `summaries`, `search`, and warnings.

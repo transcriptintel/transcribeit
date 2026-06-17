@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use crate::audio::wav::encode_wav;
 use crate::engines::rate_limit::{self, send_with_retry};
-use crate::storage::s3::S3Uploader;
+use crate::storage::s3::{S3CleanupResult, S3Uploader};
 use crate::transcriber::{Segment, Transcriber, Transcript, Word};
 
 pub struct DeepgramApi {
@@ -22,6 +22,18 @@ pub struct DeepgramApi {
     client: Client,
     options: DeepgramOptions,
     presigned_url_uploader: Option<S3Uploader>,
+    autoclean: bool,
+}
+
+pub struct DeepgramConfig {
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub language: Option<String>,
+    pub settings: rate_limit::ApiRequestSettings,
+    pub options: DeepgramOptions,
+    pub presigned_url_uploader: Option<S3Uploader>,
+    pub autoclean: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -42,29 +54,22 @@ pub struct DeepgramOptions {
 }
 
 impl DeepgramApi {
-    pub fn new(
-        base_url: String,
-        api_key: String,
-        model: String,
-        language: Option<String>,
-        settings: rate_limit::ApiRequestSettings,
-        options: DeepgramOptions,
-        presigned_url_uploader: Option<S3Uploader>,
-    ) -> Result<Self> {
+    pub fn new(config: DeepgramConfig) -> Result<Self> {
         let client = Client::builder()
-            .timeout(settings.request_timeout)
+            .timeout(config.settings.request_timeout)
             .build()
             .context("Failed to build HTTP client")?;
 
         Ok(Self {
-            base_url: base_url.trim_end_matches('/').to_string(),
-            api_key,
-            model,
-            language,
-            settings,
+            base_url: config.base_url.trim_end_matches('/').to_string(),
+            api_key: config.api_key,
+            model: config.model,
+            language: config.language,
+            settings: config.settings,
             client,
-            options,
-            presigned_url_uploader,
+            options: config.options,
+            presigned_url_uploader: config.presigned_url_uploader,
+            autoclean: config.autoclean,
         })
     }
 
@@ -194,8 +199,21 @@ impl Transcriber for DeepgramApi {
 
     async fn transcribe_path(&self, audio_path: &Path) -> Result<Transcript> {
         if let Some(uploader) = &self.presigned_url_uploader {
-            let url = uploader.upload_and_presign(audio_path).await?;
-            return self.transcribe_file_url(url).await;
+            let upload = uploader.upload_and_presign_object(audio_path).await?;
+            let mut transcript = self.transcribe_file_url(upload.url.clone()).await?;
+            let cleanup = if self.autoclean {
+                uploader.cleanup_uploaded_object(&upload).await
+            } else {
+                S3CleanupResult::skipped(&upload)
+            };
+            if let Some(error) = cleanup.error.as_deref() {
+                eprintln!(
+                    "Failed to delete staged Deepgram object s3://{}/{}: {error}",
+                    cleanup.bucket, cleanup.key
+                );
+            }
+            add_deepgram_staging_metadata(&mut transcript, cleanup);
+            return Ok(transcript);
         }
 
         let bytes = tokio::fs::read(audio_path)
@@ -219,6 +237,25 @@ impl Transcriber for DeepgramApi {
         }
 
         self.transcribe_bytes(wav_bytes, "audio/wav").await
+    }
+}
+
+fn add_deepgram_staging_metadata(transcript: &mut Transcript, cleanup: S3CleanupResult) {
+    let metadata = transcript.provider_metadata.get_or_insert_with(|| {
+        serde_json::json!({
+            "provider": "deepgram",
+            "schema_version": "deepgram.metadata.v1",
+            "data": {}
+        })
+    });
+    if let Some(data) = metadata.get_mut("data").and_then(Value::as_object_mut) {
+        data.insert(
+            "staging".to_string(),
+            serde_json::json!({
+                "provider": "s3",
+                "cleanup": cleanup.to_metadata(),
+            }),
+        );
     }
 }
 

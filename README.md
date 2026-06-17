@@ -81,6 +81,14 @@ transcribeit run -p gemini --gemini-file-cache \
 transcribeit run -p gemini --gemini-explicit-cache --gemini-cache-ttl-secs 3600 \
   -i recording.mp3 -f vtt -o ./output
 
+# Use S3/R2 pre-signed URL input for a one-off Gemini run
+transcribeit run -p gemini --gemini-use-presigned-url \
+  -i recording.mp3 -f vtt -o ./output
+
+# Delete temporary staged provider resources after the provider consumes them
+transcribeit run -p qwen-filetrans --autoclean \
+  -i recording.mp3 -f vtt -o ./output
+
 # Transcribe with Gemini and add a structured summary to the manifest
 transcribeit run -p gemini --analysis summary \
   -i interview.mp4 -f vtt -o ./output
@@ -128,8 +136,10 @@ transcribeit run -i interview.mp3 -m base --diarize --speakers 2 \
 - **Qwen model guardrails** — Accidental short-audio `qwen3-asr-flash` model selection is rejected before conversion and S3 upload; use `qwen3-asr-flash-filetrans` for this provider.
 - **Gemini whole-file transcription** — `gemini` uploads prepared audio through Gemini Files API, streams `generateContent` response chunks with structured JSON output, and maps segment timestamps, speaker labels, language, and emotion when returned.
 - **Gemini file reuse** — `--gemini-file-cache` keeps a local index of Gemini Files API uploads keyed by SHA-256 of the prepared 16 kHz mono MP3 bytes, verifies the remote file before reuse, and records reuse metadata in the manifest.
+- **Gemini signed URL input** — `--gemini-use-presigned-url` stages prepared MP3 audio in S3/R2 and sends the signed URL as Gemini `file_uri` for one-off inputs up to 100 MB. Files API cache and explicit cached content remain Files API-only.
 - **Gemini explicit cache** — `--gemini-explicit-cache` creates and reuses Gemini `cachedContent` objects with a configurable TTL, producing deterministic `cachedContentTokenCount` telemetry when Gemini accepts the cache.
 - **Gemini summary analysis** — `--analysis summary` runs a second Gemini JSON pass over the transcript and stores a provider-neutral summary, key points, topics, questions, and follow-ups in the manifest.
+- **Temporary resource cleanup** — `--autoclean` performs best-effort cleanup of temporary provider resources created by the run, including S3/R2 staged objects for Qwen, Gemini signed URL mode, and Deepgram signed URL mode.
 - **NVIDIA hosted Riva ASR** — `nvidia-riva` calls hosted NVIDIA Riva gRPC endpoints with provider-native word timestamps, optional server-side diarization, and manifest metadata.
 - **Deepgram Nova batch ASR** — `deepgram` calls Deepgram's `/listen` API, defaults to `nova-3`, requests utterances and smart formatting, supports provider-native diarization through `--diarize`, and can submit either direct audio bytes or an S3/R2 pre-signed URL with `--deepgram-use-presigned-url`.
 - **Deepgram audio intelligence** — `--deepgram-intelligence` captures Deepgram summary, topics, intents, entity detection, and sentiment in `provider_metadata.data.intelligence`; `--deepgram-keyterm` passes Nova-3 keyterm prompts for domain terminology.
@@ -162,6 +172,7 @@ SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
 OPENAI_API_KEY=sk-your_key_here
 GEMINI_API_KEY=your_gemini_key_here
 GEMINI_API_BASE_URL=https://generativelanguage.googleapis.com/v1beta
+GEMINI_USE_PRESIGNED_URL=false
 NVIDIA_API_KEY=your_nvidia_key_here
 NVIDIA_RIVA_FUNCTION_ID=your_hosted_riva_function_id
 NVIDIA_RIVA_SERVER=grpc.nvcf.nvidia.com:443
@@ -185,6 +196,7 @@ S3_SECRET_ACCESS_KEY=your_s3_secret_key
 S3_PREFIX=transcribeit/qwen-filetrans
 S3_PRESIGN_EXPIRES_SECS=3600
 S3_FORCE_PATH_STYLE=false
+TRANSCRIBEIT_AUTOCLEAN=false
 TRANSCRIBEIT_MAX_RETRIES=5
 TRANSCRIBEIT_REQUEST_TIMEOUT_SECS=120
 TRANSCRIBEIT_RETRY_WAIT_BASE_SECS=10

@@ -7,6 +7,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use reqwest::Client;
+use serde_json::Value;
 
 use crate::audio::wav::encode_wav;
 use crate::engines::qwen_filetrans::limits::validate_model_for_path;
@@ -15,7 +16,7 @@ use crate::engines::qwen_filetrans::types::{
     TaskResult, normalize_api_base_url,
 };
 use crate::engines::rate_limit::{self, send_with_retry};
-use crate::storage::s3::S3Uploader;
+use crate::storage::s3::{S3CleanupResult, S3Uploader};
 use crate::transcriber::{Transcriber, Transcript};
 
 pub struct QwenFileTrans {
@@ -26,6 +27,7 @@ pub struct QwenFileTrans {
     settings: rate_limit::ApiRequestSettings,
     client: Client,
     uploader: S3Uploader,
+    autoclean: bool,
     poll_interval: Duration,
     max_polls: u32,
 }
@@ -38,6 +40,7 @@ impl QwenFileTrans {
         language: Option<String>,
         settings: rate_limit::ApiRequestSettings,
         uploader: S3Uploader,
+        autoclean: bool,
     ) -> Result<Self> {
         let client = Client::builder()
             .timeout(settings.request_timeout)
@@ -52,6 +55,7 @@ impl QwenFileTrans {
             settings,
             client,
             uploader,
+            autoclean,
             poll_interval: Duration::from_secs(2),
             max_polls: 900,
         })
@@ -189,8 +193,21 @@ impl Transcriber for QwenFileTrans {
 
     async fn transcribe_path(&self, audio_path: &Path) -> Result<Transcript> {
         validate_model_for_path(&self.model, audio_path).await?;
-        let url = self.uploader.upload_and_presign(audio_path).await?;
-        self.transcribe_file_url(url).await
+        let upload = self.uploader.upload_and_presign_object(audio_path).await?;
+        let mut transcript = self.transcribe_file_url(upload.url.clone()).await?;
+        let cleanup = if self.autoclean {
+            self.uploader.cleanup_uploaded_object(&upload).await
+        } else {
+            S3CleanupResult::skipped(&upload)
+        };
+        if let Some(error) = cleanup.error.as_deref() {
+            eprintln!(
+                "Failed to delete staged Qwen object s3://{}/{}: {error}",
+                cleanup.bucket, cleanup.key
+            );
+        }
+        add_qwen_staging_metadata(&mut transcript, cleanup);
+        Ok(transcript)
     }
 
     async fn transcribe_wav(&self, wav_bytes: Vec<u8>) -> Result<Transcript> {
@@ -203,5 +220,20 @@ impl Transcriber for QwenFileTrans {
             .await
             .context("Failed to write temporary WAV file")?;
         self.transcribe_path(tmp.path()).await
+    }
+}
+
+fn add_qwen_staging_metadata(transcript: &mut Transcript, cleanup: S3CleanupResult) {
+    let metadata = transcript
+        .provider_metadata
+        .get_or_insert_with(|| serde_json::json!({ "qwen": {} }));
+    if let Some(qwen) = metadata.get_mut("qwen").and_then(Value::as_object_mut) {
+        qwen.insert(
+            "staging".to_string(),
+            serde_json::json!({
+                "provider": "s3",
+                "cleanup": cleanup.to_metadata(),
+            }),
+        );
     }
 }

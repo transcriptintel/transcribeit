@@ -310,11 +310,15 @@ pub(crate) enum Command {
         #[arg(long, env = "GEMINI_FILE_CACHE")]
         gemini_file_cache: bool,
 
+        /// Stage Gemini input in S3-compatible storage and pass a pre-signed URL as file_uri
+        #[arg(long, env = "GEMINI_USE_PRESIGNED_URL")]
+        gemini_use_presigned_url: bool,
+
         /// Local Gemini Files API cache index path
         #[arg(long, env = "GEMINI_FILE_CACHE_INDEX")]
         gemini_file_cache_index: Option<PathBuf>,
 
-        /// Delete the Gemini Files API upload after transcription, even when file cache is enabled
+        /// Deprecated alias for --autoclean for Gemini Files API uploads
         #[arg(long, env = "GEMINI_AUTOCLEAN")]
         gemini_autoclean: bool,
 
@@ -389,6 +393,10 @@ pub(crate) enum Command {
         /// Normalize audio with ffmpeg loudnorm before transcription
         #[arg(long)]
         normalize: bool,
+
+        /// Best-effort cleanup of temporary provider resources created during the run
+        #[arg(long, env = "TRANSCRIBEIT_AUTOCLEAN")]
+        autoclean: bool,
 
         /// Enable speaker diarization
         #[arg(long)]
