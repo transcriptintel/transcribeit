@@ -152,6 +152,11 @@ async fn main() -> Result<()> {
             remote_model,
             qwen_api_base_url,
             gemini_api_base_url,
+            gemini_file_cache,
+            gemini_file_cache_index,
+            gemini_autoclean,
+            gemini_explicit_cache,
+            gemini_cache_ttl_secs,
             language,
             azure_deployment,
             azure_api_version,
@@ -368,6 +373,16 @@ async fn main() -> Result<()> {
                                 "--gemini-api-key, GEMINI_API_KEY, --api-key, or OPENAI_API_KEY is required for --provider gemini",
                             )?;
                     let model_name = remote_model.unwrap_or_else(|| "gemini-3.5-flash".into());
+                    let gemini_file_cache = if gemini_file_cache || gemini_explicit_cache {
+                        Some(crate::engines::gemini::GeminiFileCacheConfig {
+                            index_path: gemini_file_cache_index,
+                            autoclean: gemini_autoclean,
+                            explicit_cache: gemini_explicit_cache,
+                            explicit_cache_ttl_secs: gemini_cache_ttl_secs.max(60),
+                        })
+                    } else {
+                        None
+                    };
                     let analyzer = analysis_config
                         .is_enabled()
                         .then(|| {
@@ -377,6 +392,7 @@ async fn main() -> Result<()> {
                                 model_name.clone(),
                                 language.clone(),
                                 api_settings,
+                                None,
                             )
                             .map(|api| Box::new(api) as Box<dyn TranscriptAnalyzer>)
                         })
@@ -388,6 +404,7 @@ async fn main() -> Result<()> {
                             model_name.clone(),
                             language.clone(),
                             api_settings,
+                            gemini_file_cache,
                         )?),
                         analyzer,
                         provider_name: "gemini".into(),

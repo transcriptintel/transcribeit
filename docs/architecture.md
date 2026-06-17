@@ -132,7 +132,7 @@ Provider token-cache signals are normalized into `cache`:
 - OpenAI-compatible and Azure providers map `usage.prompt_tokens_details.cached_tokens` or `usage.input_tokens_details.cached_tokens` when a transcription endpoint returns `usage`.
 - Qwen file transcription, NVIDIA Riva, local Whisper, and Sherpa-ONNX currently report `mode: "none"` because they do not expose token-cache telemetry through their transcription paths.
 
-This is observability only. The CLI does not create explicit provider caches yet.
+This is observability plus provider integration. The Gemini file cache reuses Files API uploads, and `--gemini-explicit-cache` creates/reuses Gemini `cachedContent` objects so provider token-cache hits can be deterministic when Gemini accepts the cache.
 
 ## Engines
 
@@ -187,7 +187,9 @@ Uses Gemini Files API and streamed `streamGenerateContent` for whole-file multim
 - requests structured JSON with `text`, segment timestamps, speaker, language, and emotion fields
 - joins streamed response text chunks and maps valid segments into the normalized transcript/manifest model
 - falls back to generated transcript text when structured JSON is missing or invalid
-- deletes the temporary Gemini file after the transcription request
+- deletes the temporary Gemini file after the transcription request by default
+- optionally reuses Gemini Files API uploads with `--gemini-file-cache`, using a local index keyed by SHA-256 of the exact prepared upload bytes
+- optionally creates and reuses Gemini explicit `cachedContent` objects with `--gemini-explicit-cache`
 
 Gemini is not a dedicated ASR endpoint. Timestamp, speaker, language, and emotion values come from the model's structured output, so benchmark quality before relying on them for subtitle workflows. The default path keeps Gemini whole-file for speaker continuity; explicit segmentation and long-input fallback are available with the expected risk that speakers may not remain stable between chunks.
 

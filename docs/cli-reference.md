@@ -124,8 +124,17 @@ If a short-audio `qwen3-asr-flash` model is selected with `-p qwen-filetrans`, t
 | `--gemini-api-key` | Gemini API key | `GEMINI_API_KEY` env var |
 | `--gemini-api-base-url` | Gemini API base URL | `GEMINI_API_BASE_URL` env var, or `https://generativelanguage.googleapis.com/v1beta` |
 | `--remote-model` | Gemini model name | `gemini-3.5-flash` |
+| `--gemini-file-cache` | Reuse Gemini Files API uploads keyed by SHA-256 of prepared upload bytes | disabled |
+| `--gemini-file-cache-index` | Local Gemini file cache index path | `GEMINI_FILE_CACHE_INDEX` env var, or `.cache/transcribeit/gemini-files.json` |
+| `--gemini-autoclean` | Delete Gemini Files API uploads after transcription even when file cache is enabled | disabled |
+| `--gemini-explicit-cache` | Create and reuse Gemini explicit `cachedContent` objects for prepared audio | disabled |
+| `--gemini-cache-ttl-secs` | TTL in seconds for Gemini explicit `cachedContent` objects | `3600` |
 
 The Gemini provider uses the Gemini Files API plus streamed `streamGenerateContent` with structured JSON output. It converts input audio/video to 16 kHz mono MP3 before upload, then asks Gemini for a transcript object with `text`, `segments`, timestamps, speaker, language, and emotion fields.
+
+By default, Gemini uploads are deleted after each run. With `--gemini-file-cache`, the CLI stores a local JSON index for the uploaded Gemini file reference and keeps the remote file for reuse within the Gemini Files API retention window. The cache key is the SHA-256 hash of the exact prepared 16 kHz mono MP3 bytes, not the input path. Before reuse, the CLI calls `files.get` and only reuses files that still exist and are `ACTIVE`. Use `--gemini-autoclean` to force deletion after a run while keeping the same command shape for experiments.
+
+With `--gemini-explicit-cache`, the CLI also creates or reuses a Gemini `cachedContent` object for the prepared audio and passes its name as `cachedContent` in the streamed generation request. This automatically enables the local Gemini file cache index because the cached-content handle must be persisted between runs. Explicit cached content has its own TTL and provider billing behavior; it is separate from the 48-hour Files API upload retention window.
 
 Current model candidates verified through the Gemini models API include `gemini-3.5-flash`, `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3-pro-preview`, and `gemini-2.5-flash`. Prefer stable `gemini-3.5-flash` for the default path and benchmark preview models before adopting them in production workflows.
 
@@ -232,6 +241,11 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 | `OPENAI_API_KEY` | OpenAI API key | none |
 | `GEMINI_API_KEY` | Gemini API key | none |
 | `GEMINI_API_BASE_URL` | Gemini API base URL | `https://generativelanguage.googleapis.com/v1beta` |
+| `GEMINI_FILE_CACHE` | Enable Gemini Files API upload reuse | disabled |
+| `GEMINI_FILE_CACHE_INDEX` | Local Gemini file cache index path | `.cache/transcribeit/gemini-files.json` |
+| `GEMINI_AUTOCLEAN` | Delete Gemini uploads after each run, even with file cache enabled | disabled |
+| `GEMINI_EXPLICIT_CACHE` | Enable Gemini explicit `cachedContent` reuse | disabled |
+| `GEMINI_CACHE_TTL_SECS` | Gemini explicit `cachedContent` TTL in seconds | `3600` |
 | `NVIDIA_API_KEY` | NVIDIA hosted Riva API key | none |
 | `NVIDIA_RIVA_FUNCTION_ID` | NVIDIA hosted Riva function id | none |
 | `NVIDIA_RIVA_SERVER` | NVIDIA Riva gRPC server | `grpc.nvcf.nvidia.com:443` |
@@ -357,6 +371,17 @@ transcribeit run -p gemini --analysis summary \
   --remote-model gemini-3.5-flash \
   -i interview.mp4 -f vtt -o ./output
 
+# Gemini with Files API upload reuse
+transcribeit run -p gemini --gemini-file-cache \
+  --remote-model gemini-3.5-flash \
+  -i interview.mp4 -f vtt -o ./output
+
+# Gemini with explicit cachedContent reuse
+transcribeit run -p gemini --gemini-explicit-cache \
+  --gemini-cache-ttl-secs 3600 \
+  --remote-model gemini-3.5-flash \
+  -i interview.mp4 -f vtt -o ./output
+
 # NVIDIA hosted Riva ASR
 transcribeit run -p nvidia-riva -i recording.wav \
   --nvidia-api-key "$NVIDIA_API_KEY" \
@@ -374,6 +399,8 @@ transcribeit run -p nvidia-riva -i recording.wav \
   `POST {base-url}/openai/deployments/{deployment}/audio/transcriptions?api-version={version}`.
 - **Qwen file transcription** (`-p qwen-filetrans`) uploads audio to S3-compatible storage, passes a pre-signed URL to DashScope, and polls the async transcription task.
 - **Gemini** (`-p gemini`) uploads audio through Gemini Files API, calls streamed `streamGenerateContent`, and parses structured transcript JSON defensively.
+- **Gemini file cache** (`--gemini-file-cache`) reuses verified Gemini Files API uploads by prepared-byte SHA-256 hash; this avoids repeated uploads and may improve implicit cache locality, but provider cache hits still depend on Gemini returning `cachedContentTokenCount`.
+- **Gemini explicit cache** (`--gemini-explicit-cache`) creates/reuses Gemini `cachedContent` objects and sends `cachedContent` in the streamed generation request. Manifests report `cache.transcription.mode = "explicit"` when this path is used.
 - **Analysis** (`--analysis summary`) runs a second Gemini structured JSON pass over the transcript and stores summary results in the manifest.
 - **NVIDIA Riva** (`-p nvidia-riva`) sends WAV audio to hosted Riva gRPC, requesting native word timestamps and optional server-side diarization.
 
@@ -395,10 +422,10 @@ Manifests use `schema_version: "transcribeit.manifest.v2"`. New consumers should
 
 The `cache` object normalizes provider token-cache telemetry:
 
-- `cache.transcription.mode` is `implicit`, `none`, or `unknown`.
+- `cache.transcription.mode` is `explicit`, `implicit`, `none`, or `unknown`.
 - `cache.transcription.hit` is true when the provider reports cached input tokens.
 - `cache.transcription.input_tokens` and `cache.transcription.cached_tokens` are normalized when available.
-- `cache.transcription.cached_fraction` is `cached_tokens / input_tokens` when both are known.
+- `cache.transcription.cached_fraction` is `cached_tokens / input_tokens` when both are known and comparable. Some explicit provider cache counters can exceed request prompt counters, in which case the fraction is `null`.
 - `cache.analysis` is present when a post-transcription analysis pass ran.
 
 When `--analysis summary` is used, manifests include:

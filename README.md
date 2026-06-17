@@ -72,6 +72,14 @@ transcribeit run -p qwen-filetrans -i recording.mp3 -f vtt -o ./output
 transcribeit run -p gemini --remote-model gemini-3.5-flash \
   -i recording.mp3 -f vtt -o ./output
 
+# Reuse Gemini Files API uploads for repeated runs within the 48h Files API window
+transcribeit run -p gemini --gemini-file-cache \
+  -i recording.mp3 -f vtt -o ./output
+
+# Use Gemini explicit cachedContent for deterministic token-cache reuse
+transcribeit run -p gemini --gemini-explicit-cache --gemini-cache-ttl-secs 3600 \
+  -i recording.mp3 -f vtt -o ./output
+
 # Transcribe with Gemini and add a structured summary to the manifest
 transcribeit run -p gemini --analysis summary \
   -i interview.mp4 -f vtt -o ./output
@@ -104,6 +112,8 @@ transcribeit run -i interview.mp3 -m base --diarize --speakers 2 \
 - **Qwen provider metadata** — Manifests include Qwen task timing/usage, audio info, per-segment language/emotion, and word-level timestamps. Temporary pre-signed URLs are not persisted.
 - **Qwen model guardrails** — Accidental short-audio `qwen3-asr-flash` model selection is rejected before conversion and S3 upload; use `qwen3-asr-flash-filetrans` for this provider.
 - **Gemini whole-file transcription** — `gemini` uploads prepared audio through Gemini Files API, streams `generateContent` response chunks with structured JSON output, and maps segment timestamps, speaker labels, language, and emotion when returned.
+- **Gemini file reuse** — `--gemini-file-cache` keeps a local index of Gemini Files API uploads keyed by SHA-256 of the prepared 16 kHz mono MP3 bytes, verifies the remote file before reuse, and records reuse metadata in the manifest.
+- **Gemini explicit cache** — `--gemini-explicit-cache` creates and reuses Gemini `cachedContent` objects with a configurable TTL, producing deterministic `cachedContentTokenCount` telemetry when Gemini accepts the cache.
 - **Gemini summary analysis** — `--analysis summary` runs a second Gemini JSON pass over the transcript and stores a provider-neutral summary, key points, topics, questions, and follow-ups in the manifest.
 - **NVIDIA hosted Riva ASR** — `nvidia-riva` calls hosted NVIDIA Riva gRPC endpoints with provider-native word timestamps, optional server-side diarization, and manifest metadata.
 - **3 model architectures via sherpa-onnx** — Whisper, Moonshine, and SenseVoice are auto-detected from the model directory contents. Just point `--model` at any supported model directory.

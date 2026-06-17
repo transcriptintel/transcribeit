@@ -359,6 +359,14 @@ fn cache_entry_for_provider(provider: &str, metadata: Option<&Value>, source: &s
 }
 
 fn gemini_cache_entry(provider: &str, metadata: Option<&Value>, source: &str) -> CacheEntry {
+    let explicit_cache = metadata.is_some_and(|metadata| {
+        metadata
+            .pointer("/data/cached_content/enabled")
+            .or_else(|| metadata.pointer("/gemini/cached_content/enabled"))
+            .or_else(|| metadata.pointer("/cached_content/enabled"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    });
     let usage = metadata.and_then(|metadata| {
         metadata
             .pointer("/data/response/usage_metadata")
@@ -377,7 +385,12 @@ fn gemini_cache_entry(provider: &str, metadata: Option<&Value>, source: &str) ->
 
     CacheEntry {
         provider: provider.to_string(),
-        mode: "implicit".to_string(),
+        mode: if explicit_cache {
+            "explicit"
+        } else {
+            "implicit"
+        }
+        .to_string(),
         hit: cached_tokens.is_some_and(|tokens| tokens > 0),
         input_tokens,
         cached_tokens,
@@ -432,7 +445,10 @@ fn openai_cache_entry(provider: &str, metadata: Option<&Value>, source: &str) ->
 fn cache_fraction(cached_tokens: Option<u64>, input_tokens: Option<u64>) -> Option<f64> {
     let cached_tokens = cached_tokens?;
     let input_tokens = input_tokens?;
-    (input_tokens > 0).then_some(cached_tokens as f64 / input_tokens as f64)
+    if input_tokens == 0 || cached_tokens > input_tokens {
+        return None;
+    }
+    Some(cached_tokens as f64 / input_tokens as f64)
 }
 
 fn build_provider_metadata(provider: &str, metadata: Option<Value>) -> Option<ProviderMetadata> {
@@ -613,6 +629,45 @@ mod tests {
         assert_eq!(cache.transcription.input_tokens, Some(100));
         assert_eq!(cache.transcription.cached_tokens, Some(80));
         assert_eq!(cache.transcription.cached_fraction, Some(0.8));
+        assert!(cache.transcription.token_details.is_some());
+    }
+
+    #[test]
+    fn cache_info_marks_gemini_explicit_cache_without_invalid_fraction() {
+        let transcript = Transcript {
+            segments: vec![Segment {
+                start_ms: 0,
+                end_ms: 1000,
+                text: "hello".to_string(),
+                ..Default::default()
+            }],
+            provider_metadata: Some(serde_json::json!({
+                "provider": "gemini",
+                "schema_version": "gemini.metadata.v1",
+                "data": {
+                    "cached_content": {
+                        "enabled": true,
+                        "name": "cachedContents/test"
+                    },
+                    "response": {
+                        "usage_metadata": {
+                            "promptTokenCount": 100,
+                            "cachedContentTokenCount": 120,
+                            "cacheTokensDetails": [{"modality": "AUDIO", "tokenCount": 120}]
+                        }
+                    }
+                }
+            })),
+        };
+        let config = test_config("gemini");
+
+        let cache = build_cache_info(&config, &transcript, None);
+
+        assert_eq!(cache.transcription.mode, "explicit");
+        assert!(cache.transcription.hit);
+        assert_eq!(cache.transcription.input_tokens, Some(100));
+        assert_eq!(cache.transcription.cached_tokens, Some(120));
+        assert_eq!(cache.transcription.cached_fraction, None);
         assert!(cache.transcription.token_details.is_some());
     }
 

@@ -240,6 +240,26 @@ pub(crate) enum Command {
         )]
         gemini_api_base_url: String,
 
+        /// Reuse Gemini Files API uploads keyed by SHA-256 of prepared upload bytes
+        #[arg(long, env = "GEMINI_FILE_CACHE")]
+        gemini_file_cache: bool,
+
+        /// Local Gemini Files API cache index path
+        #[arg(long, env = "GEMINI_FILE_CACHE_INDEX")]
+        gemini_file_cache_index: Option<PathBuf>,
+
+        /// Delete the Gemini Files API upload after transcription, even when file cache is enabled
+        #[arg(long, env = "GEMINI_AUTOCLEAN")]
+        gemini_autoclean: bool,
+
+        /// Create and reuse Gemini explicit cachedContent objects for prepared audio
+        #[arg(long, env = "GEMINI_EXPLICIT_CACHE")]
+        gemini_explicit_cache: bool,
+
+        /// TTL in seconds for Gemini explicit cachedContent objects
+        #[arg(long, env = "GEMINI_CACHE_TTL_SECS", default_value = "3600")]
+        gemini_cache_ttl_secs: u64,
+
         /// Language code (e.g. en, fr, auto). If not set, auto-detection is used.
         #[arg(long)]
         language: Option<String>,

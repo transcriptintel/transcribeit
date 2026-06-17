@@ -73,6 +73,22 @@ pub(super) fn generate_payload(file_uri: &str, mime_type: &str, prompt: &str) ->
     })
 }
 
+pub(super) fn generate_payload_with_cached_content(cached_content: &str, prompt: &str) -> Value {
+    json!({
+        "contents": [{
+            "role": "user",
+            "parts": [
+                { "text": prompt }
+            ]
+        }],
+        "cachedContent": cached_content,
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": transcript_schema()
+        }
+    })
+}
+
 fn transcript_schema() -> Value {
     json!({
         "type": "OBJECT",

@@ -218,9 +218,26 @@ Symptoms:
 - `cache.transcription.mode` is `none`
 
 Explanation:
-- `cache` is telemetry only; the CLI does not create explicit provider caches yet.
+- `cache` is telemetry for most providers. Gemini also supports explicit cached-content integration through `--gemini-explicit-cache`.
 - Gemini and OpenAI/Azure cache hits depend on provider-side behavior and prompt length. Short audio/transcript prompts often do not produce cache hits.
 - Qwen file transcription, NVIDIA Riva, local Whisper, and Sherpa-ONNX do not expose token-cache telemetry through the current transcription paths, so their manifest cache mode is `none`.
+
+### Gemini file cache reuses uploads but token cache still misses
+
+Symptoms:
+- `provider_metadata.data.file.cache_enabled` is `true`
+- `provider_metadata.data.file.cache_reused` is `true`
+- `cache.transcription.hit` is still `false`
+
+Explanation:
+- `--gemini-file-cache` reuses the Gemini Files API upload by prepared-byte SHA-256 hash. It prevents repeated upload and keeps the same Gemini `file_uri` while the Files API object exists.
+- This is not the same as Gemini explicit cached content. Gemini implicit token caching can still miss even when the same file is reused.
+- A missing `usage_metadata.cachedContentTokenCount` means Gemini did not report a token-cache hit for that request.
+
+Fix:
+- For upload reuse, keep `--gemini-file-cache` enabled and avoid `--gemini-autoclean`.
+- For deterministic token-cache reuse, run with `--gemini-explicit-cache`. This creates or reuses a Gemini `cachedContent` object and should produce `cache.transcription.mode = "explicit"` plus `cachedContentTokenCount` when Gemini accepts the cache.
+- Explicit cached content has TTL and billing behavior. Use `--gemini-cache-ttl-secs` to control how long the cache is retained by Gemini.
 
 ### Qwen file transcription rejects async calls
 

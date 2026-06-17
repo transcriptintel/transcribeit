@@ -119,8 +119,13 @@ This project supports seven providers. They share the same input/output surface,
   - Upload bytes to the returned `x-goog-upload-url`.
   - Poll `GET {base-url}/files/{id}` until the file is `ACTIVE`.
   - `POST {base-url}/models/{model}:streamGenerateContent?alt=sse`.
-  - `DELETE {base-url}/files/{id}` after transcription.
+  - `DELETE {base-url}/files/{id}` after transcription unless `--gemini-file-cache` is enabled without `--gemini-autoclean`.
 - Input audio/video is converted with FFmpeg to 16 kHz mono MP3 before upload.
+- `--gemini-file-cache` stores a local index of Gemini Files API uploads keyed by SHA-256 of the prepared 16 kHz mono MP3 bytes. The CLI verifies an indexed file with `files.get` before reuse and uploads again if the file is missing, expired, failed, or mismatched.
+- The default index path is `.cache/transcribeit/gemini-files.json`, or `--gemini-file-cache-index` / `GEMINI_FILE_CACHE_INDEX`.
+- Gemini Files API uploads are retained by Gemini for up to 48 hours.
+- `--gemini-explicit-cache` creates or reuses Gemini explicit `cachedContent` objects for the prepared audio and sends the cached-content name in the streamed generation request. This automatically enables the local Gemini cache index.
+- Explicit cached content has its own TTL, controlled by `--gemini-cache-ttl-secs` / `GEMINI_CACHE_TTL_SECS` and defaulting to `3600` seconds.
 - The request uses Gemini structured JSON output and asks for:
   - full transcript text
   - chronological segments
@@ -138,6 +143,10 @@ This project supports seven providers. They share the same input/output surface,
   - `provider_metadata.data.response.usage_metadata`
   - `provider_metadata.data.response.finish_reasons`
   - `provider_metadata.data.file.deleted`
+  - `provider_metadata.data.file.cache_enabled`
+  - `provider_metadata.data.file.cache_reused`
+  - `provider_metadata.data.file.cache_hash`
+  - `provider_metadata.data.cached_content` when explicit cached content is used
 - Gemini cache telemetry is normalized into `cache.transcription` from `usageMetadata.cachedContentTokenCount` and `usageMetadata.cacheTokensDetails` when returned.
 
 Gemini summary analysis includes:
