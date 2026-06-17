@@ -127,8 +127,22 @@ Record:
 - manifest `provider_metadata.data.response.usage_metadata`
 - manifest `provider_metadata.data.response.streaming`
 - manifest `provider_metadata.data.response.chunk_count`
+- manifest `cache.transcription`
 - whether speaker/language/emotion fields were useful or only generic
 - whether `quality.timestamps_clamped` was triggered; clamping means Gemini generated timestamps outside the known source duration
+
+For Gemini summary analysis, also benchmark:
+
+```bash
+time transcribeit run -p gemini --analysis summary --remote-model gemini-3.5-flash -i <input_file> -f vtt -o ./output
+```
+
+Record:
+- manifest `analysis.summary.short`
+- manifest `analysis.provider_metadata.response.usage_metadata`
+- manifest `cache.analysis`
+- whether analysis reused cached prompt tokens
+- whether the summary reflects transcript caveats such as missing speaker labels or unreliable timestamps
 
 ### 7. NVIDIA hosted Riva
 

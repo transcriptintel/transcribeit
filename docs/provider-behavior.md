@@ -45,8 +45,10 @@ This project supports seven providers. They share the same input/output surface,
   - `whisper-1` is requested as `verbose_json` first, then retried without `response_format` if the endpoint rejects it.
   - `gpt-4o-mini-transcribe` and `gpt-4o-transcribe` usually return top-level `text`, which becomes one untimed segment in the current CLI.
   - `--diarize` defaults the model to `gpt-4o-transcribe-diarize` when `--remote-model` is omitted.
-  - `gpt-4o-transcribe-diarize` is requested as `diarized_json` with `chunking_strategy=auto`; speaker labels and segment timestamps are mapped into the transcript model.
-  - JSON responses are parsed defensively. Unknown fields are ignored, missing segment timestamps default to `0`, and invalid/empty segments fall back to top-level `text` when available.
+- `gpt-4o-transcribe-diarize` is requested as `diarized_json` with `chunking_strategy=auto`; speaker labels and segment timestamps are mapped into the transcript model.
+- When an OpenAI-compatible endpoint returns `usage`, the provider preserves it under `provider_metadata.data.response.usage`.
+- OpenAI-compatible cache telemetry is normalized into `cache.transcription` from `usage.prompt_tokens_details.cached_tokens` or `usage.input_tokens_details.cached_tokens` when returned.
+- JSON responses are parsed defensively. Unknown fields are ignored, missing segment timestamps default to `0`, and invalid/empty segments fall back to top-level `text` when available.
 - Supports API resilience options:
   - `--max-retries`
   - `--request-timeout-secs`
@@ -66,6 +68,8 @@ This project supports seven providers. They share the same input/output surface,
   - `{endpoint}/openai/deployments/{deployment}/audio/transcriptions?api-version={version}`
 - Uses model name from deployment; `--remote-model` is ignored for Azure.
 - Uploads the prepared 16 kHz mono MP3 when possible.
+- When Azure returns `usage`, the provider preserves it under `provider_metadata.data.response.usage`.
+- Azure cache telemetry is normalized into `cache.transcription` from `usage.prompt_tokens_details.cached_tokens` or `usage.input_tokens_details.cached_tokens` when returned.
 
 ## Qwen file transcription (`-p qwen-filetrans`)
 
@@ -98,6 +102,7 @@ This project supports seven providers. They share the same input/output surface,
   - `provider_metadata.data.result` with audio info and transcript/sentence/word counts
   - per-segment `language`, `emotion`, and `words` with word-level timestamps
 - Temporary pre-signed URLs are not persisted in the manifest; only `file_url_present` is recorded.
+- Qwen file transcription does not expose token-cache telemetry through this path, so manifests use `cache.transcription.mode = "none"`.
 - Qwen file transcription is intended for whole-file processing. Do not enable segmentation unless you explicitly want multiple independent remote tasks.
 - If a short-audio `qwen3-asr-flash` model is accidentally selected with `-p qwen-filetrans`, the CLI validates the local file before upload and fails without staging it to S3. Short flash models have a 10 MB and 300 second limit and use a different API path.
 
@@ -124,6 +129,7 @@ This project supports seven providers. They share the same input/output surface,
 - Gemini timestamps, speakers, and emotions are generated model output, not a dedicated ASR response schema. The parser accepts future response fields, skips empty segments, joins streamed text chunks, and falls back to top-level generated text if structured JSON is missing or invalid.
 - Gemini stays whole-file by default to preserve speaker continuity across the full request. Explicit `--segment` is still supported, and long whole-file failures can fall back to segmented transcription with a manifest warning because speaker identity may not be stable across independent chunks.
 - `--diarize` does not change Gemini's API shape today; the provider already asks for optional speaker labels in structured output.
+- `--analysis summary` runs a second structured JSON call over the transcript text and stores the result under the manifest `analysis` object. This is intentionally separate from the transcription request so the large transcript JSON response stays focused on transcription.
 - Manifests include Gemini provider metadata when available:
   - `provider_metadata.provider = "gemini"`
   - `provider_metadata.schema_version = "gemini.metadata.v1"`
@@ -132,6 +138,21 @@ This project supports seven providers. They share the same input/output surface,
   - `provider_metadata.data.response.usage_metadata`
   - `provider_metadata.data.response.finish_reasons`
   - `provider_metadata.data.file.deleted`
+- Gemini cache telemetry is normalized into `cache.transcription` from `usageMetadata.cachedContentTokenCount` and `usageMetadata.cacheTokensDetails` when returned.
+
+Gemini summary analysis includes:
+
+- `analysis.provider = "gemini"`
+- `analysis.schema_version = "transcribeit.analysis.v1"`
+- `analysis.summary.short`
+- `analysis.summary.detailed`
+- `analysis.summary.key_points`
+- `analysis.summary.topics`
+- `analysis.summary.action_items`
+- `analysis.summary.questions`
+- `analysis.summary.follow_ups`
+- `analysis.provider_metadata.response.usage_metadata`
+- Gemini analysis cache telemetry is normalized into `cache.analysis` when `usageMetadata` includes cache fields.
 
 ## NVIDIA Riva (`-p nvidia-riva`)
 
@@ -151,6 +172,7 @@ This project supports seven providers. They share the same input/output surface,
   - `provider_metadata.data.audio` with sample rate and channel count
   - `provider_metadata.data.features` with timestamp, punctuation, and diarization flags
   - `provider_metadata.data.response` with result/word counts, elapsed time, and mean confidence
+- Riva does not expose token-cache telemetry through this path, so manifests use `cache.transcription.mode = "none"`.
 - The implementation targets hosted Riva gRPC. Local/self-hosted NIM REST transcription is not wired into this provider yet.
 
 ## Why providers differ

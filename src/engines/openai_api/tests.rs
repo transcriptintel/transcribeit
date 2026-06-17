@@ -32,6 +32,32 @@ fn non_diarize_model_prefers_verbose_json_with_plain_fallback() {
 }
 
 #[test]
+fn provider_metadata_preserves_usage_for_cache_telemetry() {
+    let api = api_for_model("gpt-4o-mini-transcribe");
+    let body = br#"{
+        "text": "hello",
+        "usage": {
+            "prompt_tokens": 2048,
+            "prompt_tokens_details": {
+                "cached_tokens": 1024
+            }
+        }
+    }"#;
+
+    let transcript = api.with_provider_metadata(parse_response_bytes(body), body);
+
+    assert_eq!(
+        transcript
+            .provider_metadata
+            .as_ref()
+            .and_then(|metadata| metadata
+                .pointer("/data/response/usage/prompt_tokens_details/cached_tokens"))
+            .and_then(serde_json::Value::as_u64),
+        Some(1024)
+    );
+}
+
+#[test]
 fn parses_diarized_segments_with_speakers() {
     let body = br#"{
         "text": "hello world",

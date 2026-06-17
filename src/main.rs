@@ -1,3 +1,4 @@
+mod analysis;
 mod audio;
 mod cli;
 #[cfg(feature = "sherpa-onnx")]
@@ -18,8 +19,11 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::Parser;
 
+use crate::analysis::{AnalysisConfig, TranscriptAnalyzer};
 use crate::audio::extract::check_ffmpeg;
-use crate::cli::{Cli, Command, ModelFormat, OutputFormatArg, Provider, SetupComponent};
+use crate::cli::{
+    AnalysisKind, Cli, Command, ModelFormat, OutputFormatArg, Provider, SetupComponent,
+};
 use crate::engines::azure_openai::AzureOpenAi;
 use crate::engines::gemini::GeminiApi;
 use crate::engines::model_cache::ModelCache;
@@ -44,6 +48,13 @@ use crate::setup::{
 };
 use crate::storage::s3::{S3ConfigInput, S3Uploader, s3_config_from_input};
 use crate::transcriber::Transcriber;
+
+struct ProviderRuntime {
+    engine: Box<dyn Transcriber>,
+    analyzer: Option<Box<dyn TranscriptAnalyzer>>,
+    provider_name: String,
+    model_name: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -146,6 +157,7 @@ async fn main() -> Result<()> {
             azure_api_version,
             output_dir,
             output_format,
+            analysis,
             segment,
             silence_threshold,
             min_silence_duration,
@@ -217,85 +229,99 @@ async fn main() -> Result<()> {
                 1
             };
 
-            let (engine, provider_name, model_name): (Box<dyn Transcriber>, String, String) =
-                match provider {
-                    Provider::Local => {
-                        let model_path = resolve_cached_model_path(
-                            &model.context("--model is required for --provider local")?,
-                        )?;
-                        let cache = Arc::new(ModelCache::new());
-                        let name = model_path.clone();
-                        (
-                            Box::new(WhisperLocal::new(model_path, cache, language.clone())),
-                            "local".into(),
-                            name,
-                        )
+            let analysis_config = AnalysisConfig {
+                summary: analysis.contains(&AnalysisKind::Summary),
+            };
+            if analysis_config.is_enabled() && output_dir.is_none() {
+                anyhow::bail!(
+                    "--analysis requires --output-dir so results can be written to the manifest"
+                );
+            }
+            if analysis_config.is_enabled() && !matches!(&provider, Provider::Gemini) {
+                anyhow::bail!("--analysis is currently supported only with --provider gemini");
+            }
+
+            let runtime = match provider {
+                Provider::Local => {
+                    let model_path = resolve_cached_model_path(
+                        &model.context("--model is required for --provider local")?,
+                    )?;
+                    let cache = Arc::new(ModelCache::new());
+                    let name = model_path.clone();
+                    ProviderRuntime {
+                        engine: Box::new(WhisperLocal::new(model_path, cache, language.clone())),
+                        analyzer: None,
+                        provider_name: "local".into(),
+                        model_name: name,
                     }
-                    #[cfg(feature = "sherpa-onnx")]
-                    Provider::SherpaOnnx => {
-                        let model_arg =
-                            model.context("--model is required for --provider sherpa-onnx")?;
-                        let model_dir = resolve_onnx_model_dir(&model_arg)?;
-                        let name = model_dir.display().to_string();
-                        (
-                            Box::new(SherpaOnnxEngine::new(model_dir, language.clone())?),
-                            "sherpa-onnx".into(),
-                            name,
-                        )
+                }
+                #[cfg(feature = "sherpa-onnx")]
+                Provider::SherpaOnnx => {
+                    let model_arg =
+                        model.context("--model is required for --provider sherpa-onnx")?;
+                    let model_dir = resolve_onnx_model_dir(&model_arg)?;
+                    let name = model_dir.display().to_string();
+                    ProviderRuntime {
+                        engine: Box::new(SherpaOnnxEngine::new(model_dir, language.clone())?),
+                        analyzer: None,
+                        provider_name: "sherpa-onnx".into(),
+                        model_name: name,
                     }
-                    Provider::Openai => {
-                        let key = api_key.context(
-                            "--api-key or OPENAI_API_KEY is required for --provider openai",
-                        )?;
-                        let url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
-                        let model_name = remote_model.unwrap_or_else(|| {
-                            if diarize || speakers.is_some() {
-                                "gpt-4o-transcribe-diarize".to_string()
-                            } else {
-                                "whisper-1".to_string()
-                            }
-                        });
-                        (
-                            Box::new(OpenAiApi::new(
-                                url,
-                                key,
-                                model_name.clone(),
-                                language.clone(),
-                                api_settings,
-                            )?),
-                            "openai".into(),
-                            model_name,
-                        )
+                }
+                Provider::Openai => {
+                    let key = api_key
+                        .context("--api-key or OPENAI_API_KEY is required for --provider openai")?;
+                    let url = base_url.unwrap_or_else(|| "https://api.openai.com".into());
+                    let model_name = remote_model.unwrap_or_else(|| {
+                        if diarize || speakers.is_some() {
+                            "gpt-4o-transcribe-diarize".to_string()
+                        } else {
+                            "whisper-1".to_string()
+                        }
+                    });
+                    ProviderRuntime {
+                        engine: Box::new(OpenAiApi::new(
+                            url,
+                            key,
+                            model_name.clone(),
+                            language.clone(),
+                            api_settings,
+                        )?),
+                        analyzer: None,
+                        provider_name: "openai".into(),
+                        model_name,
                     }
-                    Provider::Azure => {
-                        let key = azure_api_key
+                }
+                Provider::Azure => {
+                    let key = azure_api_key
                             .or(api_key)
                             .context(
                                 "--azure-api-key or --api-key/AZURE_API_KEY is required for --provider azure",
                             )?;
-                        let endpoint = base_url
-                            .or_else(|| std::env::var("AZURE_OPENAI_ENDPOINT").ok())
-                            .context(
-                                "--base-url or AZURE_OPENAI_ENDPOINT is required for --provider azure",
-                            )?;
-                        (
-                            Box::new(AzureOpenAi::new(
-                                endpoint,
-                                azure_deployment.clone(),
-                                azure_api_version,
-                                key,
-                                language.clone(),
-                                api_settings,
-                            )?),
-                            "azure".into(),
-                            azure_deployment,
-                        )
+                    let endpoint = base_url
+                        .or_else(|| std::env::var("AZURE_OPENAI_ENDPOINT").ok())
+                        .context(
+                            "--base-url or AZURE_OPENAI_ENDPOINT is required for --provider azure",
+                        )?;
+                    ProviderRuntime {
+                        engine: Box::new(AzureOpenAi::new(
+                            endpoint,
+                            azure_deployment.clone(),
+                            azure_api_version,
+                            key,
+                            language.clone(),
+                            api_settings,
+                        )?),
+                        analyzer: None,
+                        provider_name: "azure".into(),
+                        model_name: azure_deployment,
                     }
-                    Provider::QwenFiletrans => {
-                        let key = dashscope_api_key.or(api_key).context(
+                }
+                Provider::QwenFiletrans => {
+                    let key = dashscope_api_key.or(api_key).context(
                             "--dashscope-api-key, --api-key, DASHSCOPE_API_KEY, or OPENAI_API_KEY is required for --provider qwen-filetrans",
                         )?;
-                        let s3_config = s3_config_from_input(S3ConfigInput {
+                    let s3_config = s3_config_from_input(S3ConfigInput {
                             bucket: s3_bucket.context(
                                 "--s3-bucket or S3_BUCKET is required for --provider qwen-filetrans",
                             )?,
@@ -318,80 +344,97 @@ async fn main() -> Result<()> {
                             presign_expires_secs: s3_presign_expires_secs,
                             force_path_style: s3_force_path_style,
                         })?;
-                        let uploader = S3Uploader::new(s3_config).await?;
-                        let model_name =
-                            remote_model.unwrap_or_else(|| "qwen3-asr-flash-filetrans".into());
-                        (
-                            Box::new(QwenFileTrans::new(
-                                qwen_api_base_url,
-                                key,
-                                model_name.clone(),
-                                language.clone(),
-                                api_settings,
-                                uploader,
-                            )?),
-                            "qwen-filetrans".into(),
-                            model_name,
-                        )
+                    let uploader = S3Uploader::new(s3_config).await?;
+                    let model_name =
+                        remote_model.unwrap_or_else(|| "qwen3-asr-flash-filetrans".into());
+                    ProviderRuntime {
+                        engine: Box::new(QwenFileTrans::new(
+                            qwen_api_base_url,
+                            key,
+                            model_name.clone(),
+                            language.clone(),
+                            api_settings,
+                            uploader,
+                        )?),
+                        analyzer: None,
+                        provider_name: "qwen-filetrans".into(),
+                        model_name,
                     }
-                    Provider::Gemini => {
-                        let key = gemini_api_key
+                }
+                Provider::Gemini => {
+                    let key = gemini_api_key
                             .or(api_key)
                             .context(
                                 "--gemini-api-key, GEMINI_API_KEY, --api-key, or OPENAI_API_KEY is required for --provider gemini",
                             )?;
-                        let model_name = remote_model.unwrap_or_else(|| "gemini-3.5-flash".into());
-                        (
-                            Box::new(GeminiApi::new(
-                                gemini_api_base_url,
-                                key,
+                    let model_name = remote_model.unwrap_or_else(|| "gemini-3.5-flash".into());
+                    let analyzer = analysis_config
+                        .is_enabled()
+                        .then(|| {
+                            GeminiApi::new(
+                                gemini_api_base_url.clone(),
+                                key.clone(),
                                 model_name.clone(),
                                 language.clone(),
                                 api_settings,
-                            )?),
-                            "gemini".into(),
-                            model_name,
-                        )
+                            )
+                            .map(|api| Box::new(api) as Box<dyn TranscriptAnalyzer>)
+                        })
+                        .transpose()?;
+                    ProviderRuntime {
+                        engine: Box::new(GeminiApi::new(
+                            gemini_api_base_url,
+                            key,
+                            model_name.clone(),
+                            language.clone(),
+                            api_settings,
+                        )?),
+                        analyzer,
+                        provider_name: "gemini".into(),
+                        model_name,
                     }
-                    Provider::NvidiaRiva => {
-                        let key = nvidia_api_key.or(api_key).context(
+                }
+                Provider::NvidiaRiva => {
+                    let key = nvidia_api_key.or(api_key).context(
                             "--nvidia-api-key, NVIDIA_API_KEY, --api-key, or OPENAI_API_KEY is required for --provider nvidia-riva",
                         )?;
-                        let function_id = nvidia_riva_function_id.context(
+                    let function_id = nvidia_riva_function_id.context(
                             "--nvidia-riva-function-id or NVIDIA_RIVA_FUNCTION_ID is required for --provider nvidia-riva",
                         )?;
-                        let riva_speakers = if diarize || speakers.is_some() {
-                            Some(speakers.unwrap_or(4))
-                        } else {
-                            None
-                        };
-                        let riva_model = remote_model.clone();
-                        let model_name = remote_model.unwrap_or_else(|| {
-                            let prefix = function_id.chars().take(8).collect::<String>();
-                            format!("function:{prefix}")
-                        });
-                        (
-                            Box::new(NvidiaRiva::new(
-                                nvidia_riva_server,
-                                key,
-                                function_id,
-                                riva_model,
-                                language.clone(),
-                                api_settings.request_timeout,
-                                riva_speakers,
-                            )),
-                            "nvidia-riva".into(),
-                            model_name,
-                        )
+                    let riva_speakers = if diarize || speakers.is_some() {
+                        Some(speakers.unwrap_or(4))
+                    } else {
+                        None
+                    };
+                    let riva_model = remote_model.clone();
+                    let model_name = remote_model.unwrap_or_else(|| {
+                        let prefix = function_id.chars().take(8).collect::<String>();
+                        format!("function:{prefix}")
+                    });
+                    ProviderRuntime {
+                        engine: Box::new(NvidiaRiva::new(
+                            nvidia_riva_server,
+                            key,
+                            function_id,
+                            riva_model,
+                            language.clone(),
+                            api_settings.request_timeout,
+                            riva_speakers,
+                        )),
+                        analyzer: None,
+                        provider_name: "nvidia-riva".into(),
+                        model_name,
                     }
-                };
+                }
+            };
             let requested_diarization = diarize || speakers.is_some();
             let provider_native_diarization =
-                provider_handles_diarization(&provider_name, &model_name);
+                provider_handles_diarization(&runtime.provider_name, &runtime.model_name);
             let local_diarize = requested_diarization && !provider_native_diarization;
             if local_diarize && !cfg!(feature = "sherpa-onnx") {
                 anyhow::bail!(
-                    "--diarize for provider '{provider_name}' requires local Sherpa diarization. Build with --features sherpa-onnx and pass --speakers plus diarization models, or use provider-native diarization with nvidia-riva or openai --remote-model gpt-4o-transcribe-diarize."
+                    "--diarize for provider '{}' requires local Sherpa diarization. Build with --features sherpa-onnx and pass --speakers plus diarization models, or use provider-native diarization with nvidia-riva or openai --remote-model gpt-4o-transcribe-diarize.",
+                    runtime.provider_name
                 );
             }
 
@@ -405,8 +448,10 @@ async fn main() -> Result<()> {
                     );
                 }
 
-                if provider_name == "qwen-filetrans" && !is_qwen_filetrans_model(&model_name) {
-                    validate_qwen_model_for_path(&model_name, input_path).await?;
+                if runtime.provider_name == "qwen-filetrans"
+                    && !is_qwen_filetrans_model(&runtime.model_name)
+                {
+                    validate_qwen_model_for_path(&runtime.model_name, input_path).await?;
                 }
 
                 let config = PipelineConfig {
@@ -422,8 +467,8 @@ async fn main() -> Result<()> {
                     silence_threshold,
                     min_silence_duration,
                     max_segment_secs,
-                    provider_name: provider_name.clone(),
-                    model_name: model_name.clone(),
+                    provider_name: runtime.provider_name.clone(),
+                    model_name: runtime.model_name.clone(),
                     auto_split_for_api: auto_split,
                     upload_as_mp3,
                     segment_concurrency,
@@ -433,9 +478,10 @@ async fn main() -> Result<()> {
                     diarize_segmentation_model: diarize_segmentation_model.clone(),
                     diarize_embedding_model: diarize_embedding_model.clone(),
                     vad_model: vad_model.clone(),
+                    analysis: analysis_config.clone(),
                 };
 
-                run_pipeline(engine.as_ref(), config).await?;
+                run_pipeline(runtime.engine.as_ref(), runtime.analyzer.as_deref(), config).await?;
             }
         }
     }

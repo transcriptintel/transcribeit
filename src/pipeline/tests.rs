@@ -1,4 +1,5 @@
 use super::{OutputFormat, PipelineConfig, run_pipeline};
+use crate::analysis::{AnalysisConfig, AnalysisResult, SummaryAnalysis, TranscriptAnalyzer};
 use crate::transcriber::{Segment, Transcriber, Transcript};
 use anyhow::Result;
 use async_trait::async_trait;
@@ -24,6 +25,7 @@ async fn pipeline_end_to_end_writes_vtt_and_manifest() -> Result<()> {
 
     run_pipeline(
         &FakeTranscriber,
+        None,
         PipelineConfig {
             provider_name: "fake".into(),
             model_name: "fake-model".into(),
@@ -85,6 +87,7 @@ async fn pipeline_manifest_wraps_provider_metadata_in_stable_envelope() -> Resul
 
     run_pipeline(
         &FakeMetadataTranscriber,
+        None,
         PipelineConfig {
             language: Some("en".to_string()),
             provider_name: "gemini".into(),
@@ -129,6 +132,45 @@ async fn pipeline_manifest_wraps_provider_metadata_in_stable_envelope() -> Resul
 }
 
 #[tokio::test]
+async fn pipeline_manifest_includes_analysis_when_requested() -> Result<()> {
+    if !command_exists("ffprobe") {
+        eprintln!("Skipping integration test: ffprobe not available");
+        return Ok(());
+    }
+
+    let workdir = tempdir()?;
+    let input_path = workdir.path().join("sample.wav");
+    write_test_wav(&input_path, 1_000)?;
+
+    let output_dir = workdir.path().join("out");
+
+    run_pipeline(
+        &FakeTranscriber,
+        Some(&FakeAnalyzer),
+        PipelineConfig {
+            analysis: AnalysisConfig { summary: true },
+            provider_name: "fake".into(),
+            model_name: "fake-model".into(),
+            ..test_config(input_path.clone(), output_dir.clone(), OutputFormat::Text)
+        },
+    )
+    .await?;
+
+    let manifest_path = output_dir.join("sample.manifest.json");
+    let manifest_data = std::fs::read_to_string(manifest_path)?;
+    let manifest: Value = serde_json::from_str(&manifest_data)?;
+
+    assert_eq!(manifest["analysis"]["provider"], "fake-analysis");
+    assert_eq!(manifest["analysis"]["summary"]["short"], "short summary");
+    assert_eq!(
+        manifest["analysis"]["provider_metadata"]["response"]["generated_json_valid"],
+        true
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn pipeline_end_to_end_writes_text_file_and_manifest() -> Result<()> {
     if !command_exists("ffprobe") {
         eprintln!("Skipping integration test: ffprobe not available");
@@ -143,6 +185,7 @@ async fn pipeline_end_to_end_writes_text_file_and_manifest() -> Result<()> {
 
     run_pipeline(
         &FakeTranscriber,
+        None,
         PipelineConfig {
             provider_name: "fake".into(),
             model_name: "fake-model".into(),
@@ -178,6 +221,7 @@ async fn pipeline_end_to_end_writes_srt_file_and_manifest() -> Result<()> {
 
     run_pipeline(
         &FakeTranscriber,
+        None,
         PipelineConfig {
             language: Some("en".to_string()),
             provider_name: "fake".into(),
@@ -216,6 +260,7 @@ async fn pipeline_segmented_api_uploads_are_processed_concurrently() -> Result<(
 
     run_pipeline(
         &FakeApiTranscriber,
+        None,
         PipelineConfig {
             segment: true,
             max_segment_secs: 5.0,
@@ -264,6 +309,7 @@ fn test_config(input: PathBuf, output_dir: PathBuf, output_format: OutputFormat)
         upload_as_mp3: false,
         segment_concurrency: 1,
         normalize_audio: false,
+        analysis: AnalysisConfig::default(),
         diarize: false,
         speakers: None,
         diarize_segmentation_model: None,
@@ -357,6 +403,37 @@ impl Transcriber for FakeMetadataTranscriber {
                     "file": {
                         "deleted": true
                     }
+                }
+            })),
+        })
+    }
+}
+
+struct FakeAnalyzer;
+
+#[async_trait]
+impl TranscriptAnalyzer for FakeAnalyzer {
+    async fn analyze_transcript(
+        &self,
+        _transcript: &Transcript,
+        _config: &AnalysisConfig,
+    ) -> Result<AnalysisResult> {
+        Ok(AnalysisResult {
+            provider: "fake-analysis".to_string(),
+            model: "fake-analysis-model".to_string(),
+            schema_version: "transcribeit.analysis.v1".to_string(),
+            summary: Some(SummaryAnalysis {
+                short: "short summary".to_string(),
+                detailed: "detailed summary".to_string(),
+                key_points: vec!["point".to_string()],
+                topics: vec!["topic".to_string()],
+                action_items: Vec::new(),
+                questions: vec!["question".to_string()],
+                follow_ups: Vec::new(),
+            }),
+            provider_metadata: Some(json!({
+                "response": {
+                    "generated_json_valid": true
                 }
             })),
         })

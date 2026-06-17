@@ -96,6 +96,12 @@ pub(crate) enum OutputFormatArg {
     Srt,
 }
 
+#[derive(Debug, Clone, ValueEnum, PartialEq, Eq)]
+pub(crate) enum AnalysisKind {
+    /// Generate a structured summary from the transcript
+    Summary,
+}
+
 #[derive(Debug, Clone, ValueEnum)]
 pub(crate) enum SetupComponent {
     /// Default STT models (GGML base)
@@ -269,6 +275,10 @@ pub(crate) enum Command {
         /// Output format
         #[arg(short = 'f', long, default_value = "vtt")]
         output_format: OutputFormatArg,
+
+        /// Post-transcription analysis to run (comma-separated, e.g. summary)
+        #[arg(long, value_delimiter = ',')]
+        analysis: Vec<AnalysisKind>,
 
         /// Enable silence-based segmentation
         #[arg(long)]

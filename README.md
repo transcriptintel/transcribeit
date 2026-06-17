@@ -72,6 +72,10 @@ transcribeit run -p qwen-filetrans -i recording.mp3 -f vtt -o ./output
 transcribeit run -p gemini --remote-model gemini-3.5-flash \
   -i recording.mp3 -f vtt -o ./output
 
+# Transcribe with Gemini and add a structured summary to the manifest
+transcribeit run -p gemini --analysis summary \
+  -i interview.mp4 -f vtt -o ./output
+
 # Transcribe with NVIDIA hosted Riva ASR over gRPC
 transcribeit run -p nvidia-riva -i recording.wav \
   --nvidia-api-key "$NVIDIA_API_KEY" \
@@ -96,9 +100,11 @@ transcribeit run -i interview.mp3 -m base --diarize --speakers 2 \
 - **7 providers** — Local whisper.cpp, sherpa-onnx, OpenAI API, Azure OpenAI, Qwen file transcription, Gemini, and NVIDIA Riva. Extensible via the `Transcriber` trait.
 - **Qwen ASR whole-file transcription** — `qwen-filetrans` stages audio in S3-compatible storage, passes a pre-signed URL to DashScope, polls the async task, and maps Qwen timestamps into the transcript model.
 - **Stable manifest schema** — Manifests use `transcribeit.manifest.v2` with canonical millisecond timestamps, provider-neutral capabilities/quality fields, and provider-specific metadata under `provider_metadata.data`.
+- **Cache telemetry** — Manifests normalize provider token-cache signals under `cache`, including Gemini `cachedContentTokenCount` and OpenAI/Azure-style `cached_tokens` when returned.
 - **Qwen provider metadata** — Manifests include Qwen task timing/usage, audio info, per-segment language/emotion, and word-level timestamps. Temporary pre-signed URLs are not persisted.
 - **Qwen model guardrails** — Accidental short-audio `qwen3-asr-flash` model selection is rejected before conversion and S3 upload; use `qwen3-asr-flash-filetrans` for this provider.
 - **Gemini whole-file transcription** — `gemini` uploads prepared audio through Gemini Files API, streams `generateContent` response chunks with structured JSON output, and maps segment timestamps, speaker labels, language, and emotion when returned.
+- **Gemini summary analysis** — `--analysis summary` runs a second Gemini JSON pass over the transcript and stores a provider-neutral summary, key points, topics, questions, and follow-ups in the manifest.
 - **NVIDIA hosted Riva ASR** — `nvidia-riva` calls hosted NVIDIA Riva gRPC endpoints with provider-native word timestamps, optional server-side diarization, and manifest metadata.
 - **3 model architectures via sherpa-onnx** — Whisper, Moonshine, and SenseVoice are auto-detected from the model directory contents. Just point `--model` at any supported model directory.
 - **Model aliases** — `-m base`, `-m tiny`, etc. resolve from `MODEL_CACHE_DIR` for both `local` and `sherpa-onnx` providers. The sherpa-onnx resolver also supports glob matching (e.g., `-m moonshine-base`, `-m sense-voice`).

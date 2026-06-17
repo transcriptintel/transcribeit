@@ -9,6 +9,7 @@ use anyhow::Result;
 use futures_util::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
 
+use crate::analysis::{AnalysisConfig, TranscriptAnalyzer};
 use crate::audio::extract::{extract_to_mp3, extract_to_wav, needs_conversion};
 use crate::audio::segment::{compute_segments, detect_silence, get_duration, split_audio};
 use crate::pipeline_output::write_outputs;
@@ -46,6 +47,7 @@ pub struct PipelineConfig {
     pub upload_as_mp3: bool,
     pub segment_concurrency: usize,
     pub normalize_audio: bool,
+    pub analysis: AnalysisConfig,
     #[cfg_attr(not(feature = "sherpa-onnx"), allow(dead_code))]
     pub diarize: bool,
     #[cfg_attr(not(feature = "sherpa-onnx"), allow(dead_code))]
@@ -59,7 +61,11 @@ pub struct PipelineConfig {
     pub vad_model: Option<String>,
 }
 
-pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> Result<()> {
+pub async fn run_pipeline(
+    engine: &dyn Transcriber,
+    analyzer: Option<&dyn TranscriptAnalyzer>,
+    config: PipelineConfig,
+) -> Result<()> {
     let started = Instant::now();
 
     let (input_path, _tmp_path) = if config.upload_as_mp3 {
@@ -172,9 +178,28 @@ pub async fn run_pipeline(engine: &dyn Transcriber, config: PipelineConfig) -> R
         crate::diarize::assign_speakers(&mut transcript, &diarized);
     }
 
+    let analysis = if config.analysis.is_enabled() {
+        let analyzer = analyzer.ok_or_else(|| {
+            anyhow::anyhow!(
+                "--analysis was requested, but provider '{}' does not support transcript analysis yet",
+                config.provider_name
+            )
+        })?;
+        Some(
+            transcribe_with_spinner(
+                "Analyzing transcript...",
+                analyzer.analyze_transcript(&transcript, &config.analysis),
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
     write_outputs(
         &config,
         &transcript,
+        analysis.as_ref(),
         total_duration,
         used_segmentation,
         started.elapsed().as_secs_f64(),

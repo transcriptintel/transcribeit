@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use reqwest::Client;
 use reqwest::multipart;
+use serde_json::Value;
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -110,7 +111,7 @@ impl AzureOpenAi {
                         self.verbose_json_support
                             .store(RESPONSE_FORMAT_SUPPORTED, Ordering::Release);
                     }
-                    return Ok(parse_response_bytes(&body));
+                    return Ok(self.with_provider_metadata(parse_response_bytes(&body), &body));
                 }
                 Err((_, ref body_text))
                     if response_format.is_some() && is_response_format_not_supported(body_text) =>
@@ -129,6 +130,26 @@ impl AzureOpenAi {
         let (status, body) = last_error
             .context("No compatible response format found for Azure transcription API")?;
         anyhow::bail!("Azure API returned {status}: {body}");
+    }
+
+    fn with_provider_metadata(&self, mut transcript: Transcript, body: &[u8]) -> Transcript {
+        let response = serde_json::from_slice::<Value>(body).ok();
+        transcript.provider_metadata = Some(serde_json::json!({
+            "provider": "azure",
+            "schema_version": "azure.metadata.v1",
+            "data": {
+                "deployment": &self.deployment,
+                "endpoint": &self.endpoint,
+                "api_version": &self.api_version,
+                "response": {
+                    "usage": response
+                        .as_ref()
+                        .and_then(|value| value.get("usage").cloned())
+                        .unwrap_or(Value::Null),
+                }
+            }
+        }));
+        transcript
     }
 }
 

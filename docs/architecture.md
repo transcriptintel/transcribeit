@@ -105,6 +105,7 @@ Input file (any format)
       ├─ VTT to file or stdout (with `<v Speaker N>` tags when diarized)
       ├─ SRT to file or stdout (with `[Speaker N]` labels when diarized)
       └─ JSON manifest to output directory (`transcribeit.manifest.v2`)
+          └─ Optional analysis object when --analysis is set
 ```
 
 Temporary files use the `tempfile` crate and are cleaned up automatically on drop.
@@ -117,9 +118,21 @@ When `--output-dir` is set, the JSON manifest is the stable machine-readable con
 - Segment and word timestamps include canonical integer millisecond fields (`start_ms`, `end_ms`) plus second fields for readability.
 - `capabilities` describes which optional fields are present, such as word timestamps, speaker labels, segment language, and emotion.
 - `quality` describes how reliable timing/speaker metadata is, including `timing_source`, `timing_reliable`, and `timestamps_clamped`.
+- `cache` describes normalized provider token-cache telemetry for transcription and optional analysis passes.
 - `provider_metadata` is a stable envelope: `{ "provider": "...", "schema_version": "...", "data": { ... } }`.
 - Provider-specific payloads live only under `provider_metadata.data`; temporary URLs and secrets must not be persisted.
+- Post-transcription analysis lives under the optional top-level `analysis` object. It is provider-neutral and separate from `provider_metadata` because downstream consumers should not need provider-specific parsing for summaries.
 - The top-level `segments` array remains as a compatibility mirror for older consumers.
+
+## Cache telemetry
+
+Provider token-cache signals are normalized into `cache`:
+
+- Gemini maps `usageMetadata.cachedContentTokenCount` and `usageMetadata.cacheTokensDetails`.
+- OpenAI-compatible and Azure providers map `usage.prompt_tokens_details.cached_tokens` or `usage.input_tokens_details.cached_tokens` when a transcription endpoint returns `usage`.
+- Qwen file transcription, NVIDIA Riva, local Whisper, and Sherpa-ONNX currently report `mode: "none"` because they do not expose token-cache telemetry through their transcription paths.
+
+This is observability only. The CLI does not create explicit provider caches yet.
 
 ## Engines
 
@@ -190,6 +203,20 @@ Uses hosted NVIDIA Riva ASR over gRPC through generated protobuf bindings in `pr
 - records request ids, audio info, feature flags, response counts, elapsed time, and confidence under `provider_metadata.data`
 
 The provider is implemented entirely in Rust with `tonic`/`prost`. It does not download local NVIDIA NIM containers or require Python clients.
+
+## Analysis (`analysis.rs`)
+
+Post-transcription analysis is separate from transcription. The first supported analysis is `--analysis summary`, which currently uses Gemini to run a second structured JSON call over the transcript text. Results are written to the manifest only when `--output-dir` is set:
+
+- `analysis.summary.short`
+- `analysis.summary.detailed`
+- `analysis.summary.key_points`
+- `analysis.summary.topics`
+- `analysis.summary.action_items`
+- `analysis.summary.questions`
+- `analysis.summary.follow_ups`
+
+The separation keeps transcript generation focused on ASR and allows future providers to implement the same `TranscriptAnalyzer` shape without changing transcript output formats.
 
 ### Sherpa-ONNX (`sherpa_onnx.rs`)
 

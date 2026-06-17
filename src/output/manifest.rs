@@ -2,6 +2,8 @@ use anyhow::Result;
 use serde::Serialize;
 use std::io::Write;
 
+use crate::analysis::AnalysisResult;
+
 #[derive(Serialize)]
 pub struct Manifest {
     pub schema_version: &'static str,
@@ -12,6 +14,9 @@ pub struct Manifest {
     pub transcript: TranscriptInfo,
     pub segments: Vec<SegmentInfo>,
     pub stats: Stats,
+    pub cache: CacheInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<AnalysisResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
 }
@@ -100,6 +105,27 @@ pub struct QualityInfo {
     pub timestamps_clamped: bool,
     pub speaker_source: Option<String>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct CacheInfo {
+    pub transcription: CacheEntry,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<CacheEntry>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct CacheEntry {
+    pub provider: String,
+    pub mode: String,
+    pub hit: bool,
+    pub input_tokens: Option<u64>,
+    pub cached_tokens: Option<u64>,
+    pub cached_fraction: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_details: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 #[derive(Serialize)]

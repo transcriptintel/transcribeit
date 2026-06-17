@@ -192,6 +192,36 @@ transcribeit run -p openai -i long.wav \
   --retry-wait-max-secs 180
 ```
 
+### Gemini summary analysis errors
+
+Symptoms:
+- `--analysis requires --output-dir so results can be written to the manifest`
+- `--analysis is currently supported only with --provider gemini`
+
+Fix:
+- Use `--analysis summary` only with Gemini for now.
+- Always provide `-o` / `--output-dir`; analysis is written into `<input_stem>.manifest.json`.
+
+Example:
+
+```bash
+transcribeit run -p gemini --analysis summary \
+  --remote-model gemini-3.5-flash \
+  -i interview.mp4 -f vtt -o ./output
+```
+
+### Cache telemetry looks empty
+
+Symptoms:
+- `cache.transcription.hit` is `false`
+- `cache.transcription.cached_tokens` is `null`
+- `cache.transcription.mode` is `none`
+
+Explanation:
+- `cache` is telemetry only; the CLI does not create explicit provider caches yet.
+- Gemini and OpenAI/Azure cache hits depend on provider-side behavior and prompt length. Short audio/transcript prompts often do not produce cache hits.
+- Qwen file transcription, NVIDIA Riva, local Whisper, and Sherpa-ONNX do not expose token-cache telemetry through the current transcription paths, so their manifest cache mode is `none`.
+
 ### Qwen file transcription rejects async calls
 
 Symptoms:

@@ -152,6 +152,9 @@ Manifests include `provider_metadata.provider = "nvidia-riva"`, audio details, r
 | `-f, --output-format` | `text`, `vtt`, or `srt` | `vtt` |
 | `--language` | Language hint (e.g. `en`, `es`, `auto`) | `auto` |
 | `--normalize` | Normalize audio with ffmpeg `loudnorm` before transcription | disabled |
+| `--analysis summary` | Add post-transcription summary analysis to the manifest | disabled |
+
+`--analysis summary` currently requires `--provider gemini` and `--output-dir`. It runs after transcription, uses the transcript text as input, and writes a provider-neutral `analysis` object into the manifest without changing the VTT/SRT/text transcript output.
 
 #### API resilience options
 
@@ -159,10 +162,12 @@ These options apply to OpenAI, Azure, Qwen file transcription, Gemini, and NVIDI
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--max-retries` | Maximum request retries on 429 responses for REST API providers | `5` |
+| `--max-retries` | Maximum retries for retryable API failures | `5` |
 | `--request-timeout-secs` | Timeout in seconds for each API request | `120` |
-| `--retry-wait-base-secs` | Initial wait time used when rate-limited | `10` |
+| `--retry-wait-base-secs` | Initial wait time used for rate limits, transport failures, and retryable server errors | `10` |
 | `--retry-wait-max-secs` | Maximum wait time when parsing retry delay | `120` |
+
+REST providers retry HTTP 429, HTTP 5xx, and transport send/stream failures when the provider implementation can safely retry. NVIDIA Riva uses the shared timeout setting for gRPC requests.
 
 #### Segmentation options
 
@@ -347,6 +352,11 @@ transcribeit run -p qwen-filetrans -i recording.mp3 \
   --s3-secret-access-key "$S3_SECRET_ACCESS_KEY" \
   -f vtt -o ./output
 
+# Gemini with transcript summary analysis in the manifest
+transcribeit run -p gemini --analysis summary \
+  --remote-model gemini-3.5-flash \
+  -i interview.mp4 -f vtt -o ./output
+
 # NVIDIA hosted Riva ASR
 transcribeit run -p nvidia-riva -i recording.wav \
   --nvidia-api-key "$NVIDIA_API_KEY" \
@@ -364,6 +374,7 @@ transcribeit run -p nvidia-riva -i recording.wav \
   `POST {base-url}/openai/deployments/{deployment}/audio/transcriptions?api-version={version}`.
 - **Qwen file transcription** (`-p qwen-filetrans`) uploads audio to S3-compatible storage, passes a pre-signed URL to DashScope, and polls the async transcription task.
 - **Gemini** (`-p gemini`) uploads audio through Gemini Files API, calls streamed `streamGenerateContent`, and parses structured transcript JSON defensively.
+- **Analysis** (`--analysis summary`) runs a second Gemini structured JSON pass over the transcript and stores summary results in the manifest.
 - **NVIDIA Riva** (`-p nvidia-riva`) sends WAV audio to hosted Riva gRPC, requesting native word timestamps and optional server-side diarization.
 
 For the full matrix and upload/auth notes, see: [Provider behavior](provider-behavior.md).  
@@ -380,7 +391,57 @@ When `--output-dir` is specified, the following files are created:
 
 ### Manifest format
 
-Manifests use `schema_version: "transcribeit.manifest.v2"`. New consumers should prefer `transcript.text`, `transcript.segments`, `capabilities`, `quality`, and the `provider_metadata` envelope. The top-level `segments` array remains for compatibility with earlier consumers.
+Manifests use `schema_version: "transcribeit.manifest.v2"`. New consumers should prefer `transcript.text`, `transcript.segments`, `capabilities`, `quality`, `cache`, optional `analysis`, and the `provider_metadata` envelope. The top-level `segments` array remains for compatibility with earlier consumers.
+
+The `cache` object normalizes provider token-cache telemetry:
+
+- `cache.transcription.mode` is `implicit`, `none`, or `unknown`.
+- `cache.transcription.hit` is true when the provider reports cached input tokens.
+- `cache.transcription.input_tokens` and `cache.transcription.cached_tokens` are normalized when available.
+- `cache.transcription.cached_fraction` is `cached_tokens / input_tokens` when both are known.
+- `cache.analysis` is present when a post-transcription analysis pass ran.
+
+When `--analysis summary` is used, manifests include:
+
+- `analysis.provider`
+- `analysis.model`
+- `analysis.schema_version`
+- `analysis.summary.short`
+- `analysis.summary.detailed`
+- `analysis.summary.key_points`
+- `analysis.summary.topics`
+- `analysis.summary.action_items`
+- `analysis.summary.questions`
+- `analysis.summary.follow_ups`
+- `analysis.provider_metadata.response.usage_metadata`
+
+Example analysis object:
+
+```json
+{
+  "analysis": {
+    "provider": "gemini",
+    "model": "gemini-3.5-flash",
+    "schema_version": "transcribeit.analysis.v1",
+    "summary": {
+      "short": "Concise summary.",
+      "detailed": "Detailed summary.",
+      "key_points": [],
+      "topics": [],
+      "action_items": [],
+      "questions": [],
+      "follow_ups": []
+    },
+    "provider_metadata": {
+      "response": {
+        "streaming": true,
+        "generated_json_valid": true,
+        "usage_metadata": {}
+      }
+    }
+  }
+}
+```
 
 ```json
 {
@@ -466,6 +527,17 @@ Manifests use `schema_version: "transcribeit.manifest.v2"`. New consumers should
     "total_characters": 15000,
     "processing_time_secs": 120.5,
     "processing_time_ms": 120500
+  },
+  "cache": {
+    "transcription": {
+      "provider": "qwen-filetrans",
+      "mode": "none",
+      "hit": false,
+      "input_tokens": null,
+      "cached_tokens": null,
+      "cached_fraction": null,
+      "source": "transcription"
+    }
   },
   "provider_metadata": {
     "provider": "qwen-filetrans",

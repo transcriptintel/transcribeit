@@ -12,6 +12,7 @@ use crate::audio::wav::encode_wav;
 use crate::engines::rate_limit;
 use crate::transcriber::{Transcriber, Transcript};
 
+mod analysis;
 mod response;
 mod schema;
 
