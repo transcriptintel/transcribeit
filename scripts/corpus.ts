@@ -25,6 +25,11 @@ type Fixture = {
     path: string;
     sha256: string;
     bytes: number;
+    duration_seconds: number;
+    container: string;
+    codec: string;
+    sample_rate_hz: number;
+    channels: number;
     materialize: MapValue;
   };
   reference: MapValue;

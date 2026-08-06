@@ -1,0 +1,63 @@
+schema_version: 1
+matrix_id: hosted-provider-smoke
+description: Manual one-attempt compatibility matrix for the configured hosted transcription providers.
+execution_policy: manual
+concurrency: 1
+retries: 0
+timeout_seconds: 300
+fixture_ids:
+  - fleurs-en-us-traffic-flow-clean
+tolerances:
+  enforcement: report_only
+  max_relative_latency_regression_percent: 100
+  max_absolute_latency_regression_ms: 5000
+  min_success_rate: 1
+entries:
+  - id: openai-gpt-transcribe
+    provider: openai
+    model: gpt-transcribe
+    execution: hosted
+    cache_state: cold
+    repetitions: 1
+    required_env: [OPENAI_API_KEY]
+    args: []
+  - id: azure-configured-deployment
+    provider: azure
+    model: configured-deployment
+    execution: hosted
+    cache_state: cold
+    repetitions: 1
+    required_env: [AZURE_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_DEPLOYMENT_NAME]
+    args: []
+  - id: qwen-filetrans
+    provider: qwen-filetrans
+    model: qwen3-asr-flash-filetrans
+    execution: hosted
+    cache_state: cold
+    repetitions: 1
+    required_env: [DASHSCOPE_API_KEY, S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]
+    args: []
+  - id: gemini-flash
+    provider: gemini
+    model: gemini-3.6-flash
+    execution: hosted
+    cache_state: cold
+    repetitions: 1
+    required_env: [GEMINI_API_KEY]
+    args: [--gemini-autoclean]
+  - id: deepgram-nova-3
+    provider: deepgram
+    model: nova-3
+    execution: hosted
+    cache_state: cold
+    repetitions: 1
+    required_env: [DEEPGRAM_API_KEY]
+    args: []
+  - id: nvidia-riva-configured-function
+    provider: nvidia-riva
+    model: configured-function
+    execution: hosted
+    cache_state: cold
+    repetitions: 1
+    required_env: [NVIDIA_API_KEY, NVIDIA_RIVA_FUNCTION_ID]
+    args: []

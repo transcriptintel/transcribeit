@@ -47,6 +47,7 @@
 - Keep documented commands runnable. Use provider-specific environment variables and avoid examples that expose response bodies containing transcript or request data.
 - Keep historical observations dated and separate from current runtime guarantees.
 - Publish benchmark results only through the tracked protocol in `benchmarks/README.md`. Record commit/dirty state, machine and tool versions, exact commands, fixture hashes, run classification, retry/warm-state details, and sanitized outputs.
+- Use `scripts/benchmark_harness.ts` and a validated Bun-native YAML matrix for new repeatable runs. Hosted matrices require explicit `--allow-hosted`, remain manual or externally scheduled, and must not become latency-failing CI jobs.
 - Never treat one fixture, a generated summary, or provider self-reported metadata as transcript-quality ground truth.
 - When evaluating a downloadable model, use an explicit evaluation-owned directory when possible and record its pre-run disk usage. After artifact hashes and benchmark evidence are captured, remove only the model files and directories created by that evaluation, verify the reclaimed space, and record the cleanup outcome. Apply the same cleanup after failed or cancelled runs. Never remove a pre-existing shared cache or use a broad path, glob, or unresolved variable as the cleanup target; if an artifact must be retained, record its owner, reason, and expiry.
 

@@ -548,22 +548,22 @@ historical observations rather than a regression baseline.
 
 ## CI/automatable baseline
 
-The tracked workflow and sanitized records live under [`benchmarks/`](../benchmarks/README.md).
-Use `scripts/benchmark-metadata.sh` before a run and the tracked jq sanitizer before
-promoting local artifacts from the ignored `output/` directory.
+The tracked records and publication protocol live under
+[`benchmarks/`](../benchmarks/README.md). New matrices use the maintained
+[Bun/YAML harness](../benchmarks/HARNESS.md), which validates pinned fixture IDs,
+explicit concurrency/retries/timeouts, local/hosted and warm/cold classification,
+atomic resumability, individual failure preservation, and allowlisted publishing.
 
-For now, treat these as manual benchmarks in a fixed environment. Before a result
-is promoted to a reproducible baseline, record:
+CI validates the schema and runs deterministic fake-provider lifecycle tests; it
+does not contact live providers. Hosted matrices require `--allow-hosted`, use
+`manual` or externally approved `scheduled` policy, and remain report-only.
+Only `local_ci` matrices can enforce tolerances. Even there, latency is considered
+a violation only after both an explicit relative margin (at least 25%) and
+absolute margin (at least 100ms) are exceeded, avoiding tight host-noise gates.
 
-- the exact TranscribeIt commit and dependency/runtime versions,
-- CPU, memory, OS, and acceleration backend,
-- the complete command with secrets redacted,
-- warm/cold model and connection state,
-- input duration, byte size, codec, and SHA-256,
-- model/provider version and local artifact SHA-256 when applicable,
-- wall time, RTF, retries, segment count, and sanitized raw manifest/output.
-
-If you want to automate later:
-- add a dedicated `criterion` benchmark target,
-- pin fixture files,
-- and fail CI only on large regressions with generous tolerances.
+The harness records the producing commit and dirty state, fixture identity,
+secret-free command templates, model/provider classification, execution/cache
+state, latency/RTF, output hashes, allowlisted capabilities/quality, and sanitized
+failure categories. Model artifact revision, hash, disk-use, and cleanup evidence
+remain required for downloadable-model evaluations; the harness deliberately
+does not acquire or retain models itself.

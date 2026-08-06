@@ -13,6 +13,12 @@ fixture identity, rights, coverage, and hashes; `corpus/v1/scoring.yaml` defines
 the separate accuracy, terms, timing, speaker, metadata, latency, and failure
 measurements.
 
+Use the maintained [Bun/YAML benchmark harness](HARNESS.md) for new matrices.
+It validates deterministic fixture selection, records local/hosted and warm/cold
+state, resumes atomically, preserves individual failures, deletes attempt output
+by default, and publishes an allowlisted result schema. Hosted execution always
+requires an explicit `--allow-hosted` opt-in and remains report-only.
+
 Before a run, capture the environment and fixture identity:
 
 ```bash
