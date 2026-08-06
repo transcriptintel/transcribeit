@@ -135,7 +135,7 @@ If a short-audio `qwen3-asr-flash` model is selected with `-p qwen-filetrans`, t
 |--------|-------------|---------|
 | `--gemini-api-key` | Gemini API key | `GEMINI_API_KEY` env var |
 | `--gemini-api-base-url` | Gemini API base URL | `GEMINI_API_BASE_URL` env var, or `https://generativelanguage.googleapis.com/v1beta` |
-| `--remote-model` | Gemini model name | `gemini-3.5-flash` |
+| `--remote-model` | Gemini model name | `gemini-3.6-flash` |
 | `--gemini-file-cache` | Reuse Gemini Files API uploads keyed by SHA-256 of prepared upload bytes | disabled |
 | `--gemini-use-presigned-url` | Stage prepared audio in S3-compatible storage and pass the pre-signed URL as Gemini `file_uri` | disabled |
 | `--gemini-file-cache-index` | Local Gemini file cache index path | `GEMINI_FILE_CACHE_INDEX` env var, or `.cache/transcribeit/gemini-files.json` |
@@ -151,7 +151,7 @@ By default, Gemini Files API uploads are deleted after each run. With `--gemini-
 
 With `--gemini-explicit-cache`, the CLI also creates or reuses a Gemini `cachedContent` object for the prepared audio and passes its name as `cachedContent` in the streamed generation request. This automatically enables the local Gemini file cache index because the cached-content handle must be persisted between runs. Explicit cached content has its own TTL and provider billing behavior; it is separate from the 48-hour Files API upload retention window.
 
-Current model candidates verified through the Gemini models API include `gemini-3.5-flash`, `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3-pro-preview`, and `gemini-2.5-flash`. Prefer stable `gemini-3.5-flash` for the default path and benchmark preview models before adopting them in production workflows.
+The stable default is `gemini-3.6-flash`, verified against Google's current model and audio-understanding documentation. Treat preview model IDs as separate compatibility candidates and benchmark them before adopting them in production workflows.
 
 Gemini timestamps and speaker labels are generated structured output rather than a dedicated ASR response schema. The parser is defensive: invalid JSON, missing fields, empty segments, unknown future response fields, and streamed response shape changes fall back to transcript text instead of failing the run.
 
@@ -443,23 +443,23 @@ transcribeit run -p qwen-filetrans -i recording.mp3 \
 
 # Gemini with transcript summary analysis in the manifest
 transcribeit run -p gemini --analysis summary \
-  --remote-model gemini-3.5-flash \
+  --remote-model gemini-3.6-flash \
   -i interview.mp4 -f vtt -o ./output
 
 # Gemini with Files API upload reuse
 transcribeit run -p gemini --gemini-file-cache \
-  --remote-model gemini-3.5-flash \
+  --remote-model gemini-3.6-flash \
   -i interview.mp4 -f vtt -o ./output
 
 # Gemini with explicit cachedContent reuse
 transcribeit run -p gemini --gemini-explicit-cache \
   --gemini-cache-ttl-secs 3600 \
-  --remote-model gemini-3.5-flash \
+  --remote-model gemini-3.6-flash \
   -i interview.mp4 -f vtt -o ./output
 
 # Gemini using S3/R2 pre-signed URL input instead of Gemini Files API upload
 transcribeit run -p gemini --gemini-use-presigned-url \
-  --remote-model gemini-3.5-flash \
+  --remote-model gemini-3.6-flash \
   -i interview.mp4 -f vtt -o ./output
 
 # NVIDIA hosted Riva ASR
@@ -550,7 +550,7 @@ Example analysis object:
 {
   "analysis": {
     "provider": "gemini",
-    "model": "gemini-3.5-flash",
+    "model": "gemini-3.6-flash",
     "schema_version": "transcribeit.analysis.v1",
     "summary": {
       "short": "Concise summary.",

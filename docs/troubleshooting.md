@@ -218,7 +218,7 @@ Symptoms:
 
 Fix:
 - Confirm `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` are set, plus `S3_ENDPOINT_URL` when using Cloudflare R2.
-- Use a supported non-Gemini-2.0 model such as `gemini-3.5-flash` or `gemini-2.5-flash`.
+- Use a supported non-Gemini-2.0 model such as `gemini-3.6-flash` or `gemini-2.5-flash`.
 - Do not combine `--gemini-use-presigned-url` with `--gemini-file-cache` or `--gemini-explicit-cache`; signed URL mode does not create reusable Gemini Files API handles.
 - Keep the prepared 16 kHz mono MP3 under 100 MB, or use the default Gemini Files API path for larger or reusable files.
 
@@ -226,7 +226,7 @@ Example:
 
 ```bash
 transcribeit run -p gemini --analysis summary \
-  --remote-model gemini-3.5-flash \
+  --remote-model gemini-3.6-flash \
   -i interview.mp4 -f vtt -o ./output
 ```
 

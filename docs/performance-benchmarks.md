@@ -165,9 +165,9 @@ and hash, model load time, warm/cold state, server command, and server logs.
 Gemini is a whole-file multimodal provider with streamed response tokens and model-generated structured output, so benchmark transcript quality and timestamp reliability separately from dedicated ASR providers:
 
 ```bash
-time transcribeit run -p gemini --remote-model gemini-3.5-flash -i <input_file> -f vtt -o ./output
+time transcribeit run -p gemini --remote-model gemini-3.6-flash -i <input_file> -f vtt -o ./output
 time transcribeit run -p gemini --remote-model gemini-3.1-pro-preview -i <input_file> -f vtt -o ./output
-time transcribeit run -p gemini --remote-model gemini-3.5-flash --gemini-use-presigned-url -i <input_file> -f vtt -o ./output
+time transcribeit run -p gemini --remote-model gemini-3.6-flash --gemini-use-presigned-url -i <input_file> -f vtt -o ./output
 ```
 
 Record:
@@ -186,7 +186,7 @@ Record:
 For Gemini summary analysis, also benchmark:
 
 ```bash
-time transcribeit run -p gemini --analysis summary --remote-model gemini-3.5-flash -i <input_file> -f vtt -o ./output
+time transcribeit run -p gemini --analysis summary --remote-model gemini-3.6-flash -i <input_file> -f vtt -o ./output
 ```
 
 Record:

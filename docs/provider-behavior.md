@@ -138,7 +138,7 @@ Hosted HTTP result bodies are capped at 64 MiB and error bodies at 1 MiB.
 - Authentication: `--gemini-api-key` or `GEMINI_API_KEY`.
   - an explicitly supplied `--api-key` is accepted as an intentional override; `OPENAI_API_KEY` is never read for Gemini.
 - Base URL defaults to `https://generativelanguage.googleapis.com/v1beta` and can be overridden with `--gemini-api-base-url` or `GEMINI_API_BASE_URL`.
-- Default model: `gemini-3.5-flash`.
+- Default model: `gemini-3.6-flash`.
 - Useful benchmark candidates include `gemini-3.1-pro-preview`, `gemini-3-flash-preview`, `gemini-3-pro-preview`, and `gemini-2.5-flash`.
 - By default, Gemini uses the Files API. With `--gemini-use-presigned-url` or `GEMINI_USE_PRESIGNED_URL=true`, the CLI stages the prepared MP3 in S3-compatible storage and sends the pre-signed HTTPS URL directly as `file_uri`.
 - Gemini signed URL mode:

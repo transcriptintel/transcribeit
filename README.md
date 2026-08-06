@@ -89,7 +89,7 @@ transcribeit run -p azure -i recording.mp3 \
 transcribeit run -p qwen-filetrans -i recording.mp3 -f vtt -o ./output
 
 # Transcribe whole files with Gemini Files API + streamed generateContent
-transcribeit run -p gemini --remote-model gemini-3.5-flash \
+transcribeit run -p gemini --remote-model gemini-3.6-flash \
   -i recording.mp3 -f vtt -o ./output
 
 # Reuse Gemini Files API uploads for repeated runs within the 48h Files API window

@@ -6,6 +6,8 @@ use crate::analysis::TranscriptAnalyzer;
 use crate::credentials::resolve_provider_key;
 use crate::engines::gemini::{GeminiApi, GeminiConfig, GeminiFileCacheConfig};
 
+const DEFAULT_GEMINI_MODEL: &str = "gemini-3.6-flash";
+
 pub(super) async fn build(args: &ProviderFactoryArgs<'_>) -> Result<ProviderRuntime> {
     let key = resolve_provider_key(
         owned(args.gemini_api_key),
@@ -14,7 +16,10 @@ pub(super) async fn build(args: &ProviderFactoryArgs<'_>) -> Result<ProviderRunt
         "--gemini-api-key",
         "GEMINI_API_KEY",
     )?;
-    let model_name = args.remote_model.unwrap_or("gemini-3.5-flash").to_string();
+    let model_name = args
+        .remote_model
+        .unwrap_or(DEFAULT_GEMINI_MODEL)
+        .to_string();
     let autoclean = if args.gemini_use_presigned_url {
         args.cleanup_staged_resources
     } else {
