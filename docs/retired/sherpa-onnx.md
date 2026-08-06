@@ -37,7 +37,7 @@ make the integration a good maintained default.
 | Former use | Current choice |
 |---|---|
 | Local Whisper through Sherpa | Use the built-in local whisper.cpp provider and GGML models. |
-| Local Qwen3-ASR | Use Qwen FileTrans, or run a separately managed llama.cpp OpenAI-compatible server with `--provider openai-compatible`. The llama.cpp audio path remains experimental until TI-005 is decided. |
+| Local Qwen3-ASR | Use Qwen FileTrans, or run a separately managed llama.cpp OpenAI-compatible server with `--provider openai`. [TI-005](../issues/TI-005.md) kept that path external-only and found the tested endpoint text-only. |
 | Local post-processing diarization | Use Deepgram, Gemini, NVIDIA Riva, or OpenAI `gpt-4o-transcribe-diarize`. Unsupported provider/model combinations now fail before transcription. |
 | Silero VAD segmentation | Use the maintained FFmpeg `silencedetect` path with `--segment` and its threshold/duration controls. |
 
@@ -46,6 +46,7 @@ make the integration a good maintained default.
 The implementation is gone, but dated evidence remains unchanged in:
 
 - [TI-004 native Qwen3-ASR evaluation](../issues/TI-004.md);
+- [TI-005 external llama.cpp decision](../issues/TI-005.md);
 - [TI-007 provider rebaseline](../issues/TI-007.md);
 - [performance benchmarks](../performance-benchmarks.md);
 - the sanitized records under [`benchmarks/results`](../../benchmarks/results/).

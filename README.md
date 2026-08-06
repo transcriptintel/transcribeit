@@ -54,8 +54,11 @@ transcribeit run -p openai --remote-model gpt-transcribe \
 # OpenAI-compatible endpoint (text only; no timestamps or provider metadata)
 transcribeit run -p openai --api-key local \
   --base-url http://127.0.0.1:18080 \
-  --remote-model ggml-org/Qwen3-ASR-1.7B-GGUF \
+  --remote-model ggml-org/Qwen3-ASR-0.6B-GGUF \
   -i recording.mp3 -f text -o ./output
+
+# llama.cpp and its Qwen model/projector files remain operator-managed.
+# TranscribeIt only sends the OpenAI-compatible transcription request.
 
 # Transcribe via OpenAI hosted diarization
 transcribeit run -p openai --diarize -i meeting.mp3 -f srt -o ./output
@@ -120,6 +123,7 @@ transcribeit run -i recording.wav -m base --language en --normalize
 - **Any local input format** — MP3, MP4, WAV, FLAC, OGG, etc. FFmpeg converts to mono 16kHz WAV automatically. Nested network/data protocols are blocked for local inputs.
 - **7 providers** — Local whisper.cpp, OpenAI API, Azure OpenAI, Qwen file transcription, Gemini, NVIDIA Riva, and Deepgram. Extensible via the `Transcriber` trait.
 - **Qwen ASR whole-file transcription** — `qwen-filetrans` stages audio in S3-compatible storage, passes a pre-signed URL to DashScope, polls the async task, and maps Qwen timestamps into the transcript model.
+- **External llama.cpp compatibility** — A user-managed Qwen3-ASR `llama-server` can be reached through `-p openai --base-url`; TranscribeIt does not install, launch, monitor, update, stop, or clean that server or its GGUF artifacts, and the tested endpoint returns text without timestamps or speakers.
 - **Stable manifest schema** — Manifests use `transcribeit.manifest.v2` with canonical millisecond timestamps, provider-neutral capabilities/quality fields, and provider-specific metadata under `provider_metadata.data`.
 - **Cache telemetry** — Manifests normalize provider token-cache signals under `cache`, including Gemini `cachedContentTokenCount` and OpenAI/Azure-style `cached_tokens` when returned.
 - **Qwen provider metadata** — Manifests include Qwen task timing/usage, audio info, per-segment language/emotion, and word-level timestamps. Temporary pre-signed URLs are not persisted.

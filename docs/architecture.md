@@ -70,6 +70,12 @@ pub trait Transcriber: Send + Sync {
 - **NVIDIA Riva** overrides `transcribe_path()` and `transcribe_wav()` to send WAV bytes to a hosted Riva gRPC endpoint with provider-native timestamps.
 - **Deepgram** overrides `transcribe_path()` and `transcribe_wav()` to post WAV bytes to Deepgram's `/listen` endpoint with utterances, word timestamps, optional diarization, and optional audio intelligence flags. In URL mode, it stages the prepared WAV in S3-compatible storage and sends Deepgram a pre-signed URL JSON request instead.
 
+An alternate `--base-url` does not create a new managed provider. In particular,
+the llama.cpp Qwen3-ASR compatibility path still uses `openai_api`; the external
+process and its model/projector artifacts remain outside the provider factory,
+artifact installer, process lifecycle, readiness, and cleanup boundaries. This
+keeps the compiled binary from accidentally acquiring a sidecar-runtime contract.
+
 ## Processing pipeline
 
 The `pipeline.rs` module orchestrates the full flow:

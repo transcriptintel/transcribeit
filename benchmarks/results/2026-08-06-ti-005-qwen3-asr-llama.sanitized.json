@@ -1,0 +1,335 @@
+{
+  "schema_version": "transcribeit.benchmark-result.v1",
+  "recorded_at_utc": "2026-08-06T13:49:10.007Z",
+  "classification": "clean_commit_compatibility_and_decision",
+  "question": "Should TranscribeIt package llama.cpp and Qwen3-ASR, or keep the integration external-only?",
+  "producing_commit": {
+    "hash": "f2ffaaf592ccff7b831baea501b213ccca168c94",
+    "worktree_dirty": false
+  },
+  "environment": {
+    "machine": {
+      "cpu": "Apple M4 Pro",
+      "logical_cores": 12,
+      "memory_bytes": 25769803776,
+      "os": "Darwin",
+      "kernel": "25.5.0",
+      "architecture": "arm64"
+    },
+    "tools": {
+      "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+      "ffmpeg": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+    }
+  },
+  "corpus": {
+    "id": "transcribeit-representative-v1",
+    "manifest_schema_version": 1,
+    "verification_passed": true,
+    "fixtures": [
+      {
+        "id": "fleurs-en-us-traffic-flow-clean",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "audio_sha256": "3e76cc5728bfd7c24f1039b5c9a47e8d79c7f225605862e977833a4f79249bff",
+        "reference_kind": "inline_reviewed",
+        "repetitions": 3
+      },
+      {
+        "id": "fleurs-en-us-traffic-flow-noisy-10db",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "audio_sha256": "0ce03952e2c7d4acc813a5a49b55f2675c2ff25dc58575068dd51b2fc54b63d9",
+        "reference_kind": "inline_reviewed",
+        "repetitions": 3
+      },
+      {
+        "id": "speechocean-mandarin-l1-computer-clean",
+        "duration_seconds": 3,
+        "bytes": 96044,
+        "audio_sha256": "147537ac415dbf33afb6a92b27f38d2da4c26a390465c4ad8f030502d815a7bf",
+        "reference_kind": "inline_reviewed",
+        "repetitions": 3
+      },
+      {
+        "id": "ami-es2002c-mix-headset",
+        "duration_seconds": 2423.68,
+        "bytes": 77557804,
+        "audio_sha256": "8aa5dca8a0d31aaa596ecec8e0d7d8df1646fd4328d2740b287650d8012412df",
+        "reference_kind": "archive_members",
+        "repetitions": 1
+      }
+    ]
+  },
+  "runtime": {
+    "llama_cpp_release": "b10295",
+    "llama_cpp_version": "version: 10295 (3db4ff877)\nbuilt with AppleClang 21.0.0.21000101 for Darwin arm64",
+    "release_url": "https://github.com/ggml-org/llama.cpp/releases/tag/b10295",
+    "archive": {
+      "name": "llama-b10295-bin-macos-arm64.tar.gz",
+      "bytes": 10975480,
+      "sha256": "eee879ac4b0c9abd4afd1b646e90b59c54dab7e08cea0d8d40b8e6bf9ce43aa1"
+    },
+    "server_command": "HF_HOME=$EVALUATION_MODEL_HOME HF_HUB_CACHE=$EVALUATION_HUB_CACHE XDG_CACHE_HOME=$EVALUATION_XDG_CACHE llama-server -hf $MODEL_REPOSITORY --host 127.0.0.1 --port $PORT --no-webui --ctx-size $CONTEXT_SIZE --n-predict 16384 --temp 0 --parallel 1",
+    "client_command": "transcribeit run --provider openai --api-key $LOCAL_SENTINEL --base-url http://127.0.0.1:$PORT --remote-model $MODEL_REPOSITORY --request-timeout-secs 3600 --input $FIXTURE --output-format text --output-dir $IGNORED_RUN_DIR",
+    "short_context_size": 16384,
+    "long_context_size": 65536,
+    "concurrency": 1,
+    "language_hint": null,
+    "segmentation": false,
+    "preprocessing": "TranscribeIt mono 16 kHz MP3 provider upload"
+  },
+  "harness_correction": {
+    "reason": "Initial client commands used the removed --format spelling and exited in clap before contacting llama.cpp.",
+    "corrected_option": "--output-format text",
+    "corrected_at_utc": "2026-08-06T13:35:43.385Z"
+  },
+  "models": [
+    {
+      "id": "qwen3-asr-0.6b",
+      "repository": "ggml-org/Qwen3-ASR-0.6B-GGUF",
+      "revision": "928ab958557df9aa2ef1c93e0e83c7ad0933fae2",
+      "artifacts": {
+        "model": {
+          "name": "Qwen3-ASR-0.6B-Q8_0.gguf",
+          "bytes": 804749248,
+          "sha256": "bca259818b50ca7c4c05e9bdb35a5dc04fa039653a6d6f3f0f331f96f6aa1971"
+        },
+        "projector": {
+          "name": "mmproj-Qwen3-ASR-0.6B-Q8_0.gguf",
+          "bytes": 214392480,
+          "sha256": "41a342b5e4c514e968cb756de6cd1b7be39eff43c44c57a2ef5fc6522e36603d"
+        },
+        "evaluation_cache_disk_bytes": 1023545344
+      },
+      "startup": {
+        "empty_cache_download_and_load_ms": 190593.46825,
+        "empty_cache_peak_rss_kb": 2936416,
+        "cached_16384_context_load_ms": 1644.105417,
+        "cached_16384_context_and_short_runs_peak_rss_kb": 3635504,
+        "cached_65536_context_load_ms": 2478.146208,
+        "cached_65536_context_and_long_run_peak_rss_kb": 9049792
+      },
+      "context_limit_probe": {
+        "context_size": 16384,
+        "required_prompt_tokens": 31527,
+        "status": "rejected_before_inference",
+        "prior_run": {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "repetition": 1,
+          "status": "failed",
+          "exit_code": 1,
+          "wall_ms": 3801.6156250000004
+        }
+      },
+      "fixtures": [
+        {
+          "id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "median_wall_ms": 253.26800000000003,
+          "median_real_time_factor": 0.0200370253164557,
+          "median_word_error_rate": 0.4117647058823529,
+          "median_domain_term_recall": 1,
+          "peak_server_rss_kb": 2967184,
+          "output_words": 19,
+          "output_sha256": "6e1fd014ea7dd9896b1885c90d05aebf88c8cef4df5dbb67c4660f00f9894653",
+          "manifest_sha256": "9d30bc92cd6aa0dc7c6a2c3ac5acb128cdc07627c226d7fb85960a1b7ce7a908",
+          "output_shape": "one zero-duration text segment"
+        },
+        {
+          "id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "median_wall_ms": 254.1199160000001,
+          "median_real_time_factor": 0.020104423734177222,
+          "median_word_error_rate": 0.4117647058823529,
+          "median_domain_term_recall": 1,
+          "peak_server_rss_kb": 2994640,
+          "output_words": 19,
+          "output_sha256": "6e1fd014ea7dd9896b1885c90d05aebf88c8cef4df5dbb67c4660f00f9894653",
+          "manifest_sha256": "c7bd1b1d4ee38b0b609b14d0c0572d1155e4686b877caa24ceed7ef48212edd0",
+          "output_shape": "one zero-duration text segment"
+        },
+        {
+          "id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "median_wall_ms": 253.71995799999968,
+          "median_real_time_factor": 0.08457331933333323,
+          "median_word_error_rate": 0.5714285714285714,
+          "median_domain_term_recall": 1,
+          "peak_server_rss_kb": 3018032,
+          "output_words": 11,
+          "output_sha256": "00486909152d0c9d196ec26dabc1da803548ebde6a95d8fad53272e497eec325",
+          "manifest_sha256": "e1c5cd4b8d55afb44d2b4636ad8299f847d33f7e94f7304bbeb8a829d17ff8be",
+          "output_shape": "one zero-duration text segment"
+        },
+        {
+          "id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "median_wall_ms": 187099.763792,
+          "median_real_time_factor": 0.07719656216662267,
+          "median_word_error_rate": 0.33862366683595735,
+          "median_domain_term_recall": 1,
+          "peak_server_rss_kb": 9049792,
+          "output_words": 5591,
+          "output_sha256": "d719bc755c1f7f5804e337d2882eef92e58186e17b08ef7df041e04a8f2df417",
+          "manifest_sha256": "ca49210c1bc33dcd52e5bf4a435935aa1b53f39122d34a669f56517eb5501c8f",
+          "output_shape": "one zero-duration text segment"
+        }
+      ],
+      "capabilities": {
+        "text": true,
+        "native_timestamps": false,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "detected_language": false,
+        "provider_metadata": false
+      }
+    },
+    {
+      "id": "qwen3-asr-1.7b",
+      "repository": "ggml-org/Qwen3-ASR-1.7B-GGUF",
+      "revision": "36a678687ba7d07a74ca70ccb0e36902e005fb80",
+      "artifacts": {
+        "model": {
+          "name": "Qwen3-ASR-1.7B-Q8_0.gguf",
+          "bytes": 2165034944,
+          "sha256": "58e22d0532d4eacaf034cfac17a6fed159f37c41390c710186783be439d1fc57"
+        },
+        "projector": {
+          "name": "mmproj-Qwen3-ASR-1.7B-Q8_0.gguf",
+          "bytes": 355709344,
+          "sha256": "46c1d533af3f354ceb37ce855dbceff7da7fa7cf1e6a523df3b13440bd164c0d"
+        },
+        "evaluation_cache_disk_bytes": 2550272000
+      },
+      "startup": {
+        "empty_cache_download_and_load_ms": 225874.65849999996,
+        "empty_cache_peak_rss_kb": 4366032,
+        "cached_16384_context_load_ms": 2241.884082999999,
+        "cached_16384_context_and_short_runs_peak_rss_kb": 5027456,
+        "cached_65536_context_load_ms": 2868.0467499999795,
+        "cached_65536_context_and_long_run_peak_rss_kb": 10591312
+      },
+      "context_limit_probe": {
+        "context_size": 16384,
+        "required_prompt_tokens": 31527,
+        "status": "rejected_before_inference",
+        "prior_run": {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "repetition": 1,
+          "status": "failed",
+          "exit_code": 1,
+          "wall_ms": 3799.417207999999
+        }
+      },
+      "fixtures": [
+        {
+          "id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "median_wall_ms": 507.0559170000015,
+          "median_real_time_factor": 0.04011518330696214,
+          "median_word_error_rate": 0.4117647058823529,
+          "median_domain_term_recall": 1,
+          "peak_server_rss_kb": 4360032,
+          "output_words": 19,
+          "output_sha256": "6e1fd014ea7dd9896b1885c90d05aebf88c8cef4df5dbb67c4660f00f9894653",
+          "manifest_sha256": "eafb4706939f920c9d307b96ad5dd8152c832f3dfa617c85a288bd97d6381c17",
+          "output_shape": "one zero-duration text segment"
+        },
+        {
+          "id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "median_wall_ms": 512.3510420000002,
+          "median_real_time_factor": 0.04053410142405065,
+          "median_word_error_rate": 0.4117647058823529,
+          "median_domain_term_recall": 1,
+          "peak_server_rss_kb": 4384528,
+          "output_words": 19,
+          "output_sha256": "6e1fd014ea7dd9896b1885c90d05aebf88c8cef4df5dbb67c4660f00f9894653",
+          "manifest_sha256": "64eb8b5628dfb7817149d22a6292c5dd0b20dcf03697ef927343fe456d3884ec",
+          "output_shape": "one zero-duration text segment"
+        },
+        {
+          "id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "median_wall_ms": 256.0302499999998,
+          "median_real_time_factor": 0.0853434166666666,
+          "median_word_error_rate": 0.5714285714285714,
+          "median_domain_term_recall": 1,
+          "peak_server_rss_kb": 4407632,
+          "output_words": 11,
+          "output_sha256": "00486909152d0c9d196ec26dabc1da803548ebde6a95d8fad53272e497eec325",
+          "manifest_sha256": "2f532b5d71e1c1348c296ddfef4bf495f6c355ae191ef764d497c4da59f503c6",
+          "output_shape": "one zero-duration text segment"
+        },
+        {
+          "id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "median_wall_ms": 534118.4682080001,
+          "median_real_time_factor": 0.2203749951346713,
+          "median_word_error_rate": 1.0226003047232097,
+          "median_domain_term_recall": 0,
+          "peak_server_rss_kb": 10591312,
+          "output_words": 8326,
+          "output_sha256": "7d3ac9c09f4df407d7e452167923664a3ffa87f1eaeb10307929ac3c1e6b3ab4",
+          "manifest_sha256": "24ea718e6c28c52ecae3c41fbfee1291aad73726c78a2a9f2d4cb9719607274c",
+          "output_shape": "one zero-duration text segment"
+        }
+      ],
+      "capabilities": {
+        "text": true,
+        "native_timestamps": false,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "detected_language": false,
+        "provider_metadata": false
+      }
+    }
+  ],
+  "decision": {
+    "outcome": "external_only",
+    "dedicated_provider": false,
+    "packaged_runtime_or_models": false,
+    "boundary": "TranscribeIt supports a user-managed llama-server through the generic OpenAI-compatible provider. It does not discover, download, verify, launch, monitor, update, stop, or clean llama.cpp or Qwen GGUF artifacts.",
+    "reasons": [
+      "The 0.6B and 1.7B Q8 paths expose only one untimed, non-diarized text segment through the compatible endpoint.",
+      "The 40-minute fixture requires a 65536-token context and materially higher memory than the short-audio configuration.",
+      "Packaging would add a llama.cpp runtime plus separate model and multimodal-projector artifacts without improving TranscribeIt's timestamp, speaker, or metadata contract.",
+      "The existing generic base-URL path preserves an opt-in compatibility route without compromising the standalone binary's managed-artifact boundary."
+    ]
+  },
+  "downloaded_model_cleanup": {
+    "evaluation_scope": "llama.cpp b10295 macOS arm64 runtime plus isolated 0.6B and 1.7B Q8 model/projector caches and raw runs",
+    "evaluation_root_preexisting": false,
+    "free_disk_before_kib": 50284760,
+    "free_disk_after_kib": 53780052,
+    "bytes_removed": 3579596800,
+    "cleanup_completed": true,
+    "evaluation_root_absent_after_cleanup": true
+  },
+  "sanitization": {
+    "secrets_removed": true,
+    "transcript_text_removed": true,
+    "speaker_names_removed": true,
+    "request_ids_removed": true,
+    "signed_urls_removed": true,
+    "local_absolute_paths_removed": true,
+    "raw_artifacts_retained_only_in_ignored_evaluation_root_until_cleanup": true,
+    "raw_artifacts_deleted_after_sanitization": true
+  }
+}

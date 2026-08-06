@@ -52,6 +52,27 @@ Hosted HTTP result bodies are capped at 64 MiB and error bodies at 1 MiB.
   - `--retry-wait-max-secs`
 - Transcription POST requests retry HTTP 429 responses, but do not retry ambiguous transport or 5xx failures that may already have reached the provider.
 
+### User-managed llama.cpp Qwen3-ASR
+
+The OpenAI-compatible path can point at a separately managed Qwen3-ASR
+`llama-server`. This is a compatibility boundary, not a dedicated provider:
+
+- TranscribeIt prepares the upload, sends `POST /v1/audio/transcriptions`, and
+  normalizes the response.
+- The operator owns llama.cpp and GGUF discovery, download verification, startup,
+  readiness, updates, shutdown, logs, model retention, and disk cleanup.
+- TranscribeIt does not infer a safe server context size. In the TI-005 corpus,
+  the 2,423.68-second fixture required 31,527 audio-prompt tokens, so a 16,384
+  context was rejected and the successful run used 65,536.
+- llama.cpp b10295 with the tested Qwen3-ASR Q8 model/projector pairs returned one
+  zero-duration text segment without word timing, speaker labels, detected
+  language, or provider metadata. Use text output unless a future tested server
+  response establishes a stronger contract.
+
+The generic base URL remains useful for explicit local experiments without
+making the standalone TranscribeIt binary responsible for another runtime and
+multi-file model lifecycle.
+
 ## Azure (`-p azure`)
 
 - Authentication:

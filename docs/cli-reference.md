@@ -74,6 +74,13 @@ Supported hosted OpenAI transcription models include `gpt-transcribe`, `whisper-
 
 `gpt-transcribe` is OpenAI's recommended starting model for completed recordings and returns plain transcript text plus detected languages. It does not provide timestamps or speaker labels. For this model, `--language` is sent through the API's plural `languages[]` hint. `whisper-1` remains the CLI default because it returns timestamped segments through `verbose_json`, which matches the default subtitle-oriented output. `gpt-4o-mini-transcribe` and `gpt-4o-transcribe` return plain transcript text through the current CLI. When `--diarize` is set and no `--remote-model` is provided, the CLI selects `gpt-4o-transcribe-diarize`. When that model is selected, the provider requests `diarized_json` with `chunking_strategy=auto` and maps speaker labels into VTT/SRT/manifest output.
 
+`--base-url` may also target a user-managed OpenAI-compatible server. For the
+tested llama.cpp Qwen3-ASR path, pass an explicit local sentinel with `--api-key`
+and use text output. TranscribeIt does not install, discover, launch, monitor,
+stop, update, or clean the external server or its model/projector files. The
+operator must also choose a context large enough for the input; see the dated
+[TI-005 benchmark](performance-benchmarks.md#llamacpp-qwen3-asr-decision-ti-005-2026-08-06).
+
 #### Azure provider options
 
 | Option | Description | Default |

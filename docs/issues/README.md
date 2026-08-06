@@ -7,7 +7,7 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
 `bun run scripts/issues_registry.ts check`.
 
 - Total findings: 10
-- Active findings: 3
+- Active findings: 2
 
 | ID | Priority | Status | Area | Summary |
 |---|---:|---|---|---|
@@ -15,7 +15,7 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
 | [TI-002](./TI-002.md) | P2 | Resolved | Provider reliability | P2 provider hardening, portability, and benchmark reproducibility |
 | [TI-003](./TI-003.md) | P2 | Resolved | Architecture and governance | Output and command orchestration exceed maintainable boundaries |
 | [TI-004](./TI-004.md) | P2 | Resolved | Local inference | Evaluate a native Rust ONNX path for Qwen3-ASR |
-| [TI-005](./TI-005.md) | P3 | In progress | Local inference | Decide whether to package llama.cpp Qwen3-ASR support |
+| [TI-005](./TI-005.md) | P3 | Resolved | Local inference | Decide whether to package llama.cpp Qwen3-ASR support |
 | [TI-006](./TI-006.md) | P2 | Resolved | Benchmark quality | Build a representative multi-fixture transcription corpus |
 | [TI-007](./TI-007.md) | P2 | Resolved | Benchmark reproducibility | Rebaseline the hosted and local provider comparison |
 | [TI-008](./TI-008.md) | P3 | Open | Benchmark tooling | Add an automation-friendly benchmark harness |

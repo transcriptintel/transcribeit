@@ -166,29 +166,63 @@ Record:
 
 #### Local Qwen3-ASR through llama.cpp
 
-This is a compatibility experiment, not a dedicated TranscribeIt provider. Start a
-separately managed `llama-server`, then use the existing OpenAI-compatible path:
+This is an external compatibility path, not a dedicated TranscribeIt provider.
+Start a separately managed `llama-server`, then use the existing OpenAI-compatible
+path. The TI-005 evaluation found the 0.6B Q8 model preferable to 1.7B on this
+corpus:
 
 ```bash
-llama-server -hf ggml-org/Qwen3-ASR-1.7B-GGUF \
-  --port 18080 --no-ui --log-disable -n 4096 --temp 0
+llama-server -hf ggml-org/Qwen3-ASR-0.6B-GGUF \
+  --port 18080 --no-webui --ctx-size 65536 \
+  --n-predict 16384 --temp 0 --parallel 1
 
 time transcribeit run -p openai --api-key local \
   --base-url http://127.0.0.1:18080 \
-  --remote-model ggml-org/Qwen3-ASR-1.7B-GGUF \
+  --remote-model ggml-org/Qwen3-ASR-0.6B-GGUF \
+  --request-timeout-secs 3600 \
   -i <input_file> -f text -o ./output
 ```
 
-The 2026-06-09 smoke test processed the 300.01-second medical interview in about
-18 seconds (approximately 0.060 RTF) after the 1.7B server and model were loaded.
-It produced readable text and recognized domain terms such as `Ofev` and `Esbriet`,
-but returned one plain-text segment without timestamps, word alignment, or provider
-metadata. llama.cpp audio support identified itself as experimental. Treat this as
-a promising warm-server observation, not a reproducible baseline or a replacement
-for DashScope `qwen-filetrans`.
+For a repeatable run, record the llama.cpp build, exact GGUF and projector
+revisions/hashes, context size, model load time, warm/cold state, server command,
+server logs, and cleanup of the externally owned artifacts.
 
-For a repeatable run, additionally record the llama.cpp build, exact GGUF revision
-and hash, model load time, warm/cold state, server command, and server logs.
+### llama.cpp Qwen3-ASR decision (TI-005, 2026-08-06)
+
+The clean-commit evaluation used llama.cpp
+[`b10295`](https://github.com/ggml-org/llama.cpp/releases/tag/b10295), Q8 model
+and multimodal-projector pairs from the official
+[0.6B](https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF) and
+[1.7B](https://huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF) repositories, three
+warm-server repetitions for each short fixture, and one AMI run. The tracked
+sanitized record is
+[`2026-08-06-ti-005-qwen3-asr-llama.sanitized.json`](../benchmarks/results/2026-08-06-ti-005-qwen3-asr-llama.sanitized.json).
+
+| Model | Short macro WER | AMI wall / RTF | AMI WER | Cached short / long peak RSS | Model cache |
+|---|---:|---:|---:|---:|---:|
+| Qwen3-ASR 0.6B Q8 | 46.50% | 187.10s / 0.0772 | 33.86% | 3.47 / 8.63 GiB | 1,023,545,344 bytes |
+| Qwen3-ASR 1.7B Q8 | 46.50% | 534.12s / 0.2204 | 102.26% | 4.79 / 10.10 GiB | 2,550,272,000 bytes |
+
+Both sizes produced identical output hashes on all three short fixtures: 41.18%
+WER on clean and noisy FLEURS and 57.14% on the Mandarin-L1 English fixture.
+The 0.6B model was faster and substantially more accurate on AMI. Both retained
+100% tracked-term recall on short audio; on AMI, 0.6B retained 100% and 1.7B
+retained 0%.
+
+The 2,423.68-second meeting required 31,527 prompt tokens. Both servers rejected
+it at a 16,384-token context before inference; the successful 65,536-token runs
+show why long-form memory must not be inferred from short-audio measurements.
+Empty-cache download plus load took 190.59s for 0.6B and 225.87s for 1.7B on this
+network, while cached 16,384-token startup took 1.64s and 2.24s respectively.
+
+The product decision is **external-only**. TranscribeIt will keep the generic
+`-p openai --base-url` route but will not package a llama.cpp runtime, dedicated
+provider, or Qwen model/projector lifecycle. The tested endpoint exposes one
+zero-duration text segment without native timestamps, words, speakers, detected
+language, or provider metadata. The operator therefore owns discovery, download
+verification, startup/readiness, context sizing, updates, shutdown, retention,
+and cleanup. After evidence capture, the exact evaluation root was removed and
+verified absent, reclaiming 3,579,596,800 bytes.
 
 ### 6. Gemini hosted transcription
 
