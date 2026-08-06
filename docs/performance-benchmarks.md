@@ -81,6 +81,30 @@ evaluation-owned directories were then removed, reclaiming 4,239,458,304 bytes
 and verifying that the evaluation root was absent. Gemini and Qwen remote
 staging cleanup is recorded per successful request in the sanitized result.
 
+### Live provider account smoke (TI-009, 2026-08-06)
+
+The six configured hosted-provider CLI paths passed one clean-commit smoke on the
+12.64-second clean FLEURS fixture with retries and segmentation disabled. This is
+an account/request compatibility check, not a latency ranking or quality
+benchmark. The sanitized record is
+[`2026-08-06-ti-009-live-provider-smoke.sanitized.json`](../benchmarks/results/2026-08-06-ti-009-live-provider-smoke.sanitized.json).
+
+| Provider / model classification | Status | Wall time | Remote cleanup |
+|---|---:|---:|---|
+| OpenAI `gpt-transcribe` | Passed | 2.352s | not applicable |
+| Azure configured deployment | Passed | 1.246s | not applicable |
+| Qwen `qwen3-asr-flash-filetrans` | Passed | 5.180s | staged object deleted |
+| Gemini `gemini-3.6-flash` | Passed | 10.781s | uploaded file deleted |
+| Deepgram `nova-3` | Passed | 2.970s | not applicable |
+| NVIDIA hosted Riva configured function | Passed | 1.123s | not applicable |
+
+No provider was skipped or failed. A local synthetic HTTP 401 probe separately
+confirmed that the compatible CLI exits nonzero on an HTTP authentication error
+with retries disabled. Response bodies and temporary transcripts/manifests were
+discarded, and provider/account identifiers were reduced to classifications.
+These observations apply only to the configured accounts, endpoints, aliases,
+fixture, and request shapes at the recorded time.
+
 ## Benchmarks to run
 
 ### 1. Local model inference throughput

@@ -1,0 +1,110 @@
+{
+  "schema_version": "transcribeit.live-provider-smoke.v1",
+  "recorded_at_utc": "2026-08-06T14:02:06.025Z",
+  "classification": "clean_commit_live_account_smoke",
+  "producing_commit": {
+    "hash": "e136b3b28c67df4faf871c8bcbdf1bae84b25d17",
+    "worktree_dirty": false
+  },
+  "fixture": {
+    "id": "fleurs-en-us-traffic-flow-clean",
+    "duration_seconds": 12.64,
+    "bytes": 809018,
+    "sha256": "3e76cc5728bfd7c24f1039b5c9a47e8d79c7f225605862e977833a4f79249bff"
+  },
+  "request": {
+    "attempts_per_provider": 1,
+    "max_retries": 0,
+    "timeout_seconds": 300,
+    "segmentation": false,
+    "output_format": "text",
+    "preprocessing": "provider-specific TranscribeIt prepared upload"
+  },
+  "providers": [
+    {
+      "provider": "openai",
+      "configured": true,
+      "status": "passed",
+      "wall_ms": 2352,
+      "model_classification": "gpt-transcribe",
+      "endpoint_classification": "openai_public_v1_audio_transcriptions",
+      "error_category": null,
+      "remote_cleanup": null
+    },
+    {
+      "provider": "azure",
+      "configured": true,
+      "status": "passed",
+      "wall_ms": 1246,
+      "model_classification": "configured_deployment",
+      "endpoint_classification": "configured_azure_openai_audio_transcriptions",
+      "error_category": null,
+      "remote_cleanup": null
+    },
+    {
+      "provider": "qwen-filetrans",
+      "configured": true,
+      "status": "passed",
+      "wall_ms": 5180,
+      "model_classification": "qwen3-asr-flash-filetrans",
+      "endpoint_classification": "dashscope_intl_async_filetrans_v1_via_configured_s3",
+      "error_category": null,
+      "remote_cleanup": "deleted"
+    },
+    {
+      "provider": "gemini",
+      "configured": true,
+      "status": "passed",
+      "wall_ms": 10781,
+      "model_classification": "gemini-3.6-flash",
+      "endpoint_classification": "google_generative_language_v1beta_files_stream_generate_content",
+      "error_category": null,
+      "remote_cleanup": "deleted"
+    },
+    {
+      "provider": "deepgram",
+      "configured": true,
+      "status": "passed",
+      "wall_ms": 2970,
+      "model_classification": "nova-3",
+      "endpoint_classification": "deepgram_public_v1_listen_direct_upload",
+      "error_category": null,
+      "remote_cleanup": null
+    },
+    {
+      "provider": "nvidia-riva",
+      "configured": true,
+      "status": "passed",
+      "wall_ms": 1123,
+      "model_classification": "configured_function",
+      "endpoint_classification": "nvidia_hosted_riva_grpc",
+      "error_category": null,
+      "remote_cleanup": null
+    }
+  ],
+  "failure_semantics_probe": {
+    "status": "passed",
+    "endpoint_classification": "local_synthetic_http_401",
+    "expected_exit": "nonzero",
+    "observed_exit": "nonzero",
+    "error_category": "authentication",
+    "response_body_discarded": true
+  },
+  "downloaded_model_cleanup": "not_applicable",
+  "temporary_local_artifact_cleanup": {
+    "evaluation_root_preexisting": false,
+    "bytes_removed": 102400,
+    "cleanup_completed": true,
+    "evaluation_root_absent_after_cleanup": true
+  },
+  "sanitization": {
+    "credential_values_removed": true,
+    "response_bodies_discarded": true,
+    "transcript_text_removed": true,
+    "request_ids_removed": true,
+    "signed_urls_removed": true,
+    "local_paths_removed": true,
+    "provider_error_details_reduced_to_category": true,
+    "temporary_transcripts_and_manifests_deleted": true
+  }
+}

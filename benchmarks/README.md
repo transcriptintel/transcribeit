@@ -72,3 +72,23 @@ jq -e '
   .downloaded_model_cleanup.evaluation_root_absent_after_cleanup == true
 ' benchmarks/results/2026-08-06-ti-007-representative-corpus.sanitized.json
 ```
+
+The narrower TI-009 live-account smoke record uses a dedicated schema because it
+intentionally retains only status, latency, classifications, and sanitized error
+categories:
+
+```bash
+jq -e '
+  .schema_version == "transcribeit.live-provider-smoke.v1" and
+  .producing_commit.worktree_dirty == false and
+  (.providers | length) == 6 and
+  ([.providers[] | select(.configured == true)] | length) == 6 and
+  ([.providers[] | select(.status == "passed")] | length) == 6 and
+  ([.providers[] | select(.status == "failed")] | length) == 0 and
+  ([.providers[] | select(.status == "skipped")] | length) == 0 and
+  .failure_semantics_probe.observed_exit == "nonzero" and
+  .temporary_local_artifact_cleanup.evaluation_root_absent_after_cleanup == true and
+  .sanitization.response_bodies_discarded == true and
+  .sanitization.transcript_text_removed == true
+' benchmarks/results/2026-08-06-ti-009-live-provider-smoke.sanitized.json
+```
