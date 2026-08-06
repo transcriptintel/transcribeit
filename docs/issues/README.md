@@ -19,7 +19,7 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
 | [TI-006](./TI-006.md) | P2 | Resolved | Benchmark quality | Build a representative multi-fixture transcription corpus |
 | [TI-007](./TI-007.md) | P2 | Resolved | Benchmark reproducibility | Rebaseline the hosted and local provider comparison |
 | [TI-008](./TI-008.md) | P3 | Open | Benchmark tooling | Add an automation-friendly benchmark harness |
-| [TI-009](./TI-009.md) | P2 | Open | Provider operations | Run and record the live provider smoke matrix |
+| [TI-009](./TI-009.md) | P2 | In progress | Provider operations | Run and record the live provider smoke matrix |
 | [TI-010](./TI-010.md) | P2 | Resolved | Local inference | Retire the unused Sherpa-ONNX integration |
 
 ## Working agreement
