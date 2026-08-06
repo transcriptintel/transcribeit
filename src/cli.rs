@@ -40,41 +40,12 @@ impl ModelSize {
             Self::LargeV3Turbo => "ggml-large-v3-turbo.bin",
         }
     }
-
-    #[cfg(feature = "sherpa-onnx")]
-    pub(crate) fn onnx_archive_name(&self) -> Option<&str> {
-        match self {
-            Self::Tiny => Some("sherpa-onnx-whisper-tiny"),
-            Self::TinyEn => Some("sherpa-onnx-whisper-tiny.en"),
-            Self::Base => Some("sherpa-onnx-whisper-base"),
-            Self::BaseEn => Some("sherpa-onnx-whisper-base.en"),
-            Self::Small => Some("sherpa-onnx-whisper-small"),
-            Self::SmallEn => Some("sherpa-onnx-whisper-small.en"),
-            Self::Medium => Some("sherpa-onnx-whisper-medium"),
-            Self::MediumEn => Some("sherpa-onnx-whisper-medium.en"),
-            Self::LargeV3 => None,
-            Self::LargeV3Turbo => Some("sherpa-onnx-whisper-turbo"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, ValueEnum, Default)]
-pub(crate) enum ModelFormat {
-    /// GGML format (for whisper.cpp / --provider local)
-    #[default]
-    Ggml,
-    /// ONNX format (for sherpa-onnx / --provider sherpa-onnx)
-    Onnx,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
 pub(crate) enum Provider {
     /// Local whisper.cpp engine
     Local,
-    /// Local sherpa-onnx engine (Whisper, Qwen3-ASR, Moonshine, or SenseVoice)
-    #[cfg(feature = "sherpa-onnx")]
-    #[value(name = "sherpa-onnx")]
-    SherpaOnnx,
     /// OpenAI-compatible API
     Openai,
     /// Azure OpenAI API
@@ -138,10 +109,6 @@ pub(crate) enum Command {
         #[arg(short = 's', long, default_value = "base")]
         model_size: ModelSize,
 
-        /// Model format: ggml (for whisper.cpp) or onnx (for sherpa-onnx)
-        #[arg(short, long, default_value = "ggml")]
-        format: ModelFormat,
-
         /// Directory to save the model (overrides MODEL_CACHE_DIR)
         #[arg(short, long)]
         output_dir: Option<PathBuf>,
@@ -149,14 +116,6 @@ pub(crate) enum Command {
         /// Hugging Face token (optional, or set HF_TOKEN env var)
         #[arg(short = 't', long, env = "HF_TOKEN", hide_env_values = true)]
         hf_token: Option<String>,
-
-        /// Also download VAD model (silero_vad.onnx)
-        #[arg(long)]
-        vad: bool,
-
-        /// Also download diarization models (segmentation + embedding)
-        #[arg(long)]
-        diarize: bool,
     },
 
     /// List downloaded models
@@ -408,18 +367,6 @@ pub(crate) enum Command {
         #[arg(long, value_parser = parse_positive_i32)]
         speakers: Option<i32>,
 
-        /// Path to speaker segmentation model (pyannote ONNX)
-        #[arg(long, env = "DIARIZE_SEGMENTATION_MODEL")]
-        diarize_segmentation_model: Option<String>,
-
-        /// Path to speaker embedding model (ONNX)
-        #[arg(long, env = "DIARIZE_EMBEDDING_MODEL")]
-        diarize_embedding_model: Option<String>,
-
-        /// Path to Silero VAD model for speech-aware segmentation (avoids mid-word cuts)
-        #[arg(long, env = "VAD_MODEL")]
-        vad_model: Option<String>,
-
         /// S3 bucket used to stage audio for providers that need pre-signed URLs
         #[arg(long, env = "S3_BUCKET")]
         s3_bucket: Option<String>,
@@ -551,5 +498,31 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn retired_sherpa_cli_surface_is_rejected() {
+        for arguments in [
+            vec![
+                "transcribeit",
+                "run",
+                "-i",
+                "audio.wav",
+                "--provider",
+                "sherpa-onnx",
+            ],
+            vec!["transcribeit", "download-model", "--format", "onnx"],
+            vec![
+                "transcribeit",
+                "run",
+                "-i",
+                "audio.wav",
+                "--vad-model",
+                "silero_vad.onnx",
+            ],
+            vec!["transcribeit", "setup", "--component", "sherpa-libs"],
+        ] {
+            assert!(Cli::try_parse_from(arguments).is_err());
+        }
     }
 }

@@ -1,6 +1,6 @@
 # Provider behavior
 
-This project supports eight providers. They share the same input/output surface, but engine type, API shape, and credentials differ.
+This project supports seven providers. They share the same input/output surface, but engine type, API shape, and credentials differ.
 
 ## Remote URL input support
 
@@ -28,32 +28,6 @@ Hosted HTTP result bodies are capped at 64 MiB and error bodies at 1 MiB.
   - or cache alias (`base`, `base.en`, `small`, `small.en`, etc.) resolved under `MODEL_CACHE_DIR`.
 - Transcription happens in-process through `whisper.cpp` (`whisper-rs`).
 - Outputs are produced locally and no external API key is required.
-
-## Sherpa-ONNX (`-p sherpa-onnx`)
-
-- Input audio/video is converted with FFmpeg to 16 kHz mono WAV.
-- The engine **auto-detects model architecture** from the files in the model directory:
-  - **Whisper** -- `encoder.onnx` + `decoder.onnx` + `tokens.txt`
-  - **Qwen3-ASR** -- `conv_frontend.onnx` + `encoder.onnx` + `decoder.onnx` + `tokenizer/`
-  - **Moonshine** -- `preprocess.onnx` + `encode.onnx` + `uncached_decode.onnx` + `cached_decode.onnx` + `tokens.txt`
-  - **SenseVoice** -- `model.onnx` + `tokens.txt`
-- Model loading uses `--model` resolved from:
-  - explicit filesystem path to a model directory
-  - cache alias (`tiny`, `base.en`, `small`, etc.) resolved under `MODEL_CACHE_DIR` as `sherpa-onnx-whisper-<alias>/`
-  - Qwen aliases (`qwen3-asr`, `qwen3-asr-0.6b`) resolved to the managed 0.6B int8 directory
-  - or glob-based partial name matching (e.g., `-m moonshine-base`, `-m sense-voice`) against directories in `MODEL_CACHE_DIR`.
-- The engine prefers `int8` quantized ONNX files when available for lower memory usage.
-- Transcription runs in-process on a dedicated worker thread using the sherpa-onnx C library via FFI.
-- C++ stderr warnings from the sherpa-onnx library are suppressed during inference to keep terminal output clean.
-- The pipeline automatically enables segmentation and caps `--max-segment-secs` at 30. Qwen3-ASR uses a stricter 20-second cap because 29.9-second chunks failed in long-form testing while the 20-second run completed.
-- **Qwen3-ASR limitations:** Sherpa returns transcript text but no timestamps, word timing, speakers, or detected-language metadata. Language is auto-detected internally and `--language` is rejected because the Qwen Sherpa config has no hint field. The manifest therefore marks timing unreliable and does not claim native timing.
-- **VAD-based segmentation:** When `--vad-model` is set (or `VAD_MODEL` env var), Silero VAD is used for speech-aware segmentation instead of FFmpeg `silencedetect`. This detects actual speech boundaries and avoids mid-word cuts. The VAD pipeline pads chunks by 250ms, merges gaps shorter than 200ms, and splits long chunks at low-energy points. This is the recommended segmentation method for sherpa-onnx. When no VAD model is provided, the pipeline falls back to FFmpeg `silencedetect`.
-- **Speaker diarization:** When `--diarize --speakers N` is set along with `--diarize-segmentation-model` and `--diarize-embedding-model`, speaker labels are assigned to each transcript segment after transcription. Labels appear in VTT (`<v Speaker 0>`), SRT (`[Speaker 0]`), and manifest JSON output.
-- **SenseVoice limitation:** emotion and audio event detection tags are stripped by the sherpa-onnx C API and are not available in the output.
-- Segment concurrency is always 1 (sequential processing).
-- No external API key is required.
-- The `sherpa-onnx` feature is opt-in. Build with it using `cargo build --features sherpa-onnx`.
-- Requires `SHERPA_ONNX_LIB_DIR` to be set at build time when the feature is enabled (see [Architecture](architecture.md#build-requirements)).
 
 ## OpenAI-compatible (`-p openai`)
 
@@ -272,23 +246,6 @@ Gemini summary analysis includes:
 - Deepgram does not expose token-cache telemetry through this path, so manifests use `cache.transcription.mode = "none"`.
 
 ## Why providers differ
-
-### Local vs Sherpa-ONNX
-
-Both are local engines that run without network access. They differ in the model format and inference backend:
-
-- **Local** uses GGML models via `whisper.cpp` (`whisper-rs` binding). Supports all Whisper model sizes. Uses FFmpeg `silencedetect` for segmentation.
-- **Sherpa-ONNX** uses ONNX models via the `sherpa-onnx` C library. Supports four model architectures (Whisper, Qwen3-ASR, Moonshine, SenseVoice) with automatic detection. Whisper ONNX supports all sizes except `large-v3`. It auto-segments at 30 seconds, reduced to 20 seconds for Qwen3-ASR. It supports VAD-based segmentation via `--vad-model` for cleaner speech boundaries (recommended) and speaker diarization via `--diarize --speakers N`. The `sherpa-onnx` feature is optional; enable it with `cargo build --features sherpa-onnx`.
-
-### Segmentation: VAD vs FFmpeg silencedetect
-
-| | VAD (Silero) | FFmpeg silencedetect |
-|---|---|---|
-| **Availability** | Requires `sherpa-onnx` feature + `--vad-model` | Always available |
-| **Boundary quality** | Speech-aware; avoids mid-word cuts | Silence-based; may cut mid-word |
-| **Approach** | Detects speech regions, pads, merges, splits at low-energy | Detects silence gaps, splits at midpoints |
-| **Config flags** | `--vad-model`, `--max-segment-secs` | `--silence-threshold`, `--min-silence-duration`, `--max-segment-secs` |
-| **Best for** | Local sherpa-onnx transcription | API providers, or when no VAD model is available |
 
 ### OpenAI vs Azure
 

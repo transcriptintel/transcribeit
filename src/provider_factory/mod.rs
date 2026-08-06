@@ -77,8 +77,6 @@ pub(crate) struct ProviderFactoryArgs<'a> {
 pub(crate) async fn build(args: &ProviderFactoryArgs<'_>) -> Result<ProviderRuntime> {
     match args.provider {
         Provider::Local => local::build_local(args),
-        #[cfg(feature = "sherpa-onnx")]
-        Provider::SherpaOnnx => local::build_sherpa(args),
         Provider::Openai => openai::build_openai(args),
         Provider::Azure => openai::build_azure(args),
         Provider::QwenFiletrans => qwen::build(args).await,

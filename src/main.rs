@@ -5,8 +5,6 @@ mod batch;
 mod cli;
 mod command_dispatch;
 mod credentials;
-#[cfg(feature = "sherpa-onnx")]
-mod diarize;
 mod engines;
 mod input;
 mod models;

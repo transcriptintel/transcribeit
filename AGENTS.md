@@ -54,7 +54,7 @@
 
 - During implementation, run focused tests and validators for the behavior changed, including negative, boundary, cleanup, and concurrency cases where appropriate.
 - Every Rust change finishes with `./scripts/check.sh`, which includes formatting, repository-policy and hook tests, the module-size ratchet, skill and issue-registry validation, all-target tests, and exact strict Clippy.
-- Run `cargo test --all-targets --all-features` and `cargo clippy --all-targets --all-features -- -D warnings` when optional Sherpa code, feature boundaries, bootstrap behavior, or all-feature CI changes.
+- Run focused feature-boundary validation if optional Cargo features are introduced again.
 - Run `cargo test --doc` after public Rust API documentation changes.
 - Run `cargo audit --deny warnings` after dependency or security-sensitive changes.
 - Run `actionlint .github/workflows/*.yml` after workflow changes when `actionlint` is available.

@@ -4,17 +4,12 @@
 
 ### `setup`
 
-Download verified models, VAD/diarization artifacts, and Sherpa shared libraries.
-`--output-dir` is honored for every component, including `sherpa-libs`; the final
-summary prints absolute paths suitable for `.env`. From a source checkout,
-`./scripts/bootstrap-sherpa.sh [INSTALL_ROOT]` bootstraps the native libraries
-before the first `--features sherpa-onnx` build. Use
-`transcribeit setup --component qwen3-asr` to install the pinned Qwen3-ASR 0.6B
-int8 ONNX model into `MODEL_CACHE_DIR`.
+Download the verified default whisper.cpp GGML model. `--output-dir` overrides
+`MODEL_CACHE_DIR`; the final summary prints the reusable absolute model path.
 
 ### `download-model`
 
-Download a Whisper model in GGML or ONNX format.
+Download a verified whisper.cpp GGML model.
 
 ```bash
 transcribeit download-model [OPTIONS]
@@ -23,17 +18,17 @@ transcribeit download-model [OPTIONS]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-s, --model-size` | Model size | `base` |
-| `-f, --format` | Model format: `ggml` or `onnx` | `ggml` |
 | `-o, --output-dir` | Override download directory | `MODEL_CACHE_DIR` |
-| `-t, --hf-token` | Hugging Face token (GGML only) | `HF_TOKEN` env var |
+| `-t, --hf-token` | Hugging Face token | `HF_TOKEN` env var |
 
 Available model sizes: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v3`, `large-v3-turbo`.
 
-GGML models are downloaded from a pinned Hugging Face revision. ONNX models are downloaded from pinned sherpa-onnx GitHub release artifacts. Downloads are checked against embedded byte sizes and SHA-256 digests before installation; extracted model directories are also verified on reuse. Note: `large-v3` is not available in ONNX format.
+Models are downloaded from a pinned Hugging Face revision and checked against
+embedded byte sizes and SHA-256 digests before installation.
 
 ### `list-models`
 
-List downloaded models with file sizes. Shows both `[ggml]` and `[onnx]` models. GGML models appear as `.bin` files with sizes; ONNX models appear as directories with a trailing `/`.
+List downloaded GGML models with file sizes.
 
 ```bash
 transcribeit list-models [OPTIONS]
@@ -56,7 +51,7 @@ transcribeit run [OPTIONS] --input <FILE_OR_PATH_OR_GLOB>
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-i, --input` | Input path, directory, or glob pattern for audio/video files | required |
-| `-p, --provider` | `local`, `sherpa-onnx`, `openai`, `azure`, `qwen-filetrans`, `gemini`, `nvidia-riva`, or `deepgram` | `local` |
+| `-p, --provider` | `local`, `openai`, `azure`, `qwen-filetrans`, `gemini`, `nvidia-riva`, or `deepgram` | `local` |
 
 #### Local provider options (`-p local`)
 
@@ -65,23 +60,6 @@ transcribeit run [OPTIONS] --input <FILE_OR_PATH_OR_GLOB>
 | `-m, --model` | Path to GGML model file or cache alias (`tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v3`, `large-v3-turbo`) | required |
 
 Model aliases auto-resolve from the `MODEL_CACHE_DIR` cache directory (default `.cache`).
-
-#### Sherpa-ONNX provider options (`-p sherpa-onnx`)
-
-| Option | Description | Default |
-|--------|-------------|---------|
-| `-m, --model` | Path to ONNX model directory or partial name (e.g. `tiny`, `base.en`, `qwen3-asr`, `moonshine-base`, `sense-voice`) | required |
-
-The engine auto-detects the model architecture from files in the directory:
-
-- **Whisper** -- `encoder.onnx` + `decoder.onnx` (or int8 variants) + `tokens.txt`
-- **Qwen3-ASR** -- `conv_frontend.onnx` + `encoder.onnx` + `decoder.onnx` (int8 variants supported) + `tokenizer/`
-- **Moonshine** -- `preprocess.onnx` + `encode.onnx` + `uncached_decode.onnx` + `cached_decode.onnx` + `tokens.txt`
-- **SenseVoice** -- `model.onnx` + `tokens.txt`
-
-When an alias like `base.en` is given, the cache is searched for a directory named `sherpa-onnx-whisper-base.en` under `MODEL_CACHE_DIR`. `qwen3-asr` and `qwen3-asr-0.6b` resolve the managed Qwen directory. The resolver also supports glob matching, so partial names like `-m moonshine-base` or `-m sense-voice` will match any directory in the cache containing that string.
-
-Sherpa-ONNX automatically enables segmentation. Existing architectures are capped at 30 seconds; Qwen3-ASR is capped at 20 seconds because the representative long-form run failed on a 29.9-second chunk and completed at the tighter limit. Qwen3-ASR auto-detects language through Sherpa, but this binding does not expose the detected language or accept a language hint, so `--language` is rejected for this model. Its current Sherpa result is text-only: no native timestamps, word timing, or speaker labels.
 
 #### OpenAI provider options
 
@@ -237,13 +215,10 @@ REST providers retry HTTP 429. Idempotent polling/read requests may also retry H
 | `--min-silence-duration` | Minimum silence duration in seconds | `0.8` |
 | `--max-segment-secs` | Maximum segment length in seconds | `600` |
 | `--segment-concurrency` | Max parallel segment requests (API providers only) | `2` |
-| `--vad-model` | Path to Silero VAD ONNX model (`silero_vad.onnx`) for speech-aware segmentation | `VAD_MODEL` env var |
 
-For `openai`, `azure`, and `nvidia-riva`, the CLI measures the actual prepared upload artifact and automatically segments it when it exceeds the conservative 25 MiB threshold. Qwen FileTrans, Gemini, and Deepgram stay whole-file by default to preserve provider semantics and speaker continuity; use `--segment` only when independent chunk requests are intentional. Failed whole-file requests are not automatically resubmitted as segmented jobs. With `sherpa-onnx`, segmentation is always enabled with a maximum segment length of 30 seconds, reduced to 20 seconds for Qwen3-ASR.
+For `openai`, `azure`, and `nvidia-riva`, the CLI measures the actual prepared upload artifact and automatically segments it when it exceeds the conservative 25 MiB threshold. Qwen FileTrans, Gemini, and Deepgram stay whole-file by default to preserve provider semantics and speaker continuity; use `--segment` only when independent chunk requests are intentional. Failed whole-file requests are not automatically resubmitted as segmented jobs.
 
 Duration options must be finite and at least 1 ms; concurrency and speaker counts must be strictly positive. Every produced segment is bounded by `--max-segment-secs`, including a short tail after a hard split.
-
-When `--vad-model` is set and segmentation is needed, VAD-based segmentation is used instead of FFmpeg `silencedetect`. VAD detects actual speech boundaries using Silero VAD, avoiding mid-word cuts. It pads chunks by 250ms, merges gaps shorter than 200ms, and splits long chunks at low-energy points. This requires the `sherpa-onnx` feature to be enabled. When `--vad-model` is not set, the original FFmpeg silence-based segmentation is used as a fallback.
 
 #### Speaker diarization options
 
@@ -251,10 +226,6 @@ When `--vad-model` is set and segmentation is needed, VAD-based segmentation is 
 |--------|-------------|---------|
 | `--diarize` | Enable speaker diarization | disabled |
 | `--speakers` | Speaker count or provider-specific maximum speaker hint | none |
-| `--diarize-segmentation-model` | Path to pyannote segmentation ONNX model | `DIARIZE_SEGMENTATION_MODEL` env var |
-| `--diarize-embedding-model` | Path to speaker embedding ONNX model | `DIARIZE_EMBEDDING_MODEL` env var |
-
-For local post-processing diarization, use `--diarize --speakers N`. Both `--diarize-segmentation-model` and `--diarize-embedding-model` are required because the current Sherpa diarizer needs a fixed speaker count. Speaker labels appear in VTT output as `<v Speaker 0>`, in SRT output as `[Speaker 0]`, and in manifest JSON as a `"speaker"` field on each segment. Requires the `sherpa-onnx` feature.
 
 For OpenAI, `--diarize` uses provider-native diarization through `gpt-4o-transcribe-diarize` unless a different `--remote-model` is explicitly selected.
 
@@ -262,7 +233,7 @@ For NVIDIA Riva, use `--diarize` when the exact speaker count is unknown. The pr
 
 For Deepgram, `--diarize` enables provider-native diarization with `diarize_model=latest`. `--speakers N` is treated as a request to enable diarization, but no fixed speaker count is sent.
 
-For Gemini, speaker labels are model-generated structured output and may be present even without local diarization. For Qwen file transcription, Azure, local Whisper, and non-diarizing OpenAI models, `--diarize` requires the local Sherpa diarizer.
+For Gemini, speaker labels are model-generated structured output and may be present even without an explicit diarization flag. Qwen file transcription, Azure, local Whisper, and non-diarizing OpenAI models do not support `--diarize`; the CLI rejects those combinations before processing input.
 
 ## Output behavior
 
@@ -289,7 +260,6 @@ When `--input` resolves to multiple files (directory or glob), `--output-dir` is
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SHERPA_ONNX_LIB_DIR` | Path to sherpa-onnx shared libraries (required when building with `--features sherpa-onnx`) | none |
 | `MODEL_CACHE_DIR` | Directory for downloaded models | `.cache` |
 | `HF_TOKEN` | Hugging Face API token (optional) | none |
 | `OPENAI_API_KEY` | OpenAI API key | none |
@@ -334,9 +304,6 @@ When `--input` resolves to multiple files (directory or glob), `--output-dir` is
 | `S3_PREFIX` | S3 object prefix for remote-provider uploads | Provider-specific if unset: `transcribeit/qwen-filetrans` for Qwen, `transcribeit/gemini` for Gemini URL mode, `transcribeit/deepgram` for Deepgram URL mode |
 | `S3_PRESIGN_EXPIRES_SECS` | S3 pre-signed URL expiry in seconds | `3600` |
 | `S3_FORCE_PATH_STYLE` | Force path-style URLs for S3-compatible storage | `false` |
-| `VAD_MODEL` | Path to Silero VAD ONNX model for speech-aware segmentation | none |
-| `DIARIZE_SEGMENTATION_MODEL` | Path to pyannote segmentation ONNX model for speaker diarization | none |
-| `DIARIZE_EMBEDDING_MODEL` | Path to speaker embedding ONNX model for speaker diarization | none |
 | `TRANSCRIBEIT_MAX_RETRIES` | Maximum 429 retries | `5` |
 | `TRANSCRIBEIT_REQUEST_TIMEOUT_SECS` | API request timeout in seconds | `120` |
 | `TRANSCRIBEIT_RETRY_WAIT_BASE_SECS` | Base retry wait time in seconds | `10` |
@@ -353,14 +320,7 @@ All variables can be set in a `.env` file in the project root. Keep that file ow
 transcribeit download-model -s base
 transcribeit download-model -s small.en
 
-# Download ONNX models (for sherpa-onnx provider)
-transcribeit download-model -f onnx -s base.en
-transcribeit download-model -f onnx -s tiny
-
-# Install the verified Qwen3-ASR 0.6B int8 ONNX model
-transcribeit setup --component qwen3-asr
-
-# List all downloaded models (shows [ggml] and [onnx] tags)
+# List downloaded models
 transcribeit list-models
 
 # Process a single file with local whisper.cpp (using cache alias)
@@ -368,19 +328,6 @@ transcribeit run -i recording.mp3 -m base
 # Process a single file (explicit path)
 transcribeit run -i recording.mp3 -m .cache/ggml-base.bin
 transcribeit run -i meeting.mp4 -m .cache/ggml-small.en.bin
-
-# Process with sherpa-onnx Whisper (auto-segments at 30s)
-transcribeit run -p sherpa-onnx -i recording.mp3 -m base.en
-transcribeit run -p sherpa-onnx -i lecture.mp4 -m tiny -f vtt -o ./output
-
-# Process with sherpa-onnx Moonshine (auto-detected from model files)
-transcribeit run -p sherpa-onnx -i recording.mp3 -m moonshine-base
-
-# Process with sherpa-onnx SenseVoice (auto-detected from model files)
-transcribeit run -p sherpa-onnx -i recording.mp3 -m sense-voice
-
-# Process with native Qwen3-ASR (text output; automatic 20s maximum)
-transcribeit run -p sherpa-onnx -i recording.mp3 -m qwen3-asr -f text -o ./output
 
 # Process a directory
 transcribeit run --input samples/ --model base --output-dir ./output
@@ -400,28 +347,6 @@ transcribeit run -i lecture.mp4 -m base -f srt -o ./output
 # Tune segmentation for noisy audio
 transcribeit run -i noisy.wav -m .cache/ggml-base.bin \
   --segment --silence-threshold -30 --min-silence-duration 0.5
-
-# VAD-based segmentation (avoids mid-word cuts)
-transcribeit run -p sherpa-onnx -i lecture.mp4 -m base.en \
-  --vad-model /path/to/silero_vad.onnx -f vtt -o ./output
-
-# VAD with env var (set VAD_MODEL in .env)
-VAD_MODEL=/path/to/silero_vad.onnx transcribeit run -p sherpa-onnx -i recording.mp3 -m base.en
-
-# Speaker diarization (2 speakers)
-transcribeit run -p sherpa-onnx -i meeting.mp4 -m base.en \
-  --diarize --speakers 2 \
-  --diarize-segmentation-model /path/to/segmentation.onnx \
-  --diarize-embedding-model /path/to/embedding.onnx \
-  -f vtt -o ./output
-
-# VAD + speaker diarization combined
-transcribeit run -p sherpa-onnx -i interview.wav -m base.en \
-  --vad-model /path/to/silero_vad.onnx \
-  --diarize --speakers 2 \
-  --diarize-segmentation-model /path/to/segmentation.onnx \
-  --diarize-embedding-model /path/to/embedding.onnx \
-  -f srt -o ./output
 
 # OpenAI API (reads OPENAI_API_KEY from the environment or private .env file)
 transcribeit run -p openai -i recording.mp3
@@ -485,7 +410,6 @@ transcribeit run -p deepgram --remote-model nova-3-medical \
 ### Provider behavior
 
 - **Local** (`-p local`) runs whisper.cpp in-process using GGML models.
-- **Sherpa-ONNX** (`-p sherpa-onnx`) runs sherpa-onnx in-process. Auto-detects Whisper, Qwen3-ASR, Moonshine, and SenseVoice models from directory contents. Always auto-segments at 30 seconds, or 20 seconds for Qwen3-ASR.
 - **OpenAI-compatible** (`-p openai`) uses `--remote-model` and calls `POST {base-url}/v1/audio/transcriptions`.
   `gpt-4o-transcribe-diarize` is handled specially: the request includes `response_format=diarized_json` and `chunking_strategy=auto`, and response segments are parsed defensively so unknown or missing fields do not fail the run.
 - **Azure** (`-p azure`) uses `--azure-deployment` and calls:

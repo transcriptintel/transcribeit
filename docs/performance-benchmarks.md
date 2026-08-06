@@ -11,8 +11,8 @@ Capture these details for every benchmark run:
 - OS and kernel
 - `rustc` version
 - Provider and exact command used
-- Model used (for local/sherpa-onnx) or deployment/model (for APIs)
-- Model format (GGML or ONNX) for local providers
+- Model used for local inference or deployment/model for hosted APIs
+- GGML artifact identity for local whisper.cpp runs
 - Input file duration and codec/container
 
 ## Representative quality corpus
@@ -44,6 +44,10 @@ corpus. The transcript-free record is
 It contains 110 attempts across 11 provider/model paths: three runs on each
 short fixture and one run on the 2,423.68-second AMI meeting. Of those attempts,
 109 produced transcripts.
+
+Sherpa-ONNX rows in dated tables are preserved historical evidence. The
+integration was retired on 2026-08-06; do not use those commands as current
+runtime guidance. See the [retirement note](retired/sherpa-onnx.md).
 
 | Provider / model | Short macro WER | AMI WER | AMI wall / RTF | AMI timing or speakers |
 |---|---:|---:|---:|---|
@@ -89,15 +93,6 @@ time transcribeit run -i <input_file> -m base -f text -o ./output
 time transcribeit run -i <input_file> -m small -f text -o ./output
 time transcribeit run -i <input_file> -m small.en -f text -o ./output
 
-# sherpa-onnx Whisper (ONNX) — auto-segments at 30s
-time transcribeit run -p sherpa-onnx -i <input_file> -m base -f text -o ./output
-time transcribeit run -p sherpa-onnx -i <input_file> -m small.en -f text -o ./output
-
-# sherpa-onnx Moonshine
-time transcribeit run -p sherpa-onnx -i <input_file> -m moonshine-base -f text -o ./output
-
-# sherpa-onnx SenseVoice
-time transcribeit run -p sherpa-onnx -i <input_file> -m sense-voice -f text -o ./output
 ```
 
 Record:
@@ -109,7 +104,6 @@ Record:
 
 ```bash
 time transcribeit run -p local -i <input_file> -m base -f text -o ./output
-time transcribeit run -p sherpa-onnx -i <input_file> -m base -f text -o ./output
 time transcribeit run -p openai --remote-model gpt-transcribe -i <input_file> -f text -o ./output
 time transcribeit run -p openai --remote-model whisper-1 -i <input_file> -f text -o ./output
 time transcribeit run -p azure -i <input_file> -f text -o ./output
@@ -132,18 +126,13 @@ Record:
 time transcribeit run -p openai -i <long_file> --segment --segment-concurrency 2 -f text -o ./output
 time transcribeit run -p openai -i <long_file> --segment --segment-concurrency 1 --max-segment-secs 300 -f text -o ./output
 
-# sherpa-onnx with FFmpeg silencedetect (30s max; Qwen3-ASR uses 20s)
-time transcribeit run -p sherpa-onnx -i <long_file> -m base -f text -o ./output
-
-# sherpa-onnx with VAD-based segmentation
-time transcribeit run -p sherpa-onnx -i <long_file> -m base --vad-model /path/to/silero_vad.onnx -f text -o ./output
 ```
 
 Record:
 - total segment count
 - max queue wait
 - request-level retry counts
-- segmentation method used (VAD vs silencedetect)
+- silence threshold, minimum silence duration, and maximum segment duration
 - transcript quality at segment boundaries (check for mid-word cuts)
 
 ### 4. I/O + conversion overhead
@@ -498,17 +487,6 @@ historical observations rather than a regression baseline.
 - SenseVoice 2024 offers excellent speed with good quality. **Avoid the SenseVoice 2025 model** -- it is a regression in quality.
 - Moonshine provides a compact alternative but is slower than Whisper at the same size tier.
 - For highest quality where speed is not critical, use `large-v3-turbo` with local whisper.cpp.
-
-### VAD vs FFmpeg silencedetect segmentation
-
-VAD-based segmentation (Silero VAD via `--vad-model`) and FFmpeg `silencedetect` produce different segment boundaries. Key differences to observe when benchmarking:
-
-- **Segment boundary quality:** VAD detects speech regions directly, so segment boundaries align with actual speech. FFmpeg `silencedetect` splits at silence midpoints, which can cut mid-word if silence gaps are short or thresholds are mistuned.
-- **Segment count:** VAD typically produces more segments (one per speech region after merging) while `silencedetect` produces fewer, longer segments based on silence gaps.
-- **Processing overhead:** VAD runs on the audio samples in-memory (fast, no subprocess). FFmpeg `silencedetect` runs as a subprocess and requires parsing its stderr output.
-- **Transcript quality:** VAD-segmented transcripts tend to have fewer artifacts at segment boundaries because chunks start and end at speech boundaries with 250ms padding, rather than at arbitrary silence midpoints.
-
-When comparing, use the same audio file and model to isolate the effect of the segmentation method on overall transcript quality and timing.
 
 ## CI/automatable baseline
 

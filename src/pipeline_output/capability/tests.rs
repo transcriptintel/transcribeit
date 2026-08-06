@@ -35,12 +35,7 @@ fn test_config(provider: &str) -> PipelineConfig {
         segment_concurrency: 1,
         auto_split_max_bytes: None,
         upload_as_mp3: false,
-        vad_model: None,
-        diarize: false,
         analysis: AnalysisConfig::default(),
-        speakers: None,
-        diarize_segmentation_model: None,
-        diarize_embedding_model: None,
         provider_name: provider.to_string(),
         model_name: "test-model".to_string(),
     }

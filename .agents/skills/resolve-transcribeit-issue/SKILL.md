@@ -27,7 +27,7 @@ Do not broaden the issue into unrelated cleanup. Add a separate `TI-NNN` candida
 
 1. Run focused tests while iterating.
 2. For Rust changes, finish with `$check-transcribeit`'s default gate.
-3. Add all-feature validation for Sherpa, feature, native bootstrap, or all-feature CI work.
+3. Add focused feature-boundary validation if optional Cargo features are introduced or changed.
 4. Add live-provider probes only when the issue's outcome depends on current remote behavior. Reuse configured keys without exposing them and record exact model/request compatibility.
 5. Validate affected docs, tasks, workflows, benchmark artifacts, and skills with their focused validators.
 

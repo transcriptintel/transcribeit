@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "exception_budget": 10,
+  "exception_budget": 8,
   "exceptions": [
     {
       "path": "src/cli.rs",
-      "max_lines": 555,
+      "max_lines": 528,
       "rationale": "Legacy command schema and validation boundary; extract provider option groups before adding another command family."
     },
     {
@@ -36,16 +36,6 @@
       "path": "src/engines/openai_api.rs",
       "max_lines": 351,
       "rationale": "One OpenAI-compatible multipart request and response-format negotiation boundary; extract parsing before another compatibility branch."
-    },
-    {
-      "path": "src/models.rs",
-      "max_lines": 343,
-      "rationale": "One pinned model catalog and alias-resolution boundary; split artifact descriptors from selection before adding another artifact family."
-    },
-    {
-      "path": "src/pipeline.rs",
-      "max_lines": 420,
-      "rationale": "Legacy end-to-end media pipeline coordinator; extract remaining preparation and analysis orchestration before adding pipeline phases."
     },
     {
       "path": "src/storage/s3.rs",

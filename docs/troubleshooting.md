@@ -16,112 +16,16 @@ Fix:
   - `ffmpeg -version`
   - `ffprobe -version`
 
-### `SHERPA_ONNX_LIB_DIR` not set / dylib not found
+### A retired Sherpa/ONNX option is rejected
 
-Symptoms:
-- Build fails with linker errors referencing `sherpa-onnx` symbols
-- Runtime error: `dyld: Library not loaded` (macOS) or `error while loading shared libraries` (Linux)
+The Sherpa-ONNX provider, ONNX model installer, Silero VAD path, and local
+post-processing diarization were retired in TI-010. Their former CLI options and
+environment variables are no longer accepted. See the
+[retirement note](retired/sherpa-onnx.md) for migration choices and preserved
+benchmark evidence.
 
-Fix:
-- Set `SHERPA_ONNX_LIB_DIR` to the directory containing the sherpa-onnx shared libraries. This can be placed in a `.env` file in the project root or exported in your shell.
-
-```bash
-# In .env file
-SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
-
-# Or export directly
-export SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
-cargo build --release
-```
-
-- The `build.rs` script reads this variable, adds it to the linker search path, and embeds an `rpath` so the binary can find the dylibs at runtime.
-- If you installed sherpa-onnx via a package manager, the lib directory is typically something like `/usr/local/lib` or `/opt/homebrew/lib`.
-- Verify the directory contains files like `libsherpa-onnx-core.dylib` (macOS) or `libsherpa-onnx-core.so` (Linux).
-
-### ONNX model directory invalid
-
-Symptoms:
-- `ONNX model not found for '<name>'`
-- `encoder.onnx (or encoder.int8.onnx) not found in ...`
-- `Could not detect model architecture in ...`
-- `tokens.txt not found in ...`
-
-Fix:
-- The sherpa-onnx engine auto-detects the model architecture. Ensure the model directory contains the correct files for one of:
-  - **Whisper:** `encoder.onnx` + `decoder.onnx` (or int8 variants) + `tokens.txt`
-  - **Qwen3-ASR:** `conv_frontend.onnx` + `encoder.onnx` + `decoder.onnx` (or int8 variants) + `tokenizer/`
-  - **Moonshine:** `preprocess.onnx` + `encode.onnx` + `uncached_decode.onnx` + `cached_decode.onnx` + `tokens.txt`
-  - **SenseVoice:** `model.onnx` + `tokens.txt`
-- Download Whisper ONNX models with: `transcribeit download-model -f onnx -s <size>`
-- Download the pinned Qwen3-ASR model with: `transcribeit setup --component qwen3-asr`
-- For Moonshine and SenseVoice models, download from the [sherpa-onnx model releases](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models) and extract into `MODEL_CACHE_DIR`.
-- Verify with: `transcribeit list-models` (ONNX models appear with an `[onnx]` tag)
-- The model resolver supports partial name matching (e.g., `-m moonshine-base`, `-m sense-voice`).
-- Qwen3-ASR does not accept `--language`; omit it and allow model auto-detection.
-
-### VAD model not found or fails to load
-
-Symptoms:
-- `Failed to create VAD (check vad_model_path)`
-- `No such file or directory` when using `--vad-model`
-
-Fix:
-- Verify that the path provided to `--vad-model` (or the `VAD_MODEL` env var) points to a valid `silero_vad.onnx` file.
-- Download the Silero VAD model from the [sherpa-onnx releases](https://github.com/k2-fsa/sherpa-onnx/releases). Look for `silero_vad.onnx` in the VAD model archives.
-- Ensure the opt-in `sherpa-onnx` feature is enabled. VAD-based segmentation is not available in the default build; build with `cargo build --release --features sherpa-onnx`.
-- The VAD model path can be set in your `.env` file:
-
-```bash
-# .env
-VAD_MODEL=/path/to/silero_vad.onnx
-```
-
-If you do not have a VAD model, omit `--vad-model` and the pipeline will fall back to FFmpeg `silencedetect` for segmentation.
-
-### Speaker diarization model issues
-
-Symptoms:
-- `Failed to create speaker diarization engine`
-- `--speakers is required for local diarization because the current Sherpa diarizer requires a fixed cluster count`
-- `--diarize-segmentation-model is required when --diarize is set`
-- `--diarize-embedding-model is required when --diarize is set`
-- `--diarize for provider 'qwen-filetrans' requires local Sherpa diarization`
-
-Fix:
-- When using local post-processing diarization, pass `--diarize --speakers N`; both `--diarize-segmentation-model` and `--diarize-embedding-model` are required.
-- When using NVIDIA Riva, `--diarize` can be used without `--speakers`; the CLI sends a default max-speaker hint of 4.
-- When using Deepgram, `--diarize` enables `diarize_model=latest`; `--speakers N` is treated only as a request to enable diarization because Deepgram does not accept a fixed speaker-count hint here.
-- If Deepgram URL mode fails before transcription, confirm `--deepgram-use-presigned-url` has valid `S3_*` or AWS-compatible credentials and that Deepgram can fetch the generated pre-signed URL before it expires.
-- When using OpenAI, `--diarize` selects `gpt-4o-transcribe-diarize` by default. If you explicitly choose another OpenAI model, local Sherpa diarization is required.
-- Qwen file transcription and Azure do not currently provide native diarization through this CLI; use local Sherpa diarization for those providers.
-- Ensure both model paths point to valid ONNX files:
-  - **Segmentation model:** a pyannote speaker segmentation ONNX model.
-  - **Embedding model:** a speaker embedding extraction ONNX model.
-- Download compatible models from the [sherpa-onnx speaker diarization releases](https://github.com/k2-fsa/sherpa-onnx/releases).
-- The model paths can be set via environment variables in your `.env` file:
-
-```bash
-# .env
-DIARIZE_SEGMENTATION_MODEL=/path/to/segmentation.onnx
-DIARIZE_EMBEDDING_MODEL=/path/to/embedding.onnx
-```
-
-- Requires the `sherpa-onnx` feature to be enabled.
-- The `--speakers` value must be greater than 0.
-
-### Building without sherpa-onnx
-
-If you do not need the sherpa-onnx provider, use the default build. It does not require the shared libraries:
-
-```bash
-cargo build --release
-```
-
-To enable the sherpa-onnx provider, install the shared libraries and build with:
-
-```bash
-cargo build --release --features sherpa-onnx
-```
+For diarization, use a provider with native or model-generated speaker labels:
+Deepgram, Gemini, NVIDIA Riva, or OpenAI `gpt-4o-transcribe-diarize`.
 
 ### Model download fails
 
@@ -134,16 +38,13 @@ Fix:
 - Verify model size name (`base`, `small.en`, `large-v3`, etc.).
 - Ensure network connectivity and DNS resolution.
 - For GGML downloads: check `HF_TOKEN` if Hugging Face is rate-limiting your requests.
-- For ONNX downloads: note that `large-v3` is not available in ONNX format.
 - Use `transcribeit list-models` to confirm successful downloads in `MODEL_CACHE_DIR`.
 - If an integrity check fails, remove only the named managed artifact and run `download-model` or `setup` again. Do not bypass the size/SHA-256 check.
-- An old extracted model directory without `.transcribeit-tree.sha256` must be removed and reinstalled once so future reuse can be verified.
 
 Example:
 
 ```bash
 transcribeit download-model -s base
-transcribeit download-model -f onnx -s base.en
 transcribeit list-models
 ```
 
@@ -240,7 +141,7 @@ Symptoms:
 Explanation:
 - `cache` is telemetry for most providers. Gemini also supports explicit cached-content integration through `--gemini-explicit-cache`.
 - Gemini and OpenAI/Azure cache hits depend on provider-side behavior and prompt length. Short audio/transcript prompts often do not produce cache hits.
-- Qwen file transcription, NVIDIA Riva, local Whisper, and Sherpa-ONNX do not expose token-cache telemetry through the current transcription paths, so their manifest cache mode is `none`.
+- Qwen file transcription, NVIDIA Riva, and local Whisper do not expose token-cache telemetry through the current transcription paths, so their manifest cache mode is `none`.
 
 ### Gemini file cache reuses uploads but token cache still misses
 
@@ -326,34 +227,3 @@ Fix:
   - raise (less negative) `--silence-threshold` for more aggressive splits
   - lower `--min-silence-duration` for noisy recordings
 - Try the same file with a different model (for example `base.en`, `small`, `small.en`).
-
-### SenseVoice emotion/event tags missing
-
-SenseVoice models are capable of detecting emotions and audio events (laughter, applause, music, etc.), but the sherpa-onnx C API strips these tags from the output. Only the transcription text is available. This is a limitation of the sherpa-onnx C-level bindings, not of transcribeit.
-
-Additionally, the SenseVoice 2025 model is a quality regression compared to the 2024 version. Prefer using the 2024 SenseVoice model for best results.
-
-### Binary fails with "Library not loaded: libsherpa-onnx-c-api.dylib"
-
-Symptoms:
-- `dyld: Library not loaded: @rpath/libsherpa-onnx-c-api.dylib`
-- Binary crashes immediately on startup
-
-Fix: The binary expects sherpa-onnx shared libraries in a `lib/` directory next to itself:
-
-```
-transcribeit              # binary
-lib/                      # create this directory
-  libsherpa-onnx-c-api.dylib
-  libonnxruntime.dylib
-  libonnxruntime.1.23.2.dylib
-```
-
-Copy the dylibs from `vendor/sherpa-onnx-*/lib/` or download them with `transcribeit setup -c sherpa-libs`. On macOS, setup verifies the ONNX Runtime dylib signatures and applies an ad-hoc signature when the official archive's embedded signature is invalid.
-
-If you see a hardcoded path from another machine (e.g., `/Users/someone/...`), the binary was built with an old `build.rs`. Rebuild with the latest code — the portable `@executable_path/lib` rpath is now used.
-
-To avoid this dependency entirely, use the default build:
-```bash
-cargo build --release
-```

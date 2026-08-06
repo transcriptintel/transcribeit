@@ -6,6 +6,4 @@ pub mod nvidia_riva;
 pub mod openai_api;
 pub mod qwen_filetrans;
 pub mod rate_limit;
-#[cfg(feature = "sherpa-onnx")]
-pub mod sherpa_onnx;
 pub mod whisper_local;

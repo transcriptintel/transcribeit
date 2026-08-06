@@ -1,6 +1,6 @@
 ---
 name: check-transcribeit
-description: Validate TranscribeIt Rust changes, repository policy, documentation, workflows, skills, benchmarks, optional Sherpa features, and live provider smoke checks. Use when the user asks to check, test, lint, verify, audit, diagnose a build, or confirm that TranscribeIt work is ready. Do not modify failures unless the user also asks for fixes.
+description: Validate TranscribeIt Rust changes, repository policy, documentation, workflows, skills, benchmarks, and live provider smoke checks. Use when the user asks to check, test, lint, verify, audit, diagnose a build, or confirm that TranscribeIt work is ready. Do not modify failures unless the user also asks for fixes.
 ---
 
 # Check TranscribeIt
@@ -11,7 +11,7 @@ Run from the repository root. Inspect the worktree first and preserve unrelated 
 
 - For a diagnosis-only request, reproduce and explain the failure without editing.
 - During Rust implementation, run focused tests for the changed behavior. Finish every Rust change with `./scripts/check.sh`.
-- Add the all-feature gate when Sherpa, feature boundaries, native-library setup, or all-feature CI changes.
+- Add focused feature-boundary validation if optional Cargo features are introduced again.
 - For docs, Taskfile, scripts, workflows, skills, or benchmark artifacts without Rust changes, run only the relevant validators below.
 - Treat live provider requests as a separate evidence class. Reuse configured keys, but never print secrets, signed URLs, response bodies, transcript text, or request identifiers.
 
@@ -37,7 +37,7 @@ Stop on failure and report the failing command and actionable output.
 
 ## Additional gates
 
-- All features: `cargo test --all-targets --all-features` and `cargo clippy --all-targets --all-features -- -D warnings`.
+- Optional features, when present: test and lint their relevant feature combinations explicitly.
 - Public Rust docs: `cargo test --doc`.
 - Dependencies or security-sensitive code: `cargo audit --deny warnings`.
 - GitHub workflows: `actionlint .github/workflows/*.yml` when available.
@@ -50,8 +50,8 @@ Stop on failure and report the failing command and actionable output.
 
 ## Runtime dependencies
 
-FFmpeg-dependent tests are required, not optional. Confirm `ffmpeg` and `ffprobe` are installed rather than interpreting a missing binary as a pass. For Sherpa-enabled validation, bootstrap the pinned native libraries into an explicit temporary root and set the emitted absolute library path.
+FFmpeg-dependent tests are required, not optional. Confirm `ffmpeg` and `ffprobe` are installed rather than interpreting a missing binary as a pass.
 
 ## Report
 
-Report each relevant gate as pass, fail, skipped, or not applicable. Separate focused, default, all-feature, live-provider, and deployed evidence. Include test counts when available, and never describe a skipped provider or native-library check as passed.
+Report each relevant gate as pass, fail, skipped, or not applicable. Separate focused, default, feature-specific, live-provider, and deployed evidence. Include test counts when available, and never describe a skipped provider check as passed.

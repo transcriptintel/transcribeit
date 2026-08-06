@@ -6,7 +6,7 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
 `bun run scripts/issues_registry.ts generate` and verify it with
 `bun run scripts/issues_registry.ts check`.
 
-- Total findings: 9
+- Total findings: 10
 - Active findings: 3
 
 | ID | Priority | Status | Area | Summary |
@@ -20,6 +20,7 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
 | [TI-007](./TI-007.md) | P2 | Resolved | Benchmark reproducibility | Rebaseline the hosted and local provider comparison |
 | [TI-008](./TI-008.md) | P3 | Open | Benchmark tooling | Add an automation-friendly benchmark harness |
 | [TI-009](./TI-009.md) | P2 | Open | Provider operations | Run and record the live provider smoke matrix |
+| [TI-010](./TI-010.md) | P2 | Resolved | Local inference | Retire the unused Sherpa-ONNX integration |
 
 ## Working agreement
 

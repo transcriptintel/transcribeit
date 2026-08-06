@@ -18,17 +18,13 @@ src/
 ├── pipeline.rs            # Processing orchestration
 ├── pipeline_merge.rs      # Segmented transcript/timestamp/metadata merging
 ├── pipeline_output/       # Output coordination, manifest, capability, quality, cache
-├── artifacts.rs           # Verified and atomic managed-artifact installation
-├── setup.rs               # Model, VAD, diarization, and native-library setup
+├── artifacts.rs           # Verified managed-model downloads
+├── setup.rs               # Default GGML model setup
 ├── analysis/              # Provider-neutral post-transcription analysis
 ├── audio/
 │   ├── extract.rs         # FFmpeg audio conversion
 │   ├── segment.rs         # Silence detection and audio splitting
-│   ├── vad.rs             # VAD-based speech segmentation (Silero VAD via sherpa-onnx)
 │   └── wav.rs             # WAV reading and encoding (shared)
-├── diarize/
-│   ├── mod.rs             # Speaker diarization engine and speaker assignment
-│   └── ffi.rs             # Raw C FFI bindings for sherpa-onnx speaker diarization
 ├── output/
 │   ├── vtt.rs             # WebVTT subtitle writer (supports <v Speaker N> tags)
 │   ├── srt.rs             # SRT subtitle writer (supports [Speaker N] labels)
@@ -37,7 +33,6 @@ src/
 │   └── s3.rs              # S3/R2 upload, presigning, and cleanup
 └── engines/
     ├── whisper_local.rs   # Local whisper.cpp via whisper-rs
-    ├── sherpa_onnx.rs     # Local Whisper, Qwen3-ASR, Moonshine, and SenseVoice
     ├── openai_api.rs      # OpenAI-compatible REST API
     ├── azure_openai.rs    # Azure OpenAI REST API
     ├── gemini.rs          # Gemini provider and submodules
@@ -69,7 +64,6 @@ pub trait Transcriber: Send + Sync {
 ```
 
 - **Local engine** (`whisper_local`) uses `transcribe()` — it needs decoded samples for whisper.cpp.
-- **Sherpa-ONNX engine** (`sherpa_onnx`) uses `transcribe()` — it needs decoded samples for the ONNX runtime.
 - **OpenAI/Azure API engines** override `transcribe_path()` to upload files directly via multipart, and `transcribe_wav()` to upload in-memory bytes — avoiding the decode→re-encode round-trip.
 - **Qwen file transcription** overrides `transcribe_path()` to upload prepared audio to S3-compatible storage, generate a pre-signed URL, and submit that URL to DashScope.
 - **Gemini** overrides `transcribe_path()` to upload prepared audio through Gemini Files API and call streamed `streamGenerateContent` with structured JSON output. In signed URL mode, it stages the prepared MP3 in S3-compatible storage and sends the pre-signed URL as Gemini `file_uri` instead.
@@ -84,7 +78,7 @@ The `pipeline.rs` module orchestrates the full flow:
 Input file (any format)
   │
   ├─ Create one canonical 16 kHz mono WAV when conversion or normalization is needed
-  ├─ Duration, segmentation, VAD, and local diarization all use the canonical WAV
+  ├─ Duration and segmentation use the canonical WAV
   ├─ Encode one provider upload artifact from that WAV when MP3 is required
   ├─ Hosted Riva and Deepgram use the canonical WAV for recognition
   │
@@ -93,29 +87,19 @@ Input file (any format)
   │
   ├─ Should segment?
   │   ├─ --segment flag explicitly set
-  │   ├─ Auto: OpenAI/Azure/NVIDIA Riva + actual prepared upload > 25 MiB
-  │   └─ Auto: sherpa-onnx provider (always segments; max 30s per chunk)
+  │   └─ Auto: OpenAI/Azure/NVIDIA Riva + actual prepared upload > 25 MiB
   │
   ├─ If segmenting:
-  │   ├─ VAD path (when --vad-model is set and sherpa-onnx feature is enabled):
-  │   │   ├─ read_wav_bytes() → f32 PCM samples
-  │   │   ├─ vad_segment(): detect speech → pad 250ms → merge gaps <200ms → split long chunks at low-energy points
-  │   │   ├─ Extract chunk samples directly from memory
-  │   │   └─ Transcribe each chunk, offset segment and word timestamps
-  │   ├─ FFmpeg fallback (no VAD model, or sherpa-onnx feature disabled):
-  │   │   ├─ detect_silence() via FFmpeg silencedetect filter
-  │   │   ├─ compute_segments() at silence midpoints
-  │   │   ├─ split_audio() into temp WAV files
-  │   │   └─ Transcribe each segment, offset segment/word timestamps, preserve per-chunk metadata
+  │   ├─ detect_silence() via FFmpeg silencedetect filter
+  │   ├─ compute_segments() at silence midpoints
+  │   ├─ split_audio() into temp WAV files
+  │   └─ Transcribe each segment, offset segment/word timestamps, preserve per-chunk metadata
   │
   ├─ If not segmenting:
   │   ├─ Local: read_wav() → transcribe() directly
   │   └─ API: transcribe_path() with prepared file or staged pre-signed URL
   │
-  ├─ Speaker diarization? (when --diarize or --speakers N is set)
-  │   ├─ read audio samples for diarization
-  │   ├─ Diarizer.diarize() → speaker-labeled time spans
-  │   └─ assign_speakers() overlays speaker labels onto transcript segments
+  ├─ Provider-native or model-generated speaker labels remain on transcript segments
   │
   ├─ Persist transcription output before optional analysis:
       ├─ Text to stdout or `<input_stem>.txt`
@@ -153,7 +137,7 @@ Provider token-cache signals are normalized into `cache`:
 
 - Gemini maps `usageMetadata.cachedContentTokenCount` and `usageMetadata.cacheTokensDetails`.
 - OpenAI-compatible and Azure providers map `usage.prompt_tokens_details.cached_tokens` or `usage.input_tokens_details.cached_tokens` when a transcription endpoint returns `usage`.
-- Qwen file transcription, NVIDIA Riva, local Whisper, and Sherpa-ONNX currently report `mode: "none"` because they do not expose token-cache telemetry through their transcription paths.
+- Qwen file transcription, NVIDIA Riva, and local Whisper currently report `mode: "none"` because they do not expose token-cache telemetry through their transcription paths.
 
 This is observability plus provider integration. The Gemini file cache reuses Files API uploads, and `--gemini-explicit-cache` creates/reuses Gemini `cachedContent` objects so provider token-cache hits can be deterministic when Gemini accepts the cache.
 
@@ -274,38 +258,6 @@ artifacts intact:
 
 The separation keeps transcript generation focused on ASR and allows future providers to implement the same `TranscriptAnalyzer` shape without changing transcript output formats.
 
-### Sherpa-ONNX (`sherpa_onnx.rs`)
-
-Local inference using [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) with automatic model architecture detection. Uses a **dedicated worker thread pattern**: the `OfflineRecognizer` is created on a plain `std::thread` (not on the Tokio runtime) and stays there for its entire lifetime. Transcription requests are sent to the thread via an `mpsc` channel and results come back through `tokio::sync::oneshot` channels. This design avoids:
-
-- Blocking the async runtime during inference.
-- Thread-safety issues with the C FFI recognizer, which is neither `Send` nor `Sync`.
-
-Model initialization also happens on the worker thread, with errors propagated back through a sync channel so callers get a clear error if the model directory is invalid.
-
-#### Auto-detected model architectures
-
-The engine auto-detects the model architecture by inspecting the files present in the model directory:
-
-| Architecture | Required files | Config used |
-|---|---|---|
-| **Whisper** | `encoder.onnx` + `decoder.onnx` | `OfflineWhisperModelConfig` |
-| **Qwen3-ASR** | `conv_frontend.onnx` + `encoder.onnx` + `decoder.onnx` + `tokenizer/` | `OfflineQwen3ASRModelConfig` |
-| **Moonshine** | `preprocess.onnx` + `encode.onnx` + `uncached_decode.onnx` + `cached_decode.onnx` | `OfflineMoonshineModelConfig` |
-| **SenseVoice** | `model.onnx` (single file) | `OfflineSenseVoiceModelConfig` |
-
-Whisper, Moonshine, and SenseVoice also require a `tokens.txt` (or `*-tokens.txt`) file. Qwen3-ASR instead requires its tokenizer directory. The engine prefers `int8` quantized ONNX files when available (e.g., `encoder.int8.onnx`) for lower memory usage, falling back to full-precision variants.
-
-The model resolver supports glob-based directory matching, so you can use partial names like `-m moonshine-base` or `-m sense-voice` to find models in the cache directory.
-
-**SenseVoice limitation:** SenseVoice models can detect emotions and audio events (laughter, applause, music), but these tags are stripped by the sherpa-onnx C API and are not available in the transcription output.
-
-The pipeline automatically enables segmentation and caps `--max-segment-secs` at 30 when using this provider. Qwen3-ASR is capped at 20 seconds because the representative-corpus run failed on a 29.9-second chunk and completed at 20 seconds. Sherpa's Qwen result currently exposes text only, so the normalized transcript deliberately has no reliable native timing, language metadata, or speaker labels. The Qwen model must auto-detect language; a CLI language hint is rejected rather than silently ignored.
-
-#### C++ stderr suppression
-
-During `recognizer.decode()`, the sherpa-onnx C++ library prints warnings to stderr. The engine temporarily redirects stderr to `/dev/null` via `libc::dup`/`dup2` during decode calls and restores it immediately after, keeping the terminal output clean.
-
 ### Rate limiting (`rate_limit.rs`)
 
 Shared retry logic classifies requests by replay safety. On 429 responses:
@@ -328,62 +280,13 @@ OpenAI/Azure engines can send file uploads directly and choose the correct conta
 - Segmented processing calls `transcribe()` multiple times
 - The cache is thread-safe via `Mutex` (lock contention is negligible since cache hits are fast)
 
-Managed GGML, ONNX, VAD, diarization, and native-library downloads are pinned to exact upstream artifacts and verified by byte size and SHA-256. Archive extraction happens in a temporary staging directory before an atomic rename. Extracted directories carry a tree-digest marker and are reverified before reuse; explicit user-provided model paths remain trusted overrides.
+Managed GGML downloads are pinned to exact upstream artifacts and verified by byte size and SHA-256. Explicit user-provided model paths remain trusted overrides.
 
 ## Build requirements
 
-The `sherpa-onnx` Cargo feature is opt-in. It requires the sherpa-onnx shared libraries at both compile time and runtime. The `build.rs` script loads a `.env` file and reads `SHERPA_ONNX_LIB_DIR` to configure the linker search path and embed an `rpath` so the binary can find the dylibs at runtime.
-
-Set `SHERPA_ONNX_LIB_DIR` in your `.env` file or environment before building:
-
-```bash
-# .env
-SHERPA_ONNX_LIB_DIR=/path/to/sherpa-onnx/lib
-```
-
-To build with sherpa-onnx enabled:
-
-```bash
-./scripts/bootstrap-sherpa.sh
-cargo build --release --features sherpa-onnx
-```
-
-The setup `--output-dir` applies to native libraries as well as models and prints
-absolute environment paths. CI has a dedicated all-feature job that bootstraps the
-pinned Sherpa archive, runs FFmpeg-dependent tests explicitly, and executes tests
-and strict Clippy with all features.
-
-The default build omits the sherpa-onnx provider and eliminates the need for `SHERPA_ONNX_LIB_DIR`.
-
-## VAD-based segmentation (`audio/vad.rs`)
-
-When `--vad-model` is set and the `sherpa-onnx` feature is enabled, the pipeline uses Silero VAD (via sherpa-onnx) for speech-aware segmentation instead of FFmpeg's `silencedetect` filter. This avoids the main problem with silence-based splitting: mid-word cuts.
-
-The VAD pipeline (`vad_segment()`) has four stages:
-
-1. **Detect speech** -- Silero VAD processes 512-sample frames (~32ms at 16kHz) to find speech boundaries with sample-level precision.
-2. **Pad 250ms** -- Each speech chunk is extended by 250ms on both sides to protect word boundaries at the edges.
-3. **Merge gaps <200ms** -- Adjacent chunks separated by less than 200ms are merged to avoid splitting within short pauses.
-4. **Split long chunks** -- Chunks exceeding `--max-segment-secs` are split at the lowest-energy point within a 1-second search window around the target cut point.
-
-The VAD approach works directly on in-memory PCM samples, so there is no need for intermediate temp files during segmentation. Each chunk is transcribed via `engine.transcribe()` with sample slices, and timestamps are offset by the chunk start time.
-
-When `--vad-model` is not set, segmentation falls back to FFmpeg `silencedetect` (the original behavior).
-
-## Speaker diarization (`diarize/`)
-
-Speaker diarization identifies which speaker is talking at each point in the audio. It requires the `sherpa-onnx` feature and two ONNX models:
-
-- **Segmentation model** (`--diarize-segmentation-model`): a pyannote segmentation ONNX model that detects speaker change points.
-- **Embedding model** (`--diarize-embedding-model`): a speaker embedding ONNX model that clusters voice characteristics.
-
-The `Diarizer` follows the same dedicated worker thread pattern as `SherpaOnnxEngine`: the C FFI types are not `Send`/`Sync`, so they live on a plain `std::thread` and communicate via channels. Diarization requests are sent through `mpsc` and results come back through `tokio::sync::oneshot`.
-
-After transcription completes, `assign_speakers()` overlays speaker labels onto transcript segments by finding the diarization segment with the maximum time overlap for each transcript segment. Speaker labels appear as:
-
-- **VTT**: `<v Speaker 0>text</v>`
-- **SRT**: `[Speaker 0] text`
-- **Manifest JSON**: `"speaker": "Speaker 0"` field on each segment
+The project builds with Rust 1.96 and requires FFmpeg/FFprobe at runtime and in
+integration tests. Provider-specific credentials are runtime configuration; no
+optional native inference library or linker-path bootstrap is required.
 
 ## Adding a new engine
 

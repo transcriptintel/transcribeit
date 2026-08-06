@@ -6,19 +6,9 @@ use indicatif::{ProgressBar, ProgressStyle};
 use crate::artifacts::{
     ArtifactIntegrity, verify_file, verify_file_blocking, write_verified_response,
 };
-#[cfg(feature = "sherpa-onnx")]
-use crate::artifacts::{extract_verified_archive, verify_installed_directory};
 use crate::cli::ModelSize;
 
 const HF_REVISION: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
-#[cfg(feature = "sherpa-onnx")]
-const SHERPA_ONNX_BASE_URL: &str =
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
-
-#[cfg(feature = "sherpa-onnx")]
-mod onnx;
-#[cfg(feature = "sherpa-onnx")]
-pub(crate) use onnx::resolve_onnx_model_dir;
 
 pub(crate) fn models_dir() -> PathBuf {
     PathBuf::from(std::env::var("MODEL_CACHE_DIR").unwrap_or_else(|_| ".cache".to_string()))
@@ -128,68 +118,6 @@ pub(crate) async fn download_model(
     Ok(())
 }
 
-#[cfg(feature = "sherpa-onnx")]
-pub(crate) async fn download_onnx_model(
-    model_size: &ModelSize,
-    output_dir: Option<PathBuf>,
-) -> Result<()> {
-    let archive_name = model_size
-        .onnx_archive_name()
-        .context("This model size is not available in ONNX format")?;
-
-    let dir = output_dir.unwrap_or_else(models_dir);
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .with_context(|| format!("Failed to create directory: {}", dir.display()))?;
-
-    let dest_dir = dir.join(archive_name);
-    if dest_dir.exists() {
-        verify_installed_directory(&dest_dir)?;
-        println!("Model already exists: {}", dest_dir.display());
-        return Ok(());
-    }
-
-    let url = format!("{SHERPA_ONNX_BASE_URL}/{archive_name}.tar.bz2");
-    let integrity = onnx_integrity(archive_name)?;
-    println!("Downloading {archive_name}.tar.bz2 ...");
-    println!("  from: {url}");
-    println!("  to:   {}", dest_dir.display());
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .context("Failed to start ONNX model download")?;
-
-    if !resp.status().is_success() {
-        anyhow::bail!("Download failed with status: {}", resp.status());
-    }
-
-    let pb = download_progress_bar(integrity.size_bytes)?;
-    let tmp = tempfile::Builder::new()
-        .suffix(".tar.bz2")
-        .tempfile_in(&dir)
-        .context("Failed to create temp file")?;
-    let tmp_path = tmp.path().to_path_buf();
-
-    write_verified_response(resp, &tmp_path, &pb, integrity).await?;
-
-    pb.finish_and_clear();
-    println!("Extracting...");
-    extract_verified_archive(&tmp_path, &dir, Path::new(archive_name))
-        .await
-        .context("Failed to extract ONNX model archive")?;
-    let _ = tokio::fs::remove_file(&tmp_path).await;
-
-    if dest_dir.exists() {
-        println!("Done: {}", dest_dir.display());
-    } else {
-        println!("Done: extracted to {}", dir.display());
-    }
-    Ok(())
-}
-
 pub(crate) fn list_models(dir: Option<PathBuf>) -> Result<()> {
     let dir = dir.unwrap_or_else(models_dir);
 
@@ -215,15 +143,6 @@ pub(crate) fn list_models(dir: Option<PathBuf>) -> Result<()> {
                 path.file_name().unwrap().to_string_lossy(),
                 size_mb
             );
-            found = true;
-        }
-    }
-
-    #[cfg(feature = "sherpa-onnx")]
-    for entry in &entries {
-        let path = entry.path();
-        if path.is_dir() && onnx::is_supported_model_dir(&path) {
-            println!("  {}/ [onnx]", path.file_name().unwrap().to_string_lossy());
             found = true;
         }
     }
@@ -278,53 +197,6 @@ fn ggml_integrity(file_name: &str) -> Result<ArtifactIntegrity> {
             1_624_555_275,
         ),
         _ => anyhow::bail!("No pinned integrity metadata for GGML artifact {file_name}"),
-    };
-    Ok(ArtifactIntegrity {
-        sha256: integrity.0,
-        size_bytes: integrity.1,
-    })
-}
-
-#[cfg(feature = "sherpa-onnx")]
-fn onnx_integrity(archive_name: &str) -> Result<ArtifactIntegrity> {
-    let integrity = match archive_name {
-        "sherpa-onnx-whisper-tiny" => (
-            "c46116994e539aa165266d96b325252728429c12535eb9d8b6a2b10f129e66b1",
-            116_204_861,
-        ),
-        "sherpa-onnx-whisper-tiny.en" => (
-            "2bd6cf965c8bb3e068ef9fa2191387ee63a9dfa2a4e37582a8109641c20005dd",
-            118_071_777,
-        ),
-        "sherpa-onnx-whisper-base" => (
-            "911b2083efd7c0dca2ac3b358b75222660dc09fb716d64fbfc417ba6c99ff3de",
-            207_557_382,
-        ),
-        "sherpa-onnx-whisper-base.en" => (
-            "475bc7052ce299c007f6d5d5407ba8601f819a2867f6eecee510ed17df581542",
-            208_576_005,
-        ),
-        "sherpa-onnx-whisper-small" => (
-            "486a46afbb7ba798507190ffe02fea2dd726049af212e774537efac6afb210a6",
-            639_387_718,
-        ),
-        "sherpa-onnx-whisper-small.en" => (
-            "0cdba2b8aaab69e04847f3427cc9709574112e67913a1a84b7fec3a8729faa9a",
-            635_693_775,
-        ),
-        "sherpa-onnx-whisper-medium" => (
-            "614b1172557049069d846c29d9399640bce83a4dd6c580decebd9ce2a4f32c33",
-            1_931_372_882,
-        ),
-        "sherpa-onnx-whisper-medium.en" => (
-            "73d95c169a410b5f23a79f8901374b26e0a16a09ea7f02b5e1db983f4cdfdd67",
-            1_905_872_689,
-        ),
-        "sherpa-onnx-whisper-turbo" => (
-            "b11acbbcd660b44a8e0df33724feb5aaa709cf65668f2823d59f656312544f22",
-            563_790_207,
-        ),
-        _ => anyhow::bail!("No pinned integrity metadata for ONNX artifact {archive_name}"),
     };
     Ok(ArtifactIntegrity {
         sha256: integrity.0,

@@ -13,12 +13,7 @@ panic = "abort"
 strip = "symbols"
 incremental = false
 
-[features]
-default = []
-sherpa-onnx = ["dep:sherpa-onnx", "dep:sherpa-onnx-sys"]
-
 [build-dependencies]
-dotenvy = "0.15"
 protoc-bin-vendored = "3.2.0"
 tonic-prost-build = "0.14.6"
 
@@ -39,12 +34,6 @@ tempfile = "3"
 regex = "1"
 urlencoding = "2"
 tokio = { version = "1", features = ["full"] }
-sherpa-onnx = { version = "=1.13.4", default-features = false, features = ["shared"], optional = true }
-# Keep the generated bindings and native setup artifacts on the same release.
-sherpa-onnx-sys = { version = "=1.13.4", default-features = false, features = ["shared"], optional = true }
-tar = "0.4"
-bzip2 = "0.6"
-libc = "0.2"
 whisper-rs = "0.16"
 bytes = "1.11.1"
 aws-config = { version = "1.8.18", default-features = false, features = ["default-https-client", "rt-tokio"] }

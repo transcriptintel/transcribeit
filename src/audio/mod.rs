@@ -1,7 +1,5 @@
 pub mod extract;
 pub mod segment;
-#[cfg(feature = "sherpa-onnx")]
-pub mod vad;
 pub mod wav;
 
 /// FFmpeg/FFprobe protocols permitted while opening caller-supplied local media.

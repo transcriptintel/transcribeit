@@ -16,8 +16,6 @@ use crate::input::resolve_input_paths;
 use crate::pipeline::{API_UPLOAD_MAX_BYTES, OutputFormat, PipelineConfig, run_pipeline};
 use crate::provider_factory::{self, ProviderFactoryArgs};
 
-mod segmentation;
-
 pub(crate) async fn execute(command: Command) -> Result<()> {
     let Command::Run {
         provider,
@@ -76,9 +74,6 @@ pub(crate) async fn execute(command: Command) -> Result<()> {
         retry_wait_max_secs,
         diarize,
         speakers,
-        diarize_segmentation_model,
-        diarize_embedding_model,
-        vad_model,
         s3_bucket,
         s3_region,
         s3_endpoint_url,
@@ -117,12 +112,7 @@ pub(crate) async fn execute(command: Command) -> Result<()> {
     let nvidia_riva_upload = matches!(&provider, Provider::NvidiaRiva);
     let upload_as_mp3 =
         openai_style_upload || qwen_needs_mp3_staging || matches!(&provider, Provider::Gemini);
-    #[cfg(feature = "sherpa-onnx")]
-    let is_sherpa = matches!(&provider, Provider::SherpaOnnx);
-    #[cfg(not(feature = "sherpa-onnx"))]
-    let is_sherpa = false;
     let auto_split = openai_style_upload || nvidia_riva_upload;
-    let segment = segment || is_sherpa;
     let segment_concurrency = if upload_as_mp3 {
         segment_concurrency.max(1)
     } else {
@@ -187,21 +177,12 @@ pub(crate) async fn execute(command: Command) -> Result<()> {
         analysis: &analysis_config,
     };
     let runtime = provider_factory::build(&factory_args).await?;
-    let max_segment_secs = segmentation::model_safe_max_segment_secs(
+    let requested_diarization = diarize || speakers.is_some();
+    validate_diarization_request(
         &runtime.provider_name,
         &runtime.model_name,
-        max_segment_secs,
-    );
-    let requested_diarization = diarize || speakers.is_some();
-    let provider_native_diarization =
-        provider_factory::handles_diarization(&runtime.provider_name, &runtime.model_name);
-    let local_diarize = requested_diarization && !provider_native_diarization;
-    if local_diarize && !cfg!(feature = "sherpa-onnx") {
-        anyhow::bail!(
-            "--diarize for provider '{}' requires local Sherpa diarization. Build with --features sherpa-onnx and pass --speakers plus diarization models, or use provider-native diarization with nvidia-riva or openai --remote-model gpt-4o-transcribe-diarize.",
-            runtime.provider_name
-        );
-    }
+        requested_diarization,
+    )?;
 
     for (index, input_path) in input_paths.iter().enumerate() {
         if input_paths.len() > 1 {
@@ -233,14 +214,22 @@ pub(crate) async fn execute(command: Command) -> Result<()> {
             upload_as_mp3,
             segment_concurrency,
             normalize_audio: normalize,
-            diarize: local_diarize,
-            speakers: local_diarize.then_some(speakers).flatten(),
-            diarize_segmentation_model: diarize_segmentation_model.clone(),
-            diarize_embedding_model: diarize_embedding_model.clone(),
-            vad_model: vad_model.clone(),
             analysis: analysis_config.clone(),
         };
         run_pipeline(runtime.engine.as_ref(), runtime.analyzer.as_deref(), config).await?;
+    }
+    Ok(())
+}
+
+fn validate_diarization_request(
+    provider_name: &str,
+    model_name: &str,
+    requested: bool,
+) -> Result<()> {
+    if requested && !provider_factory::handles_diarization(provider_name, model_name) {
+        anyhow::bail!(
+            "--diarize is not supported for provider '{provider_name}' with model '{model_name}'. Local post-processing diarization was retired with Sherpa-ONNX; use Deepgram, Gemini, NVIDIA Riva, or OpenAI gpt-4o-transcribe-diarize."
+        );
     }
     Ok(())
 }
@@ -278,5 +267,18 @@ fn output_format_value(output_format: &OutputFormatArg) -> OutputFormat {
         OutputFormatArg::Text => OutputFormat::Text,
         OutputFormatArg::Vtt => OutputFormat::Vtt,
         OutputFormatArg::Srt => OutputFormat::Srt,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_diarization_request;
+
+    #[test]
+    fn rejects_retired_local_diarization_path() {
+        let error = validate_diarization_request("local", "ggml-base", true).unwrap_err();
+        assert!(error.to_string().contains("retired with Sherpa-ONNX"));
+        assert!(validate_diarization_request("deepgram", "nova-3", true).is_ok());
+        assert!(validate_diarization_request("local", "ggml-base", false).is_ok());
     }
 }

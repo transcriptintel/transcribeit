@@ -336,11 +336,6 @@ fn test_config(input: PathBuf, output_dir: PathBuf, output_format: OutputFormat)
         segment_concurrency: 1,
         normalize_audio: false,
         analysis: AnalysisConfig::default(),
-        diarize: false,
-        speakers: None,
-        diarize_segmentation_model: None,
-        diarize_embedding_model: None,
-        vad_model: None,
     }
 }
 

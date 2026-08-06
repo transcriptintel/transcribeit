@@ -126,7 +126,7 @@ fn timing_source(provider: &str) -> &'static str {
     match provider {
         "gemini" => "model_generated",
         "qwen-filetrans" | "openai" | "azure" | "nvidia-riva" | "deepgram" => "provider_native",
-        "local" | "sherpa-onnx" => "model_native",
+        "local" => "model_native",
         _ => "unknown",
     }
 }
@@ -135,7 +135,7 @@ fn speaker_source(provider: &str) -> &'static str {
     match provider {
         "gemini" => "model_generated",
         "openai" => "provider_native",
-        "local" | "sherpa-onnx" => "local_diarization",
+        "local" => "unknown",
         _ => "provider_native",
     }
 }
