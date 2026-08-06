@@ -241,6 +241,7 @@ See the [docs](docs/) folder for detailed documentation:
 - [Provider behavior](docs/provider-behavior.md) — Provider-specific API shape, upload behavior, and authentication
 - [Troubleshooting](docs/troubleshooting.md) — Common setup/runtime issues and fixes
 - [Performance benchmarks](docs/performance-benchmarks.md) — Measurement plan, reference results, and templates
+- [Release process](docs/releasing.md) — Versioning, validation, tagging, release archives, and verification
 - [Retired Sherpa-ONNX integration](docs/retired/sherpa-onnx.md) — Historical scope, evidence, and migration guidance
 - [Representative corpus](benchmarks/corpus/README.md) — Versioned fixtures, rights, materialization, and scoring contract
 - [Latest representative provider record](benchmarks/results/2026-08-06-ti-007-representative-corpus.sanitized.json) — TI-007 metrics, failures, and cleanup evidence without transcript content

@@ -24,6 +24,13 @@
 - Keep only `develop` and `main` after merged temporary branches are fully processed.
 - Avoid new dependencies when the standard library or an existing dependency is sufficient.
 
+## Releases
+
+- Keep the package version identical in `Cargo.toml` and the `transcribeit` package entry in `Cargo.lock`. Use a major version when a released provider, CLI option, output contract, or model-management surface is removed incompatibly.
+- Prepare and validate release commits on `develop`. Release tags must be annotated `vX.Y.Z` tags on commits already reachable from `main`, and `X.Y.Z` must exactly match the Cargo package version.
+- Do not merge or tag a release until the `develop` and resulting `main` CI and security workflows are green. A queued or cancelled workflow with no steps is infrastructure state, not passing evidence.
+- The tag workflow owns release archives, SHA-256 checksums, and GitHub Release publication. Never create or move a release tag merely to retry a failed build; fix the workflow or code and make a new release version when the tag was already published.
+
 ## Rust design and security
 
 - Keep production modules focused and normally at or below 300 physical lines. New production modules must not exceed 400 lines.
