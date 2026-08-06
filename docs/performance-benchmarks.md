@@ -36,6 +36,47 @@ default. Apply the separate metric definitions in
 accuracy, domain terms, timing, speakers, metadata, latency, and provider
 failures into one score.
 
+### Clean regression baseline (2026-08-06)
+
+TI-007 established the first clean-commit baseline for the representative
+corpus. The transcript-free record is
+[`2026-08-06-ti-007-clean-baseline.sanitized.json`](../benchmarks/results/2026-08-06-ti-007-clean-baseline.sanitized.json).
+It contains 110 attempts across 11 provider/model paths: three runs on each
+short fixture and one run on the 2,423.68-second AMI meeting. Of those attempts,
+109 produced transcripts.
+
+| Provider / model | Short macro WER | AMI WER | AMI wall / RTF | AMI timing or speakers |
+|---|---:|---:|---:|---|
+| Azure `whisper` deployment | 11.76% | 26.76% | 149.90s / 0.0618 | Start/end MAE 557/691ms; 73.9% reference coverage |
+| Deepgram `nova-3` | 17.65% | **18.45%** | **30.17s / 0.0124** | Start/end MAE 185/407ms; DER 25.61%, attributed WER 36.96% |
+| Gemini `gemini-3.6-flash` | 11.76% | 19.55% | 490.67s / 0.2024 | No scoreable provider-native timing or speakers |
+| NVIDIA hosted Riva | **5.88%** | 28.99% | 104.63s / 0.0432 | Timing unreliable; DER 88.98%, attributed WER 86.69% |
+| OpenAI `gpt-transcribe` | 11.76% | 22.50% | 108.50s / 0.0448 | Text only; no scoreable timing or speakers |
+| OpenAI `gpt-4o-transcribe-diarize` | 17.65% | N/A | Rejected | AMI exceeded the returned 1,400-second input limit |
+| Qwen FileTrans | 11.76% | 21.08% | 108.79s / 0.0449 | Timing unreliable; 79.5% reference coverage |
+| Local whisper.cpp `base` | 25.49% | 31.59% | 33.69s / 0.0139 | Start/end MAE 946/1,005ms; 69.4% reference coverage |
+| Sherpa-ONNX Whisper `base` + VAD | 21.57% | 32.12% | 121.47s / 0.0501 | No scoreable output timing or speakers |
+| Sherpa-ONNX Qwen3-ASR 0.6B int8 + VAD | **5.88%** | 22.71% | 431.10s / 0.1779 | Text only; no scoreable timing or speakers |
+| llama.cpp Qwen3-ASR 1.7B | 46.50% | 102.26% | 523.75s / 0.2161 | Long-form output failed the quality check despite request success |
+
+Deepgram had the lowest observed AMI WER and the fastest successful AMI request;
+local whisper.cpp was the fastest local AMI path. These are baseline
+observations, not a universal provider ranking: the long fixture has one run,
+hosted aliases can change, and timing/diarization capabilities differ.
+
+`gpt-4o-transcribe-diarize` completed all nine short runs using
+`diarized_json`, but the AMI request failed before inference because of the
+returned duration limit. A separate compatibility probe confirmed that
+`gpt-transcribe` rejects `response_format=diarized_json` with HTTP 400
+`unsupported_value`; use the diarization model for supported speaker-labeled
+output within its limit.
+
+The clean run was produced at commit `64afbc29cffc65b654ad7a7eaf37dbcbad279765`
+on an Apple M4 Pro host. Model artifacts were hashed before cleanup; four new
+evaluation-owned directories were then removed, reclaiming 4,239,458,304 bytes
+and verifying that the evaluation root was absent. Gemini and Qwen remote
+staging cleanup is recorded per successful request in the sanitized result.
+
 ## Benchmarks to run
 
 ### 1. Local model inference throughput
