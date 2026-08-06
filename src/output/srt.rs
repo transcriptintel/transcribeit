@@ -1,3 +1,4 @@
+use crate::output::validate_subtitle_timing;
 use crate::transcriber::Transcript;
 use anyhow::Result;
 use std::io::Write;
@@ -15,6 +16,7 @@ fn format_timestamp(ms: i64) -> String {
 
 /// Write a Transcript as SRT to any writer
 pub fn write_srt(transcript: &Transcript, writer: &mut impl Write) -> Result<()> {
+    validate_subtitle_timing(transcript)?;
     for (i, segment) in transcript.segments.iter().enumerate() {
         writeln!(writer, "{}", i + 1)?;
         writeln!(
@@ -60,5 +62,21 @@ mod tests {
         assert!(result.contains("1"));
         assert!(result.contains("00:00:00,000 --> 00:00:01,234"));
         assert!(result.contains("Hello"));
+    }
+
+    #[test]
+    fn write_srt_rejects_invalid_timing() {
+        for (start_ms, end_ms) in [(-1, 100), (100, 100), (200, 100)] {
+            let transcript = Transcript {
+                segments: vec![Segment {
+                    start_ms,
+                    end_ms,
+                    text: "invalid".to_string(),
+                    ..Default::default()
+                }],
+                provider_metadata: None,
+            };
+            assert!(write_srt(&transcript, &mut Cursor::new(Vec::new())).is_err());
+        }
     }
 }

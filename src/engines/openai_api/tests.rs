@@ -32,6 +32,13 @@ fn non_diarize_model_prefers_verbose_json_with_plain_fallback() {
 }
 
 #[test]
+fn gpt_transcribe_uses_default_json_and_plural_language_field() {
+    let api = api_for_model("gpt-transcribe");
+    assert_eq!(api.response_formats(), vec![None]);
+    assert_eq!(api.language_field_name(), "languages[]");
+}
+
+#[test]
 fn provider_metadata_preserves_usage_for_cache_telemetry() {
     let api = api_for_model("gpt-4o-mini-transcribe");
     let body = br#"{
@@ -54,6 +61,27 @@ fn provider_metadata_preserves_usage_for_cache_telemetry() {
                 .pointer("/data/response/usage/prompt_tokens_details/cached_tokens"))
             .and_then(serde_json::Value::as_u64),
         Some(1024)
+    );
+}
+
+#[test]
+fn provider_metadata_preserves_detected_languages() {
+    let api = api_for_model("gpt-transcribe");
+    let body = br#"{
+        "text": "bonjour",
+        "languages": [{"code": "fr"}],
+        "usage": {"type": "duration", "seconds": 2}
+    }"#;
+
+    let transcript = api.with_provider_metadata(parse_response_bytes(body), body);
+
+    assert_eq!(
+        transcript
+            .provider_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.pointer("/data/response/languages/0/code"))
+            .and_then(serde_json::Value::as_str),
+        Some("fr")
     );
 }
 

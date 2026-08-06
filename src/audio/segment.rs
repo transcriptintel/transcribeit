@@ -4,7 +4,10 @@ use anyhow::{Context, Result};
 use regex::Regex;
 use tempfile::TempPath;
 
+use super::LOCAL_MEDIA_PROTOCOLS;
+
 /// A detected silence interval in the audio.
+#[derive(Debug)]
 pub struct SilenceInterval {
     pub start_secs: f64,
     pub end_secs: f64,
@@ -27,6 +30,8 @@ pub async fn get_duration(input: &Path) -> Result<f64> {
         .arg("format=duration")
         .arg("-of")
         .arg("csv=p=0")
+        .arg("-protocol_whitelist")
+        .arg(LOCAL_MEDIA_PROTOCOLS)
         .arg(input)
         .output()
         .await
@@ -60,6 +65,8 @@ pub async fn detect_silence(
     let af = format!("silencedetect=noise={}dB:d={}", noise_db, min_duration);
 
     let output = tokio::process::Command::new("ffmpeg")
+        .arg("-protocol_whitelist")
+        .arg(LOCAL_MEDIA_PROTOCOLS)
         .arg("-i")
         .arg(input)
         .arg("-vn")
@@ -71,6 +78,14 @@ pub async fn detect_silence(
         .output()
         .await
         .context("Failed to run ffmpeg silencedetect")?;
+
+    if !output.status.success() {
+        anyhow::bail!(
+            "ffmpeg silencedetect exited with status {} for {}",
+            output.status,
+            input.display()
+        );
+    }
 
     let stderr = String::from_utf8_lossy(&output.stderr);
 
@@ -118,120 +133,71 @@ pub fn compute_segments(
     silences: &[SilenceInterval],
     total_duration: f64,
     max_segment_secs: f64,
-) -> Vec<AudioSegment> {
+) -> Result<Vec<AudioSegment>> {
     const MIN_SEGMENT_SECS: f64 = 5.0;
 
+    if !total_duration.is_finite() || total_duration <= 0.0 {
+        anyhow::bail!("audio duration must be finite and greater than zero");
+    }
+    if !max_segment_secs.is_finite() || max_segment_secs < 0.001 {
+        anyhow::bail!("maximum segment duration must be finite and at least 0.001 seconds");
+    }
+
     if total_duration <= max_segment_secs {
-        return vec![AudioSegment {
+        return Ok(vec![AudioSegment {
             index: 0,
             start_secs: 0.0,
             end_secs: total_duration,
-        }];
+        }]);
     }
 
-    // Collect split points at silence midpoints
-    let mut split_points: Vec<f64> = if silences.is_empty() {
-        // Fallback: fixed-length segments
-        let mut points = Vec::new();
-        let mut t = max_segment_secs;
-        while t < total_duration {
-            points.push(t);
-            t += max_segment_secs;
-        }
-        points
-    } else {
-        silences
-            .iter()
-            .map(|s| (s.start_secs + s.end_secs) / 2.0)
-            .collect()
-    };
+    let mut silence_midpoints: Vec<f64> = silences
+        .iter()
+        .map(|silence| (silence.start_secs + silence.end_secs) / 2.0)
+        .filter(|point| point.is_finite() && *point > 0.0 && *point < total_duration)
+        .collect();
+    silence_midpoints.sort_by(f64::total_cmp);
+    silence_midpoints.dedup();
 
-    split_points.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    split_points.dedup();
-
-    // Build segments from split points, respecting max_segment_secs.
     let mut segments = Vec::new();
-    let mut seg_start = 0.0;
-    let mut skipped_short_split = false;
+    let mut start = 0.0;
+    while total_duration - start > max_segment_secs {
+        let hard_end = (start + max_segment_secs).min(total_duration);
+        let minimum_preferred_end = start + MIN_SEGMENT_SECS.min(max_segment_secs);
+        let end = silence_midpoints
+            .iter()
+            .copied()
+            .take_while(|point| *point <= hard_end)
+            .filter(|point| *point >= minimum_preferred_end)
+            .last()
+            .unwrap_or(hard_end);
+        anyhow::ensure!(
+            end > start,
+            "maximum segment duration is too small to make numeric progress"
+        );
 
-    for (i, split) in split_points.iter().enumerate() {
-        let split = *split;
-        if split <= seg_start {
-            continue;
-        }
-
-        let seg_len = split - seg_start;
-        let next_point = split_points.get(i + 1).copied().unwrap_or(total_duration);
-
-        // If adding up to this split would exceed max, we need to split earlier
-        if seg_len > max_segment_secs {
-            // Force split at max_segment_secs intervals
-            while seg_start + max_segment_secs < split {
-                let end = seg_start + max_segment_secs;
-                segments.push(AudioSegment {
-                    index: segments.len(),
-                    start_secs: seg_start,
-                    end_secs: end,
-                });
-                seg_start = end;
-            }
-            // Remaining portion up to split
-            if split - seg_start >= MIN_SEGMENT_SECS {
-                segments.push(AudioSegment {
-                    index: segments.len(),
-                    start_secs: seg_start,
-                    end_secs: split,
-                });
-                seg_start = split;
-                skipped_short_split = false;
-            } else {
-                skipped_short_split = true;
-            }
-        } else if seg_len >= MIN_SEGMENT_SECS {
-            segments.push(AudioSegment {
-                index: segments.len(),
-                start_secs: seg_start,
-                end_secs: split,
-            });
-            seg_start = split;
-            skipped_short_split = false;
-        } else if skipped_short_split || next_point - split < MIN_SEGMENT_SECS {
-            // Skip very short splits when they are part of a short-split chain.
-            skipped_short_split = true;
-        } else {
-            // Keep short opening segment if the next interval is long enough and we
-            // did not already skip several short cuts.
-            segments.push(AudioSegment {
-                index: segments.len(),
-                start_secs: seg_start,
-                end_secs: split,
-            });
-            seg_start = split;
-            skipped_short_split = false;
-        }
+        segments.push(AudioSegment {
+            index: segments.len(),
+            start_secs: start,
+            end_secs: end,
+        });
+        start = end;
     }
 
-    // Final segment from last split to end
-    if total_duration - seg_start > 0.0 {
-        // If remaining is very small, merge with previous segment
-        if total_duration - seg_start < MIN_SEGMENT_SECS && !segments.is_empty() {
-            let last = segments.last_mut().unwrap();
-            last.end_secs = total_duration;
-        } else {
-            segments.push(AudioSegment {
-                index: segments.len(),
-                start_secs: seg_start,
-                end_secs: total_duration,
-            });
-        }
+    if start < total_duration {
+        segments.push(AudioSegment {
+            index: segments.len(),
+            start_secs: start,
+            end_secs: total_duration,
+        });
     }
 
-    // Re-index
-    for (i, seg) in segments.iter_mut().enumerate() {
-        seg.index = i;
-    }
+    debug_assert!(segments.iter().all(|segment| {
+        segment.end_secs > segment.start_secs
+            && segment.end_secs - segment.start_secs <= max_segment_secs
+    }));
 
-    segments
+    Ok(segments)
 }
 
 /// Split an audio file into segments using ffmpeg, returning temp WAV files.
@@ -251,6 +217,8 @@ pub async fn split_audio(input: &Path, segments: &[AudioSegment]) -> Result<Vec<
             .arg("-y")
             .arg("-ss")
             .arg(format!("{}", seg.start_secs))
+            .arg("-protocol_whitelist")
+            .arg(LOCAL_MEDIA_PROTOCOLS)
             .arg("-i")
             .arg(input)
             .arg("-t")

@@ -1,0 +1,97 @@
+{
+  "schema_version": "transcribeit.benchmark-result.v1",
+  "recorded_at_utc": "2026-08-06",
+  "classification": "reference",
+  "baseline_eligible": false,
+  "baseline_exclusion_reason": "The producing worktree contained uncommitted remediation changes.",
+  "git": {
+    "commit": "2559d807bd333447b39db5a125a5cbc1b31e3b2d",
+    "worktree_dirty": true
+  },
+  "machine": {
+    "cpu": "Apple M4 Pro",
+    "logical_cores": 12,
+    "memory_bytes": 25769803776,
+    "os": "Darwin",
+    "kernel": "25.5.0",
+    "architecture": "arm64"
+  },
+  "tools": {
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "ffmpeg": "ffmpeg 8.1.2",
+    "ffprobe": "ffprobe 8.1.2"
+  },
+  "fixture": {
+    "tracked": false,
+    "duration_seconds": 300.010688,
+    "bytes": 1960635,
+    "container_codec": "MP3",
+    "sha256": "14ff4dc83b8788bb9052aea72ec3f45f7b112581ba9a13a67baaabc844526e5a"
+  },
+  "provider": "openai",
+  "model": "gpt-transcribe",
+  "runs": [
+    {
+      "id": "unhinted",
+      "command": "/usr/bin/time -lp cargo run --quiet -- run -p openai --remote-model gpt-transcribe --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f text -o output/benchmark-openai-gpt-transcribe-20260806",
+      "language_hint": null,
+      "wall_seconds": 13.10,
+      "processing_seconds": 11.88877625,
+      "processing_rtf": 0.040,
+      "segments": 1,
+      "characters": 3357,
+      "timing": "untimed",
+      "speakers": false,
+      "usage_duration_seconds": 301,
+      "transcript_sha256": "12ac43a7e9259fe6d338eb6a676ad178f3b255f0da2bcca4ce50475b31ef99fb"
+    },
+    {
+      "id": "english-hinted-1",
+      "command": "/usr/bin/time -lp cargo run --quiet -- run -p openai --remote-model gpt-transcribe --language en --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f text -o output/benchmark-openai-gpt-transcribe-en-20260806",
+      "language_hint": "en",
+      "detected_languages": ["en"],
+      "wall_seconds": 9.32,
+      "processing_seconds": 8.216820667,
+      "processing_rtf": 0.027,
+      "segments": 1,
+      "characters": 3342,
+      "timing": "untimed",
+      "speakers": false,
+      "usage_duration_seconds": 301,
+      "transcript_sha256": "452d494c05fa731bcb151987e1ff3fdd0e521e423ad3d6c2d365faa80734eff0"
+    },
+    {
+      "id": "english-hinted-2",
+      "command": "/usr/bin/time -lp cargo run --quiet -- run -p openai --remote-model gpt-transcribe --language en --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f text -o output/benchmark-openai-gpt-transcribe-en-repeat-20260806",
+      "language_hint": "en",
+      "detected_languages": ["en"],
+      "wall_seconds": 10.38,
+      "processing_seconds": 9.321588,
+      "processing_rtf": 0.031,
+      "segments": 1,
+      "characters": 3352,
+      "timing": "untimed",
+      "speakers": false,
+      "usage_duration_seconds": 301,
+      "transcript_sha256": "6ffb31bda93035e55509e73c898d3a4d469e0db440cf700a3e823730d3ab73c7"
+    },
+    {
+      "id": "diarized-json-compatibility",
+      "command": "curl --request POST https://api.openai.com/v1/audio/transcriptions --header 'Authorization: Bearer $OPENAI_API_KEY' --form file=@samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 --form model=gpt-transcribe --form response_format=diarized_json --form chunking_strategy=auto",
+      "http_status": 400,
+      "wall_seconds": 1.527303,
+      "server_processing_milliseconds": 762,
+      "result": "unsupported_value",
+      "error_parameter": "response_format",
+      "resolved_model": "gpt-transcribe-api-ev3",
+      "transcript_produced": false
+    }
+  ],
+  "sanitization": {
+    "transcript_text_removed": true,
+    "segment_text_removed": true,
+    "local_paths_removed": true,
+    "request_ids_removed": true,
+    "signed_urls_removed": true
+  }
+}

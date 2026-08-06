@@ -1,16 +1,15 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use sherpa_onnx::{
-    OfflineModelConfig, OfflineMoonshineModelConfig, OfflineRecognizer, OfflineRecognizerConfig,
-    OfflineSenseVoiceModelConfig, OfflineWhisperModelConfig,
-};
+use sherpa_onnx::{OfflineRecognizer, OfflineRecognizerConfig};
 use tokio::sync::oneshot;
 
 use crate::transcriber::{Segment, Transcriber, Transcript};
+
+mod model;
 
 struct RecognizeRequest {
     samples: Vec<f32>,
@@ -22,122 +21,17 @@ pub struct SherpaOnnxEngine {
     _thread: JoinHandle<()>,
 }
 
-/// Detected model architecture based on files present in the model directory.
-enum ModelArch {
-    Whisper {
-        encoder: PathBuf,
-        decoder: PathBuf,
-    },
-    Moonshine {
-        preprocessor: PathBuf,
-        encoder: PathBuf,
-        uncached_decoder: PathBuf,
-        cached_decoder: PathBuf,
-    },
-    SenseVoice {
-        model: PathBuf,
-    },
-}
-
-fn detect_model_arch(model_dir: &Path) -> Result<ModelArch> {
-    // Check for Moonshine files first (most specific)
-    let moonshine_preprocess = probe_model_file(model_dir, "preprocess");
-    let moonshine_encode = probe_model_file(model_dir, "encode");
-    let moonshine_uncached = probe_model_file(model_dir, "uncached_decode");
-    let moonshine_cached = probe_model_file(model_dir, "cached_decode");
-
-    if let (Ok(preprocessor), Ok(encoder), Ok(uncached_decoder), Ok(cached_decoder)) = (
-        moonshine_preprocess,
-        moonshine_encode,
-        moonshine_uncached,
-        moonshine_cached,
-    ) {
-        return Ok(ModelArch::Moonshine {
-            preprocessor,
-            encoder,
-            uncached_decoder,
-            cached_decoder,
-        });
-    }
-
-    // Check for Whisper files (encoder + decoder pair)
-    if let (Ok(encoder), Ok(decoder)) = (
-        probe_model_file(model_dir, "encoder"),
-        probe_model_file(model_dir, "decoder"),
-    ) {
-        return Ok(ModelArch::Whisper { encoder, decoder });
-    }
-
-    // Check for SenseVoice (single model file)
-    if let Ok(model) = probe_model_file(model_dir, "model") {
-        return Ok(ModelArch::SenseVoice { model });
-    }
-
-    anyhow::bail!(
-        "Could not detect model architecture in {}. Expected Whisper (encoder+decoder), Moonshine (preprocess+encode+cached_decode+uncached_decode), or SenseVoice (model) ONNX files.",
-        model_dir.display()
-    )
-}
-
 impl SherpaOnnxEngine {
     pub fn new(model_dir: PathBuf, language: Option<String>) -> Result<Self> {
-        let arch = detect_model_arch(&model_dir)?;
-        let tokens = probe_tokens_file(&model_dir)?;
+        let num_threads = std::thread::available_parallelism()
+            .map(|n| n.get() as i32)
+            .unwrap_or(4);
+        let model_config = model::build_model_config(&model_dir, language, num_threads)?;
 
         let (init_tx, init_rx) = std::sync::mpsc::channel::<Result<()>>();
         let (request_tx, request_rx) = mpsc::channel::<RecognizeRequest>();
 
         let thread = std::thread::spawn(move || {
-            let num_threads = std::thread::available_parallelism()
-                .map(|n| n.get() as i32)
-                .unwrap_or(4);
-
-            let model_config = match arch {
-                ModelArch::Whisper { encoder, decoder } => OfflineModelConfig {
-                    whisper: OfflineWhisperModelConfig {
-                        encoder: Some(encoder.to_string_lossy().into_owned()),
-                        decoder: Some(decoder.to_string_lossy().into_owned()),
-                        language: language.or(Some(String::new())),
-                        task: Some("transcribe".into()),
-                        tail_paddings: -1,
-                        ..Default::default()
-                    },
-                    tokens: Some(tokens.to_string_lossy().into_owned()),
-                    num_threads,
-                    provider: Some("cpu".into()),
-                    ..Default::default()
-                },
-                ModelArch::Moonshine {
-                    preprocessor,
-                    encoder,
-                    uncached_decoder,
-                    cached_decoder,
-                } => OfflineModelConfig {
-                    moonshine: OfflineMoonshineModelConfig {
-                        preprocessor: Some(preprocessor.to_string_lossy().into_owned()),
-                        encoder: Some(encoder.to_string_lossy().into_owned()),
-                        uncached_decoder: Some(uncached_decoder.to_string_lossy().into_owned()),
-                        cached_decoder: Some(cached_decoder.to_string_lossy().into_owned()),
-                        ..Default::default()
-                    },
-                    tokens: Some(tokens.to_string_lossy().into_owned()),
-                    num_threads,
-                    provider: Some("cpu".into()),
-                    ..Default::default()
-                },
-                ModelArch::SenseVoice { model } => OfflineModelConfig {
-                    sense_voice: OfflineSenseVoiceModelConfig {
-                        model: Some(model.to_string_lossy().into_owned()),
-                        language: Some(language.unwrap_or_else(|| "auto".into())),
-                        use_itn: true,
-                    },
-                    tokens: Some(tokens.to_string_lossy().into_owned()),
-                    num_threads,
-                    provider: Some("cpu".into()),
-                    ..Default::default()
-                },
-            };
-
             let config = OfflineRecognizerConfig {
                 model_config,
                 ..Default::default()
@@ -278,56 +172,6 @@ fn tokens_to_segments(tokens: &[String], timestamps: &[f32]) -> Vec<Segment> {
     }
 
     segments
-}
-
-/// Find an ONNX model file, preferring int8 variant.
-fn probe_model_file(model_dir: &Path, component: &str) -> Result<PathBuf> {
-    let candidates = [
-        format!("{component}.int8.onnx"),
-        format!("{component}.onnx"),
-        format!("*-{component}.int8.onnx"),
-        format!("*-{component}.onnx"),
-    ];
-
-    for name in &candidates[..2] {
-        let path = model_dir.join(name);
-        if path.exists() {
-            return Ok(path);
-        }
-    }
-
-    for pattern in &candidates[2..] {
-        let glob_pattern = format!("{}/{}", model_dir.display(), pattern);
-        if let Some(path) = glob::glob(&glob_pattern)
-            .ok()
-            .and_then(|mut paths| paths.find_map(|p| p.ok()))
-        {
-            return Ok(path);
-        }
-    }
-
-    anyhow::bail!(
-        "{component}.onnx (or {component}.int8.onnx) not found in {}",
-        model_dir.display()
-    )
-}
-
-/// Find tokens file (tokens.txt or *-tokens.txt).
-fn probe_tokens_file(model_dir: &Path) -> Result<PathBuf> {
-    let direct = model_dir.join("tokens.txt");
-    if direct.exists() {
-        return Ok(direct);
-    }
-
-    let glob_pattern = format!("{}/*-tokens.txt", model_dir.display());
-    if let Some(path) = glob::glob(&glob_pattern)
-        .ok()
-        .and_then(|mut paths| paths.find_map(|p| p.ok()))
-    {
-        return Ok(path);
-    }
-
-    anyhow::bail!("tokens.txt not found in {}", model_dir.display())
 }
 
 /// Temporarily redirect stderr to /dev/null to suppress C++ library warnings.

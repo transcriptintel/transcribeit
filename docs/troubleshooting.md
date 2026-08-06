@@ -49,12 +49,15 @@ Symptoms:
 Fix:
 - The sherpa-onnx engine auto-detects the model architecture. Ensure the model directory contains the correct files for one of:
   - **Whisper:** `encoder.onnx` + `decoder.onnx` (or int8 variants) + `tokens.txt`
+  - **Qwen3-ASR:** `conv_frontend.onnx` + `encoder.onnx` + `decoder.onnx` (or int8 variants) + `tokenizer/`
   - **Moonshine:** `preprocess.onnx` + `encode.onnx` + `uncached_decode.onnx` + `cached_decode.onnx` + `tokens.txt`
   - **SenseVoice:** `model.onnx` + `tokens.txt`
 - Download Whisper ONNX models with: `transcribeit download-model -f onnx -s <size>`
+- Download the pinned Qwen3-ASR model with: `transcribeit setup --component qwen3-asr`
 - For Moonshine and SenseVoice models, download from the [sherpa-onnx model releases](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models) and extract into `MODEL_CACHE_DIR`.
 - Verify with: `transcribeit list-models` (ONNX models appear with an `[onnx]` tag)
 - The model resolver supports partial name matching (e.g., `-m moonshine-base`, `-m sense-voice`).
+- Qwen3-ASR does not accept `--language`; omit it and allow model auto-detection.
 
 ### VAD model not found or fails to load
 
@@ -65,7 +68,7 @@ Symptoms:
 Fix:
 - Verify that the path provided to `--vad-model` (or the `VAD_MODEL` env var) points to a valid `silero_vad.onnx` file.
 - Download the Silero VAD model from the [sherpa-onnx releases](https://github.com/k2-fsa/sherpa-onnx/releases). Look for `silero_vad.onnx` in the VAD model archives.
-- Ensure the `sherpa-onnx` feature is enabled (it is by default). VAD-based segmentation is not available without it.
+- Ensure the opt-in `sherpa-onnx` feature is enabled. VAD-based segmentation is not available in the default build; build with `cargo build --release --features sherpa-onnx`.
 - The VAD model path can be set in your `.env` file:
 
 ```bash
@@ -133,6 +136,8 @@ Fix:
 - For GGML downloads: check `HF_TOKEN` if Hugging Face is rate-limiting your requests.
 - For ONNX downloads: note that `large-v3` is not available in ONNX format.
 - Use `transcribeit list-models` to confirm successful downloads in `MODEL_CACHE_DIR`.
+- If an integrity check fails, remove only the named managed artifact and run `download-model` or `setup` again. Do not bypass the size/SHA-256 check.
+- An old extracted model directory without `.transcribeit-tree.sha256` must be removed and reinstalled once so future reuse can be verified.
 
 Example:
 
@@ -150,8 +155,9 @@ Common errors:
 
 Fix:
 - Provide one of:
-  - `--azure-api-key <key>` and `AZURE_API_KEY=<key>`, or
-  - `--api-key <key>` / `OPENAI_API_KEY=<key>` as fallback
+  - `AZURE_API_KEY` in the environment or private `.env`, or
+  - a private `--api-key-file` override
+- `OPENAI_API_KEY` is intentionally not used for Azure or any other non-OpenAI provider.
 - Ensure `--base-url` points to your Azure resource endpoint, for example:
   `https://myresource.openai.azure.com`
 - Verify deployment:
@@ -164,7 +170,6 @@ Example:
 ```bash
 transcribeit run -p azure -i recording.wav \
   --base-url https://myresource.openai.azure.com \
-  --azure-api-key "$AZURE_API_KEY" \
   --azure-deployment my-whisper
 ```
 
@@ -182,6 +187,7 @@ Fix:
 - Use smaller segments with `--segment` or lower `--max-segment-secs` for very long audio.
 - Consider reducing parallelism for API providers with `--segment-concurrency`.
 - If needed, lower `--request-timeout-secs`.
+- Transcription POSTs retry HTTP 429 only. An ambiguous transport or 5xx failure is returned without replay because the provider may already have accepted and billed the request; retry it manually after checking provider-side state.
 
 Example:
 
@@ -249,7 +255,7 @@ Explanation:
 - A missing `usage_metadata.cachedContentTokenCount` means Gemini did not report a token-cache hit for that request.
 
 Fix:
-- For upload reuse, keep `--gemini-file-cache` enabled and avoid `--autoclean`.
+- For upload reuse, keep `--gemini-file-cache` enabled and avoid `--gemini-autoclean` or deprecated `--autoclean`.
 - For deterministic token-cache reuse, run with `--gemini-explicit-cache`. This creates or reuses a Gemini `cachedContent` object and should produce `cache.transcription.mode = "explicit"` plus `cachedContentTokenCount` when Gemini accepts the cache.
 - Explicit cached content has TTL and billing behavior. Use `--gemini-cache-ttl-secs` to control how long the cache is retained by Gemini.
 
@@ -343,7 +349,7 @@ lib/                      # create this directory
   libonnxruntime.1.23.2.dylib
 ```
 
-Copy the dylibs from `vendor/sherpa-onnx-*/lib/` or download them with `transcribeit setup -c sherpa-libs`.
+Copy the dylibs from `vendor/sherpa-onnx-*/lib/` or download them with `transcribeit setup -c sherpa-libs`. On macOS, setup verifies the ONNX Runtime dylib signatures and applies an ad-hoc signature when the official archive's embedded signature is invalid.
 
 If you see a hardcoded path from another machine (e.g., `/Users/someone/...`), the binary was built with an old `build.rs`. Rebuild with the latest code — the portable `@executable_path/lib` rpath is now used.
 

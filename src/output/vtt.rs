@@ -1,3 +1,4 @@
+use crate::output::validate_subtitle_timing;
 use crate::transcriber::Transcript;
 use anyhow::Result;
 use std::io::Write;
@@ -15,6 +16,7 @@ fn format_timestamp(ms: i64) -> String {
 
 /// Write a Transcript as WebVTT to any writer
 pub fn write_vtt(transcript: &Transcript, writer: &mut impl Write) -> Result<()> {
+    validate_subtitle_timing(transcript)?;
     writeln!(writer, "WEBVTT")?;
     writeln!(writer)?;
 
@@ -112,5 +114,28 @@ mod tests {
         assert!(out.contains("\n2\n"));
         assert!(out.contains("\n3\n"));
         assert!(!out.contains(" 0\n"));
+    }
+
+    #[test]
+    fn write_vtt_rejects_non_monotonic_segments() {
+        let transcript = Transcript {
+            segments: vec![
+                Segment {
+                    start_ms: 1_000,
+                    end_ms: 2_000,
+                    text: "first".to_string(),
+                    ..Default::default()
+                },
+                Segment {
+                    start_ms: 500,
+                    end_ms: 1_500,
+                    text: "second".to_string(),
+                    ..Default::default()
+                },
+            ],
+            provider_metadata: None,
+        };
+
+        assert!(write_vtt(&transcript, &mut Cursor::new(Vec::new())).is_err());
     }
 }

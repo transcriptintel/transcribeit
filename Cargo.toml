@@ -15,6 +15,7 @@ incremental = false
 
 [features]
 default = []
+sherpa-onnx = ["dep:sherpa-onnx", "dep:sherpa-onnx-sys"]
 
 [build-dependencies]
 dotenvy = "0.15"
@@ -33,19 +34,22 @@ indicatif = "0.18"
 reqwest = { version = "0.13", features = ["json", "multipart", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
+sha2 = "0.11"
 tempfile = "3"
 regex = "1"
 urlencoding = "2"
 tokio = { version = "1", features = ["full"] }
-sherpa-onnx = { version = "1.13", default-features = false, features = ["shared"], optional = true }
+sherpa-onnx = { version = "=1.13.4", default-features = false, features = ["shared"], optional = true }
+# Keep the generated bindings and native setup artifacts on the same release.
+sherpa-onnx-sys = { version = "=1.13.4", default-features = false, features = ["shared"], optional = true }
 tar = "0.4"
 bzip2 = "0.6"
 libc = "0.2"
 whisper-rs = "0.16"
 bytes = "1.11.1"
-aws-config = "1.8.18"
-aws-sdk-s3 = "1.135.0"
+aws-config = { version = "1.8.18", default-features = false, features = ["default-https-client", "rt-tokio"] }
+# Keep the modern HTTPS client without the legacy Hyper 0.14 / Rustls 0.21 transport.
+aws-sdk-s3 = { version = "1.135.0", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
 aws-credential-types = "1.2.14"
 uuid = { version = "1.23.3", features = ["v4"] }
 tonic = { version = "0.14.6", features = ["tls-webpki-roots"] }

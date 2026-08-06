@@ -1,0 +1,4 @@
+interface:
+  display_name: "Benchmark TranscribeIt"
+  short_description: "Run reproducible secret-safe ASR benchmarks"
+  default_prompt: "Use $benchmark-transcribeit to run and record a reproducible provider benchmark."

@@ -2,6 +2,9 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::engines::rate_limit::{
+    MAX_ERROR_RESPONSE_BYTES, MAX_RESULT_RESPONSE_BYTES, read_response_limited,
+};
 use crate::transcriber::Transcript;
 
 use super::GeminiApi;
@@ -110,10 +113,13 @@ impl GeminiApi {
             .context("Failed to create Gemini cachedContent")?;
 
         let status = response.status();
-        let body = response
-            .bytes()
-            .await
-            .context("Failed to read Gemini cachedContent response")?;
+        let maximum_bytes = if status.is_success() {
+            MAX_RESULT_RESPONSE_BYTES
+        } else {
+            MAX_ERROR_RESPONSE_BYTES
+        };
+        let body =
+            read_response_limited(response, maximum_bytes, "Gemini cachedContent response").await?;
         if !status.is_success() {
             anyhow::bail!(
                 "Gemini cachedContent create returned {status}: {}",
@@ -135,10 +141,17 @@ impl GeminiApi {
             .context("Failed to get Gemini cachedContent")?;
 
         let status = response.status();
-        let body = response
-            .bytes()
-            .await
-            .context("Failed to read Gemini cachedContent metadata response")?;
+        let maximum_bytes = if status.is_success() {
+            MAX_RESULT_RESPONSE_BYTES
+        } else {
+            MAX_ERROR_RESPONSE_BYTES
+        };
+        let body = read_response_limited(
+            response,
+            maximum_bytes,
+            "Gemini cachedContent metadata response",
+        )
+        .await?;
         if !status.is_success() {
             anyhow::bail!(
                 "Gemini cachedContent metadata returned {status}: {}",

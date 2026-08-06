@@ -2,6 +2,9 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
+mod setup;
+pub(crate) use setup::SetupComponent;
+
 #[derive(Debug, Clone, ValueEnum)]
 pub(crate) enum ModelSize {
     Tiny,
@@ -68,7 +71,7 @@ pub(crate) enum ModelFormat {
 pub(crate) enum Provider {
     /// Local whisper.cpp engine
     Local,
-    /// Local sherpa-onnx engine (Whisper ONNX models)
+    /// Local sherpa-onnx engine (Whisper, Qwen3-ASR, Moonshine, or SenseVoice)
     #[cfg(feature = "sherpa-onnx")]
     #[value(name = "sherpa-onnx")]
     SherpaOnnx,
@@ -104,21 +107,8 @@ pub(crate) enum AnalysisKind {
     Summary,
 }
 
-#[derive(Debug, Clone, ValueEnum)]
-pub(crate) enum SetupComponent {
-    /// Default STT models (GGML base)
-    Models,
-    /// Silero VAD model for speech-aware segmentation
-    Vad,
-    /// Speaker diarization models (segmentation + embedding)
-    Diarize,
-    /// sherpa-onnx shared libraries for the current platform
-    #[value(name = "sherpa-libs")]
-    SherpaLibs,
-}
-
 #[derive(Parser)]
-#[command(name = "transcribeit", about = "Transcribe audio files")]
+#[command(name = "transcribeit", version, about = "Transcribe audio files")]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub(crate) command: Command,
@@ -133,12 +123,12 @@ pub(crate) enum Command {
         #[arg(short, long)]
         component: Option<SetupComponent>,
 
-        /// Directory for models (overrides MODEL_CACHE_DIR)
+        /// Directory for downloaded components (overrides MODEL_CACHE_DIR for models)
         #[arg(short, long)]
         output_dir: Option<PathBuf>,
 
         /// Hugging Face token for model downloads
-        #[arg(short = 't', long, env = "HF_TOKEN")]
+        #[arg(short = 't', long, env = "HF_TOKEN", hide_env_values = true)]
         hf_token: Option<String>,
     },
 
@@ -157,7 +147,7 @@ pub(crate) enum Command {
         output_dir: Option<PathBuf>,
 
         /// Hugging Face token (optional, or set HF_TOKEN env var)
-        #[arg(short = 't', long, env = "HF_TOKEN")]
+        #[arg(short = 't', long, env = "HF_TOKEN", hide_env_values = true)]
         hf_token: Option<String>,
 
         /// Also download VAD model (silero_vad.onnx)
@@ -194,20 +184,24 @@ pub(crate) enum Command {
         #[arg(short, long)]
         base_url: Option<String>,
 
-        /// API key (or set OPENAI_API_KEY / AZURE_API_KEY env var)
-        #[arg(short, long, env = "OPENAI_API_KEY")]
+        /// Explicit API key override (prefer provider env vars or --api-key-file)
+        #[arg(short, long)]
         api_key: Option<String>,
 
-        /// DashScope API key for Qwen providers (or set DASHSCOPE_API_KEY)
-        #[arg(long, env = "DASHSCOPE_API_KEY")]
+        /// Read an explicit API key override from a private file
+        #[arg(long, conflicts_with = "api_key")]
+        api_key_file: Option<PathBuf>,
+
+        /// DashScope API key (prefer DASHSCOPE_API_KEY to avoid process arguments)
+        #[arg(long, env = "DASHSCOPE_API_KEY", hide_env_values = true)]
         dashscope_api_key: Option<String>,
 
-        /// Gemini API key (or set GEMINI_API_KEY)
-        #[arg(long, env = "GEMINI_API_KEY")]
+        /// Gemini API key (prefer GEMINI_API_KEY to avoid process arguments)
+        #[arg(long, env = "GEMINI_API_KEY", hide_env_values = true)]
         gemini_api_key: Option<String>,
 
-        /// NVIDIA API key for hosted Riva endpoints (or set NVIDIA_API_KEY)
-        #[arg(long, env = "NVIDIA_API_KEY")]
+        /// NVIDIA API key (prefer NVIDIA_API_KEY to avoid process arguments)
+        #[arg(long, env = "NVIDIA_API_KEY", hide_env_values = true)]
         nvidia_api_key: Option<String>,
 
         /// NVIDIA hosted Riva function id (or set NVIDIA_RIVA_FUNCTION_ID)
@@ -218,12 +212,12 @@ pub(crate) enum Command {
         #[arg(long, env = "NVIDIA_RIVA_SERVER")]
         nvidia_riva_server: Option<String>,
 
-        /// Deepgram API key (or set DEEPGRAM_API_KEY)
-        #[arg(long, env = "DEEPGRAM_API_KEY")]
+        /// Deepgram API key (prefer DEEPGRAM_API_KEY to avoid process arguments)
+        #[arg(long, env = "DEEPGRAM_API_KEY", hide_env_values = true)]
         deepgram_api_key: Option<String>,
 
-        /// Azure API key (or set AZURE_API_KEY env var)
-        #[arg(long, env = "AZURE_API_KEY")]
+        /// Azure API key (prefer AZURE_API_KEY to avoid process arguments)
+        #[arg(long, env = "AZURE_API_KEY", hide_env_values = true)]
         azure_api_key: Option<String>,
 
         /// Remote model name (for --provider openai, qwen-filetrans, gemini, or nvidia-riva)
@@ -318,7 +312,7 @@ pub(crate) enum Command {
         #[arg(long, env = "GEMINI_FILE_CACHE_INDEX")]
         gemini_file_cache_index: Option<PathBuf>,
 
-        /// Deprecated alias for --autoclean for Gemini Files API uploads
+        /// Delete cached Gemini Files API uploads after the run
         #[arg(long, env = "GEMINI_AUTOCLEAN")]
         gemini_autoclean: bool,
 
@@ -375,35 +369,43 @@ pub(crate) enum Command {
         segment: bool,
 
         /// Silence detection threshold in dB (negative value)
-        #[arg(long, default_value = "-40")]
+        #[arg(long, default_value = "-40", value_parser = parse_finite_f64)]
         silence_threshold: f64,
 
         /// Minimum silence duration in seconds
-        #[arg(long, default_value = "0.8")]
+        #[arg(long, default_value = "0.8", value_parser = parse_positive_f64)]
         min_silence_duration: f64,
 
         /// Maximum segment length in seconds
-        #[arg(long, default_value = "600")]
+        #[arg(long, default_value = "600", value_parser = parse_positive_f64)]
         max_segment_secs: f64,
 
         /// Maximum parallel segment requests (API providers only; local remains sequential)
-        #[arg(long, default_value = "2")]
+        #[arg(long, default_value = "2", value_parser = parse_positive_usize)]
         segment_concurrency: usize,
 
         /// Normalize audio with ffmpeg loudnorm before transcription
         #[arg(long)]
         normalize: bool,
 
-        /// Best-effort cleanup of temporary provider resources created during the run
+        /// Deprecated compatibility flag; staged URL resources are now deleted by default
         #[arg(long, env = "TRANSCRIBEIT_AUTOCLEAN")]
         autoclean: bool,
+
+        /// Retain staged S3/R2 URL resources after the provider request
+        #[arg(
+            long,
+            env = "TRANSCRIBEIT_KEEP_STAGED_RESOURCES",
+            conflicts_with_all = ["autoclean", "gemini_autoclean"]
+        )]
+        keep_staged_resources: bool,
 
         /// Enable speaker diarization
         #[arg(long)]
         diarize: bool,
 
         /// Speaker count or provider-specific maximum speaker hint for diarization
-        #[arg(long)]
+        #[arg(long, value_parser = parse_positive_i32)]
         speakers: Option<i32>,
 
         /// Path to speaker segmentation model (pyannote ONNX)
@@ -430,16 +432,16 @@ pub(crate) enum Command {
         #[arg(long, env = "S3_ENDPOINT_URL")]
         s3_endpoint_url: Option<String>,
 
-        /// S3 access key ID
-        #[arg(long, env = "S3_ACCESS_KEY_ID")]
+        /// S3 access key ID (prefer S3_ACCESS_KEY_ID to avoid process arguments)
+        #[arg(long, env = "S3_ACCESS_KEY_ID", hide_env_values = true)]
         s3_access_key_id: Option<String>,
 
-        /// S3 secret access key
-        #[arg(long, env = "S3_SECRET_ACCESS_KEY")]
+        /// S3 secret access key (prefer S3_SECRET_ACCESS_KEY to avoid process arguments)
+        #[arg(long, env = "S3_SECRET_ACCESS_KEY", hide_env_values = true)]
         s3_secret_access_key: Option<String>,
 
-        /// S3 session token, when using temporary credentials
-        #[arg(long, env = "S3_SESSION_TOKEN")]
+        /// S3 session token (prefer S3_SESSION_TOKEN to avoid process arguments)
+        #[arg(long, env = "S3_SESSION_TOKEN", hide_env_values = true)]
         s3_session_token: Option<String>,
 
         /// S3 object prefix for temporary remote-provider uploads
@@ -454,4 +456,100 @@ pub(crate) enum Command {
         #[arg(long, env = "S3_FORCE_PATH_STYLE")]
         s3_force_path_style: bool,
     },
+}
+
+fn parse_finite_f64(value: &str) -> Result<f64, String> {
+    let parsed = value
+        .parse::<f64>()
+        .map_err(|_| format!("expected a number, got '{value}'"))?;
+    if parsed.is_finite() {
+        Ok(parsed)
+    } else {
+        Err("value must be finite".to_string())
+    }
+}
+
+fn parse_positive_f64(value: &str) -> Result<f64, String> {
+    let parsed = parse_finite_f64(value)?;
+    if parsed >= 0.001 {
+        Ok(parsed)
+    } else {
+        Err("duration must be at least 0.001 seconds".to_string())
+    }
+}
+
+fn parse_positive_usize(value: &str) -> Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|_| format!("expected a positive integer, got '{value}'"))?;
+    if parsed > 0 {
+        Ok(parsed)
+    } else {
+        Err("value must be greater than zero".to_string())
+    }
+}
+
+fn parse_positive_i32(value: &str) -> Result<i32, String> {
+    let parsed = value
+        .parse::<i32>()
+        .map_err(|_| format!("expected a positive integer, got '{value}'"))?;
+    if parsed > 0 {
+        Ok(parsed)
+    } else {
+        Err("value must be greater than zero".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn run_rejects_non_positive_segmentation_values() {
+        for arguments in [
+            vec![
+                "transcribeit",
+                "run",
+                "-i",
+                "audio.wav",
+                "--max-segment-secs",
+                "0",
+            ],
+            vec![
+                "transcribeit",
+                "run",
+                "-i",
+                "audio.wav",
+                "--min-silence-duration",
+                "-1",
+            ],
+            vec![
+                "transcribeit",
+                "run",
+                "-i",
+                "audio.wav",
+                "--segment-concurrency",
+                "0",
+            ],
+            vec!["transcribeit", "run", "-i", "audio.wav", "--speakers", "0"],
+        ] {
+            assert!(Cli::try_parse_from(arguments).is_err());
+        }
+    }
+
+    #[test]
+    fn run_rejects_non_finite_segmentation_values() {
+        assert!(
+            Cli::try_parse_from([
+                "transcribeit",
+                "run",
+                "-i",
+                "audio.wav",
+                "--max-segment-secs",
+                "NaN",
+            ])
+            .is_err()
+        );
+    }
 }

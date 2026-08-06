@@ -2,6 +2,16 @@
 
 ## Commands
 
+### `setup`
+
+Download verified models, VAD/diarization artifacts, and Sherpa shared libraries.
+`--output-dir` is honored for every component, including `sherpa-libs`; the final
+summary prints absolute paths suitable for `.env`. From a source checkout,
+`./scripts/bootstrap-sherpa.sh [INSTALL_ROOT]` bootstraps the native libraries
+before the first `--features sherpa-onnx` build. Use
+`transcribeit setup --component qwen3-asr` to install the pinned Qwen3-ASR 0.6B
+int8 ONNX model into `MODEL_CACHE_DIR`.
+
 ### `download-model`
 
 Download a Whisper model in GGML or ONNX format.
@@ -19,7 +29,7 @@ transcribeit download-model [OPTIONS]
 
 Available model sizes: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v3`, `large-v3-turbo`.
 
-GGML models are downloaded from Hugging Face (`ggerganov/whisper.cpp`). ONNX models are downloaded from the sherpa-onnx GitHub releases as `.tar.bz2` archives and extracted automatically. Note: `large-v3` is not available in ONNX format.
+GGML models are downloaded from a pinned Hugging Face revision. ONNX models are downloaded from pinned sherpa-onnx GitHub release artifacts. Downloads are checked against embedded byte sizes and SHA-256 digests before installation; extracted model directories are also verified on reuse. Note: `large-v3` is not available in ONNX format.
 
 ### `list-models`
 
@@ -60,17 +70,18 @@ Model aliases auto-resolve from the `MODEL_CACHE_DIR` cache directory (default `
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-m, --model` | Path to ONNX model directory or partial name (e.g. `tiny`, `base.en`, `moonshine-base`, `sense-voice`) | required |
+| `-m, --model` | Path to ONNX model directory or partial name (e.g. `tiny`, `base.en`, `qwen3-asr`, `moonshine-base`, `sense-voice`) | required |
 
 The engine auto-detects the model architecture from files in the directory:
 
 - **Whisper** -- `encoder.onnx` + `decoder.onnx` (or int8 variants) + `tokens.txt`
+- **Qwen3-ASR** -- `conv_frontend.onnx` + `encoder.onnx` + `decoder.onnx` (int8 variants supported) + `tokenizer/`
 - **Moonshine** -- `preprocess.onnx` + `encode.onnx` + `uncached_decode.onnx` + `cached_decode.onnx` + `tokens.txt`
 - **SenseVoice** -- `model.onnx` + `tokens.txt`
 
-When an alias like `base.en` is given, the cache is searched for a directory named `sherpa-onnx-whisper-base.en` under `MODEL_CACHE_DIR`. The resolver also supports glob matching, so partial names like `-m moonshine-base` or `-m sense-voice` will match any directory in the cache containing that string.
+When an alias like `base.en` is given, the cache is searched for a directory named `sherpa-onnx-whisper-base.en` under `MODEL_CACHE_DIR`. `qwen3-asr` and `qwen3-asr-0.6b` resolve the managed Qwen directory. The resolver also supports glob matching, so partial names like `-m moonshine-base` or `-m sense-voice` will match any directory in the cache containing that string.
 
-Sherpa-ONNX automatically enables segmentation and caps segment length at 30 seconds due to the Whisper ONNX model limitation.
+Sherpa-ONNX automatically enables segmentation. Existing architectures are capped at 30 seconds; Qwen3-ASR is capped at 20 seconds because the representative long-form run failed on a 29.9-second chunk and completed at the tighter limit. Qwen3-ASR auto-detects language through Sherpa, but this binding does not expose the detected language or accept a language hint, so `--language` is rejected for this model. Its current Sherpa result is text-only: no native timestamps, word timing, or speaker labels.
 
 #### OpenAI provider options
 
@@ -78,18 +89,19 @@ Sherpa-ONNX automatically enables segmentation and caps segment length at 30 sec
 |--------|-------------|---------|
 | `-b, --base-url` | API base URL | `https://api.openai.com` |
 | `-a, --api-key` | API key | `OPENAI_API_KEY` env var |
+| `--api-key-file` | Private file containing an explicit provider-key override | none |
 | `--remote-model` | Model name | `whisper-1` |
 
-Supported hosted OpenAI transcription models include `whisper-1`, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`, and `gpt-4o-transcribe-diarize`.
+Supported hosted OpenAI transcription models include `gpt-transcribe`, `whisper-1`, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe`, and `gpt-4o-transcribe-diarize`.
 
-`whisper-1` returns timestamped segments through the default `verbose_json` request path. `gpt-4o-mini-transcribe` and `gpt-4o-transcribe` return plain transcript text through the current CLI. When `--diarize` is set and no `--remote-model` is provided, the CLI selects `gpt-4o-transcribe-diarize`. When `gpt-4o-transcribe-diarize` is selected, the provider requests `diarized_json` with `chunking_strategy=auto` and maps speaker labels into VTT/SRT/manifest output.
+`gpt-transcribe` is OpenAI's recommended starting model for completed recordings and returns plain transcript text plus detected languages. It does not provide timestamps or speaker labels. For this model, `--language` is sent through the API's plural `languages[]` hint. `whisper-1` remains the CLI default because it returns timestamped segments through `verbose_json`, which matches the default subtitle-oriented output. `gpt-4o-mini-transcribe` and `gpt-4o-transcribe` return plain transcript text through the current CLI. When `--diarize` is set and no `--remote-model` is provided, the CLI selects `gpt-4o-transcribe-diarize`. When that model is selected, the provider requests `diarized_json` with `chunking_strategy=auto` and maps speaker labels into VTT/SRT/manifest output.
 
 #### Azure provider options
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-b, --base-url` | Azure endpoint URL | `AZURE_OPENAI_ENDPOINT` env var |
-| `-a, --api-key` | Azure API key fallback env var (`OPENAI_API_KEY`) | |
+| `-a, --api-key` | Explicit Azure API key override | none |
 | `--azure-api-key` | Azure API key | `AZURE_API_KEY` env var |
 | `--azure-deployment` | Deployment name | `AZURE_DEPLOYMENT_NAME` env var, or `whisper` |
 | `--azure-api-version` | API version | `AZURE_API_VERSION` env var, or `2024-06-01` |
@@ -127,7 +139,7 @@ If a short-audio `qwen3-asr-flash` model is selected with `-p qwen-filetrans`, t
 | `--gemini-file-cache` | Reuse Gemini Files API uploads keyed by SHA-256 of prepared upload bytes | disabled |
 | `--gemini-use-presigned-url` | Stage prepared audio in S3-compatible storage and pass the pre-signed URL as Gemini `file_uri` | disabled |
 | `--gemini-file-cache-index` | Local Gemini file cache index path | `GEMINI_FILE_CACHE_INDEX` env var, or `.cache/transcribeit/gemini-files.json` |
-| `--gemini-autoclean` | Deprecated alias for `--autoclean` for Gemini temporary uploads | disabled |
+| `--gemini-autoclean` | Delete cached Gemini Files API uploads after the run | disabled |
 | `--gemini-explicit-cache` | Create and reuse Gemini explicit `cachedContent` objects for prepared audio | disabled |
 | `--gemini-cache-ttl-secs` | TTL in seconds for Gemini explicit `cachedContent` objects | `3600` |
 
@@ -135,7 +147,7 @@ The Gemini provider uses the Gemini Files API plus streamed `streamGenerateConte
 
 With `--gemini-use-presigned-url`, the CLI uploads the prepared MP3 to S3-compatible storage, generates a pre-signed GET URL, and sends that URL as Gemini `file_uri` instead of using the Gemini Files API. This mode is useful for one-off inputs up to 100 MB when S3/R2 staging is already configured. It is rejected for Gemini 2.0 family models and cannot be combined with `--gemini-file-cache` or `--gemini-explicit-cache`; use the Files API path when Gemini file reuse or explicit cached content is required.
 
-By default, Gemini Files API uploads are deleted after each run. With `--gemini-file-cache`, the CLI stores a local JSON index for the uploaded Gemini file reference and keeps the remote file for reuse within the Gemini Files API retention window. The cache key is the SHA-256 hash of the exact prepared 16 kHz mono MP3 bytes, not the input path. Before reuse, the CLI calls `files.get` and only reuses files that still exist and are `ACTIVE`. Use `--autoclean` to force deletion after a run while keeping the same command shape for experiments; `--gemini-autoclean` remains as a deprecated Gemini-only alias.
+By default, Gemini Files API uploads are deleted after each run. With `--gemini-file-cache`, the CLI stores a local JSON index for the uploaded Gemini file reference and keeps the remote file for reuse within the Gemini Files API retention window. The cache key is the SHA-256 hash of the exact prepared 16 kHz mono MP3 bytes, not the input path. Before reuse, the CLI calls `files.get` and only reuses files that still exist and are `ACTIVE`. Use `--gemini-autoclean` (or the deprecated `--autoclean` compatibility flag) to force deletion after a cached run.
 
 With `--gemini-explicit-cache`, the CLI also creates or reuses a Gemini `cachedContent` object for the prepared audio and passes its name as `cachedContent` in the streamed generation request. This automatically enables the local Gemini file cache index because the cached-content handle must be persisted between runs. Explicit cached content has its own TTL and provider billing behavior; it is separate from the 48-hour Files API upload retention window.
 
@@ -197,7 +209,8 @@ Manifests include `provider_metadata.provider = "deepgram"`, Deepgram request me
 | `-f, --output-format` | `text`, `vtt`, or `srt` | `vtt` |
 | `--language` | Language hint (e.g. `en`, `es`, `auto`) | `auto` |
 | `--normalize` | Normalize audio with ffmpeg `loudnorm` before transcription | disabled |
-| `--autoclean` | Best-effort cleanup of temporary provider resources created during the run | disabled |
+| `--keep-staged-resources` | Retain S3/R2 URL-staging objects for debugging | disabled |
+| `--autoclean` | Deprecated compatibility flag; URL-staging cleanup is now the default | disabled |
 | `--analysis summary` | Add post-transcription summary analysis to the manifest | disabled |
 
 `--analysis summary` currently requires `--provider gemini` and `--output-dir`. It runs after transcription, uses the transcript text as input, and writes a provider-neutral `analysis` object into the manifest without changing the VTT/SRT/text transcript output.
@@ -213,20 +226,22 @@ These options apply to OpenAI, Azure, Qwen file transcription, Gemini, NVIDIA Ri
 | `--retry-wait-base-secs` | Initial wait time used for rate limits, transport failures, and retryable server errors | `10` |
 | `--retry-wait-max-secs` | Maximum wait time when parsing retry delay | `120` |
 
-REST providers retry HTTP 429, HTTP 5xx, and transport send/stream failures when the provider implementation can safely retry. NVIDIA Riva uses the shared timeout setting for gRPC requests.
+REST providers retry HTTP 429. Idempotent polling/read requests may also retry HTTP 5xx and transport failures. Non-idempotent transcription or task-submission POSTs do not retry ambiguous transport or 5xx failures because the provider may already have accepted the request. NVIDIA Riva uses the shared timeout setting for gRPC requests.
 
 #### Segmentation options
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--segment` | Enable silence-based segmentation | disabled |
-| `--silence-threshold` | Silence threshold in dB (negative) | `-40` |
+| `--silence-threshold` | Finite silence threshold in dB | `-40` |
 | `--min-silence-duration` | Minimum silence duration in seconds | `0.8` |
 | `--max-segment-secs` | Maximum segment length in seconds | `600` |
 | `--segment-concurrency` | Max parallel segment requests (API providers only) | `2` |
 | `--vad-model` | Path to Silero VAD ONNX model (`silero_vad.onnx`) for speech-aware segmentation | `VAD_MODEL` env var |
 
-When using `openai`, `azure`, `qwen-filetrans`, or `nvidia-riva` providers, files exceeding the conservative 25MB auto-split threshold are automatically segmented even without `--segment`. This keeps long remote requests smaller and more reliable. Gemini and Deepgram stay whole-file by default to preserve provider/model-level speaker continuity; use `--segment` only when you want independent chunk requests, or let Gemini fall back to segmented transcription if a long whole-file request fails. When using `sherpa-onnx`, segmentation is always enabled with a maximum segment length of 30 seconds.
+For `openai`, `azure`, and `nvidia-riva`, the CLI measures the actual prepared upload artifact and automatically segments it when it exceeds the conservative 25 MiB threshold. Qwen FileTrans, Gemini, and Deepgram stay whole-file by default to preserve provider semantics and speaker continuity; use `--segment` only when independent chunk requests are intentional. Failed whole-file requests are not automatically resubmitted as segmented jobs. With `sherpa-onnx`, segmentation is always enabled with a maximum segment length of 30 seconds, reduced to 20 seconds for Qwen3-ASR.
+
+Duration options must be finite and at least 1 ms; concurrency and speaker counts must be strictly positive. Every produced segment is bounded by `--max-segment-secs`, including a short tail after a hard split.
 
 When `--vad-model` is set and segmentation is needed, VAD-based segmentation is used instead of FFmpeg `silencedetect`. VAD detects actual speech boundaries using Silero VAD, avoiding mid-word cuts. It pads chunks by 250ms, merges gaps shorter than 200ms, and splits long chunks at low-energy points. This requires the `sherpa-onnx` feature to be enabled. When `--vad-model` is not set, the original FFmpeg silence-based segmentation is used as a fallback.
 
@@ -258,7 +273,7 @@ During transcription, the CLI shows an animated spinner in the terminal so you c
 - If `--output-dir` is set, output is written to `<input_stem>.txt`.
 - If `--output-dir` is not set, output is printed to stdout.
 
-When `--input` resolves to multiple files (directory or glob), all files are processed sequentially with the same provider/model. For API providers, model/auth setup is reused for efficiency.
+When `--input` resolves to multiple files (directory or glob), `--output-dir` is required so one file cannot overwrite another on stdout. Inputs with duplicate file stems are rejected before processing because they would map to the same transcript and manifest names. Valid batches are processed sequentially with the same provider/model.
 
 ### `vtt` output format
 
@@ -283,7 +298,7 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 | `GEMINI_FILE_CACHE` | Enable Gemini Files API upload reuse | disabled |
 | `GEMINI_USE_PRESIGNED_URL` | Stage Gemini input in S3-compatible storage and submit a pre-signed URL | disabled |
 | `GEMINI_FILE_CACHE_INDEX` | Local Gemini file cache index path | `.cache/transcribeit/gemini-files.json` |
-| `GEMINI_AUTOCLEAN` | Deprecated Gemini cleanup alias; prefer `TRANSCRIBEIT_AUTOCLEAN` / `--autoclean` | disabled |
+| `GEMINI_AUTOCLEAN` | Delete cached Gemini Files API uploads after the run | disabled |
 | `GEMINI_EXPLICIT_CACHE` | Enable Gemini explicit `cachedContent` reuse | disabled |
 | `GEMINI_CACHE_TTL_SECS` | Gemini explicit `cachedContent` TTL in seconds | `3600` |
 | `NVIDIA_API_KEY` | NVIDIA hosted Riva API key | none |
@@ -326,9 +341,10 @@ When `--input` resolves to multiple files (directory or glob), all files are pro
 | `TRANSCRIBEIT_REQUEST_TIMEOUT_SECS` | API request timeout in seconds | `120` |
 | `TRANSCRIBEIT_RETRY_WAIT_BASE_SECS` | Base retry wait time in seconds | `10` |
 | `TRANSCRIBEIT_RETRY_WAIT_MAX_SECS` | Maximum retry wait time in seconds | `120` |
-| `TRANSCRIBEIT_AUTOCLEAN` | Enable best-effort cleanup of temporary provider resources created during the run | disabled |
+| `TRANSCRIBEIT_AUTOCLEAN` | Deprecated compatibility flag; staged URL cleanup is now the default | disabled |
+| `TRANSCRIBEIT_KEEP_STAGED_RESOURCES` | Retain staged S3/R2 URL resources after provider requests | disabled |
 
-All variables can be set in a `.env` file in the project root.
+All variables can be set in a `.env` file in the project root. Keep that file owner-readable only (`chmod 600 .env`). Provider-specific credentials never fall back to `OPENAI_API_KEY`. Prefer provider environment variables or a mode-`0600` `--api-key-file`; direct secret flags remain compatibility overrides but may be visible in process listings and shell history.
 
 ## Examples
 
@@ -340,6 +356,9 @@ transcribeit download-model -s small.en
 # Download ONNX models (for sherpa-onnx provider)
 transcribeit download-model -f onnx -s base.en
 transcribeit download-model -f onnx -s tiny
+
+# Install the verified Qwen3-ASR 0.6B int8 ONNX model
+transcribeit setup --component qwen3-asr
 
 # List all downloaded models (shows [ggml] and [onnx] tags)
 transcribeit list-models
@@ -360,11 +379,14 @@ transcribeit run -p sherpa-onnx -i recording.mp3 -m moonshine-base
 # Process with sherpa-onnx SenseVoice (auto-detected from model files)
 transcribeit run -p sherpa-onnx -i recording.mp3 -m sense-voice
 
+# Process with native Qwen3-ASR (text output; automatic 20s maximum)
+transcribeit run -p sherpa-onnx -i recording.mp3 -m qwen3-asr -f text -o ./output
+
 # Process a directory
-transcribeit run --input samples/ --output-dir ./output
+transcribeit run --input samples/ --model base --output-dir ./output
 
 # Process a glob
-transcribeit run --input \"samples/**/*.mp4\" -p azure --output-dir ./output
+transcribeit run --input 'samples/**/*.mp4' -p azure --output-dir ./output
 
 # VTT subtitles with segmentation (vtt is the default format)
 transcribeit run -i lecture.mp4 -m .cache/ggml-base.bin --segment -o ./output
@@ -401,8 +423,8 @@ transcribeit run -p sherpa-onnx -i interview.wav -m base.en \
   --diarize-embedding-model /path/to/embedding.onnx \
   -f srt -o ./output
 
-# OpenAI API
-OPENAI_API_KEY=sk-... transcribeit run -p openai -i recording.mp3
+# OpenAI API (reads OPENAI_API_KEY from the environment or private .env file)
+transcribeit run -p openai -i recording.mp3
 
 # OpenAI-compatible self-hosted endpoint
 transcribeit run -p openai -b http://localhost:8080 \
@@ -411,15 +433,12 @@ transcribeit run -p openai -b http://localhost:8080 \
 # Azure OpenAI
 transcribeit run -p azure -i recording.wav \
   -b https://myresource.openai.azure.com \
-  -a $AZURE_API_KEY --azure-deployment my-whisper
+  --azure-deployment my-whisper
 
 # Qwen file transcription with S3 staging
 transcribeit run -p qwen-filetrans -i recording.mp3 \
-  --dashscope-api-key "$DASHSCOPE_API_KEY" \
   --s3-bucket "$S3_BUCKET" \
   --s3-region "$S3_REGION" \
-  --s3-access-key-id "$S3_ACCESS_KEY_ID" \
-  --s3-secret-access-key "$S3_SECRET_ACCESS_KEY" \
   -f vtt -o ./output
 
 # Gemini with transcript summary analysis in the manifest
@@ -445,7 +464,6 @@ transcribeit run -p gemini --gemini-use-presigned-url \
 
 # NVIDIA hosted Riva ASR
 transcribeit run -p nvidia-riva -i recording.wav \
-  --nvidia-api-key "$NVIDIA_API_KEY" \
   --nvidia-riva-function-id "$NVIDIA_RIVA_FUNCTION_ID" \
   --language en-US -f vtt -o ./output
 
@@ -467,7 +485,7 @@ transcribeit run -p deepgram --remote-model nova-3-medical \
 ### Provider behavior
 
 - **Local** (`-p local`) runs whisper.cpp in-process using GGML models.
-- **Sherpa-ONNX** (`-p sherpa-onnx`) runs sherpa-onnx in-process. Auto-detects Whisper, Moonshine, and SenseVoice models from directory contents. Always auto-segments at 30s.
+- **Sherpa-ONNX** (`-p sherpa-onnx`) runs sherpa-onnx in-process. Auto-detects Whisper, Qwen3-ASR, Moonshine, and SenseVoice models from directory contents. Always auto-segments at 30 seconds, or 20 seconds for Qwen3-ASR.
 - **OpenAI-compatible** (`-p openai`) uses `--remote-model` and calls `POST {base-url}/v1/audio/transcriptions`.
   `gpt-4o-transcribe-diarize` is handled specially: the request includes `response_format=diarized_json` and `chunking_strategy=auto`, and response segments are parsed defensively so unknown or missing fields do not fail the run.
 - **Azure** (`-p azure`) uses `--azure-deployment` and calls:
@@ -492,9 +510,13 @@ When `--output-dir` is specified, the following files are created:
 - `<input_stem>.srt` — SRT subtitle file (if `--output-format srt`)
 - `<input_stem>.manifest.json` — Processing manifest with metadata
 
+On Unix these files are created with mode `0600`. Manifest replacement is atomic.
+SRT/VTT serialization fails when a cue has negative, zero-duration, reversed, or
+non-monotonic timing rather than emitting invalid subtitle output.
+
 ### Manifest format
 
-Manifests use `schema_version: "transcribeit.manifest.v2"`. New consumers should prefer `transcript.text`, `transcript.segments`, `capabilities`, `quality`, `cache`, optional `analysis`, and the `provider_metadata` envelope. The top-level `segments` array remains for compatibility with earlier consumers.
+Manifests use `schema_version: "transcribeit.manifest.v2"`. New consumers should prefer `transcript.text`, `transcript.segments`, `capabilities`, `quality`, `cache`, optional `analysis`/`analysis_error`, and the `provider_metadata` envelope. The top-level `segments` array remains for compatibility with earlier consumers. `quality.timing_reliable` is true only when every segment has valid monotonic positive-duration timing.
 
 The `cache` object normalizes provider token-cache telemetry:
 
@@ -517,6 +539,10 @@ When `--analysis summary` is used, manifests include:
 - `analysis.summary.questions`
 - `analysis.summary.follow_ups`
 - `analysis.provider_metadata.response.usage_metadata`
+
+The transcript and initial manifest are written before analysis starts. If analysis
+fails, the command returns an error but preserves those artifacts and writes
+`analysis_error.message` instead of an `analysis` result.
 
 Example analysis object:
 

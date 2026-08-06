@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::audio::wav::encode_wav;
-use crate::engines::rate_limit::{self, send_with_retry};
+use crate::engines::rate_limit::{self, RetryPolicy, send_with_retry};
 use crate::transcriber::{Segment, Transcriber, Transcript};
 
 pub struct OpenAiApi {
@@ -54,9 +54,23 @@ impl OpenAiApi {
         self.model.eq_ignore_ascii_case("gpt-4o-transcribe-diarize")
     }
 
+    fn is_gpt_transcribe_model(&self) -> bool {
+        self.model.eq_ignore_ascii_case("gpt-transcribe")
+    }
+
+    fn language_field_name(&self) -> &'static str {
+        if self.is_gpt_transcribe_model() {
+            "languages[]"
+        } else {
+            "language"
+        }
+    }
+
     fn response_formats(&self) -> Vec<Option<&'static str>> {
         if self.is_diarize_model() {
             vec![Some("diarized_json"), None]
+        } else if self.is_gpt_transcribe_model() {
+            vec![None]
         } else {
             vec![Some("verbose_json"), None]
         }
@@ -71,7 +85,7 @@ impl OpenAiApi {
             form = form.text("chunking_strategy", "auto");
         }
         if let Some(lang) = self.language.as_deref() {
-            form = form.text("language", lang.to_string());
+            form = form.text(self.language_field_name(), lang.to_string());
         }
         form
     }
@@ -91,22 +105,27 @@ impl OpenAiApi {
                 let api_key = &self.api_key;
                 let build_form = &build_form;
                 let rf = response_format;
-                send_with_retry(&self.settings, "transcription API", || {
-                    let url = url.clone();
-                    let client = client.clone();
-                    let api_key = api_key.clone();
-                    let form = build_form(rf);
-                    Box::pin(async move {
-                        let form = form?;
-                        client
-                            .post(&url)
-                            .bearer_auth(&api_key)
-                            .multipart(form)
-                            .send()
-                            .await
-                            .context("Failed to send request to transcription API")
-                    })
-                })
+                send_with_retry(
+                    &self.settings,
+                    "transcription API",
+                    RetryPolicy::RateLimitOnly,
+                    || {
+                        let url = url.clone();
+                        let client = client.clone();
+                        let api_key = api_key.clone();
+                        let form = build_form(rf);
+                        Box::pin(async move {
+                            let form = form?;
+                            client
+                                .post(&url)
+                                .bearer_auth(&api_key)
+                                .multipart(form)
+                                .send()
+                                .await
+                                .context("Failed to send request to transcription API")
+                        })
+                    },
+                )
                 .await
             };
 
@@ -138,6 +157,10 @@ impl OpenAiApi {
                 "model": self.model,
                 "base_url": self.base_url,
                 "response": {
+                    "languages": response
+                        .as_ref()
+                        .and_then(|value| value.get("languages").cloned())
+                        .unwrap_or(Value::Null),
                     "usage": response
                         .as_ref()
                         .and_then(|value| value.get("usage").cloned())

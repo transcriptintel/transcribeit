@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::time::Instant;
 
-#[cfg(feature = "sherpa-onnx")]
 use anyhow::Context;
 use anyhow::Result;
 use futures_util::future::join_all;
@@ -12,17 +11,12 @@ use indicatif::{ProgressBar, ProgressStyle};
 use crate::analysis::{AnalysisConfig, TranscriptAnalyzer};
 use crate::audio::extract::{extract_to_mp3, extract_to_wav, needs_conversion};
 use crate::audio::segment::{compute_segments, detect_silence, get_duration, split_audio};
-use crate::pipeline_output::write_outputs;
-use crate::transcriber::{Segment, Transcriber, Transcript};
+use crate::pipeline_merge::{TranscriptChunk, merge_segmented_transcripts};
+use crate::pipeline_output::{write_manifest_output, write_transcript_output};
+use crate::transcriber::{Transcriber, Transcript};
 
 /// API file size limit in bytes (25 MB).
-const API_MAX_BYTES: u64 = 25 * 1024 * 1024;
-
-/// Estimate WAV file size for a given duration (mono 16kHz 16-bit).
-fn estimate_wav_bytes(duration_secs: f64) -> u64 {
-    // 16000 samples/s * 2 bytes/sample * 1 channel + 44 byte header
-    (duration_secs * 16000.0 * 2.0) as u64 + 44
-}
+pub const API_UPLOAD_MAX_BYTES: u64 = 25 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub enum OutputFormat {
@@ -43,7 +37,7 @@ pub struct PipelineConfig {
     pub max_segment_secs: f64,
     pub provider_name: String,
     pub model_name: String,
-    pub auto_split_for_api: bool,
+    pub auto_split_max_bytes: Option<u64>,
     pub upload_as_mp3: bool,
     pub segment_concurrency: usize,
     pub normalize_audio: bool,
@@ -68,31 +62,41 @@ pub async fn run_pipeline(
 ) -> Result<()> {
     let started = Instant::now();
 
-    let (input_path, _tmp_path) = if config.upload_as_mp3 {
-        eprintln!("Converting to mono 16kHz MP3...");
-        let tmp = extract_to_mp3(&config.input, config.normalize_audio).await?;
-        (tmp.to_path_buf(), Some(tmp))
-    } else if needs_conversion(&config.input) {
-        eprintln!("Converting to mono 16kHz WAV...");
-        let tmp = extract_to_wav(&config.input, config.normalize_audio).await?;
-        (tmp.to_path_buf(), Some(tmp))
-    } else {
-        (config.input.clone(), None)
-    };
-    let input_path = input_path.as_path();
+    let (canonical_path, _canonical_tmp) =
+        if needs_conversion(&config.input) || config.normalize_audio {
+            eprintln!("Converting to mono 16kHz WAV...");
+            let tmp = extract_to_wav(&config.input, config.normalize_audio).await?;
+            (tmp.to_path_buf(), Some(tmp))
+        } else {
+            (config.input.clone(), None)
+        };
+    let canonical_path = canonical_path.as_path();
 
-    let total_duration = get_duration(input_path).await?;
+    let total_duration = get_duration(canonical_path).await?;
+
+    let direct_upload_tmp = if !config.segment && config.upload_as_mp3 {
+        eprintln!("Encoding provider upload as mono 16kHz MP3...");
+        Some(extract_to_mp3(canonical_path, false).await?)
+    } else {
+        None
+    };
+    let direct_input_path = direct_upload_tmp.as_deref().unwrap_or(canonical_path);
+    let direct_input_bytes = tokio::fs::metadata(direct_input_path)
+        .await
+        .map(|metadata| metadata.len())?;
 
     // Decide whether to segment
     let should_segment = config.segment
-        || (config.auto_split_for_api && estimate_wav_bytes(total_duration) > API_MAX_BYTES);
-    let mut used_segmentation = should_segment;
+        || config
+            .auto_split_max_bytes
+            .is_some_and(|maximum| direct_input_bytes > maximum);
+    let used_segmentation = should_segment;
 
     if should_segment && !config.segment {
         eprintln!(
-            "Audio is {:.0}s ({:.0} MB estimated) — auto-splitting for API size limits.",
+            "Prepared upload is {:.1} MiB for {:.0}s of audio — auto-splitting for provider size limits.",
+            direct_input_bytes as f64 / (1024.0 * 1024.0),
             total_duration,
-            estimate_wav_bytes(total_duration) as f64 / (1024.0 * 1024.0)
         );
     }
 
@@ -101,38 +105,15 @@ pub async fn run_pipeline(
         // Use VAD-based segmentation when available (sherpa-onnx), fall back to FFmpeg silencedetect
         #[cfg(feature = "sherpa-onnx")]
         if let Some(ref vad_model) = config.vad_model {
-            transcribe_vad_segmented(engine, input_path, vad_model, &config).await?
+            transcribe_vad_segmented(engine, canonical_path, vad_model, &config).await?
         } else {
-            transcribe_segmented(engine, input_path, total_duration, &config).await?
+            transcribe_segmented(engine, canonical_path, total_duration, &config).await?
         }
         #[cfg(not(feature = "sherpa-onnx"))]
-        transcribe_segmented(engine, input_path, total_duration, &config).await?
+        transcribe_segmented(engine, canonical_path, total_duration, &config).await?
     } else {
-        match transcribe_with_spinner("Transcribing...", engine.transcribe_path(input_path)).await {
-            Ok(transcript) => transcript,
-            Err(err) if should_fallback_to_segmented_gemini(&config, total_duration) => {
-                eprintln!(
-                    "Gemini whole-file transcription failed: {err:#}. Falling back to segmented transcription; speaker identity may not be stable across segments."
-                );
-                used_segmentation = true;
-                let mut transcript =
-                    transcribe_segmented(engine, input_path, total_duration, &config).await?;
-                transcript.provider_metadata = Some(serde_json::json!({
-                    "provider": "gemini",
-                    "schema_version": "gemini.metadata.v1",
-                    "data": {
-                        "model": &config.model_name,
-                        "response": {
-                            "streaming": true,
-                            "segmented_fallback": true,
-                            "whole_file_error": err.to_string(),
-                        }
-                    }
-                }));
-                transcript
-            }
-            Err(err) => return Err(err),
-        }
+        transcribe_with_spinner("Transcribing...", engine.transcribe_path(direct_input_path))
+            .await?
     };
 
     // Speaker diarization (if requested)
@@ -159,10 +140,10 @@ pub async fn run_pipeline(
         )?;
 
         // Read the audio samples for diarization
-        let wav_bytes = std::fs::read(input_path).with_context(|| {
+        let wav_bytes = std::fs::read(canonical_path).with_context(|| {
             format!(
                 "Failed to read audio for diarization: {}",
-                input_path.display()
+                canonical_path.display()
             )
         })?;
         let diarize_samples = crate::audio::wav::read_wav_bytes(&wav_bytes)?;
@@ -178,40 +159,66 @@ pub async fn run_pipeline(
         crate::diarize::assign_speakers(&mut transcript, &diarized);
     }
 
-    let analysis = if config.analysis.is_enabled() {
-        let analyzer = analyzer.ok_or_else(|| {
-            anyhow::anyhow!(
-                "--analysis was requested, but provider '{}' does not support transcript analysis yet",
-                config.provider_name
-            )
-        })?;
-        Some(
-            transcribe_with_spinner(
-                "Analyzing transcript...",
-                analyzer.analyze_transcript(&transcript, &config.analysis),
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
-
-    write_outputs(
+    write_transcript_output(&config, &transcript)?;
+    write_manifest_output(
         &config,
         &transcript,
-        analysis.as_ref(),
+        None,
+        None,
         total_duration,
         used_segmentation,
         started.elapsed().as_secs_f64(),
     )?;
 
-    Ok(())
-}
+    if config.analysis.is_enabled() {
+        let analysis = match analyzer {
+            Some(analyzer) => {
+                transcribe_with_spinner(
+                    "Analyzing transcript...",
+                    analyzer.analyze_transcript(&transcript, &config.analysis),
+                )
+                .await
+            }
+            None => Err(anyhow::anyhow!(
+                "--analysis was requested, but provider '{}' does not support transcript analysis yet",
+                config.provider_name
+            )),
+        };
 
-fn should_fallback_to_segmented_gemini(config: &PipelineConfig, total_duration: f64) -> bool {
-    config.provider_name == "gemini"
-        && !config.segment
-        && estimate_wav_bytes(total_duration) > API_MAX_BYTES
+        match analysis {
+            Ok(analysis) => write_manifest_output(
+                &config,
+                &transcript,
+                Some(&analysis),
+                None,
+                total_duration,
+                used_segmentation,
+                started.elapsed().as_secs_f64(),
+            )?,
+            Err(analysis_error) => {
+                let message = analysis_error.to_string();
+                write_manifest_output(
+                    &config,
+                    &transcript,
+                    None,
+                    Some(&message),
+                    total_duration,
+                    used_segmentation,
+                    started.elapsed().as_secs_f64(),
+                )
+                .with_context(|| {
+                    format!(
+                        "Transcript was persisted, but recording the analysis failure also failed: {message}"
+                    )
+                })?;
+                return Err(analysis_error.context(
+                    "Transcription completed and was persisted, but optional analysis failed",
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(feature = "sherpa-onnx")]
@@ -243,7 +250,7 @@ async fn transcribe_vad_segmented(
         });
     }
 
-    let mut all_segments: Vec<Segment> = Vec::new();
+    let mut transcripts = Vec::with_capacity(chunks.len());
 
     for (i, chunk) in chunks.iter().enumerate() {
         eprintln!(
@@ -263,23 +270,38 @@ async fn transcribe_vad_segmented(
                 chunks.len(),
                 chunk.duration_secs(),
             ),
-            engine.transcribe(chunk_samples),
+            transcribe_vad_chunk(engine, chunk_samples, config.upload_as_mp3),
         )
         .await?;
 
-        // Offset timestamps by the chunk start time
-        let offset_ms = (chunk.start_secs() * 1000.0) as i64;
-        for mut seg in transcript.segments {
-            seg.start_ms += offset_ms;
-            seg.end_ms += offset_ms;
-            all_segments.push(seg);
-        }
+        transcripts.push(TranscriptChunk {
+            index: i,
+            offset_ms: (chunk.start_secs() * 1000.0) as i64,
+            transcript,
+        });
     }
 
-    Ok(Transcript {
-        segments: all_segments,
-        provider_metadata: None,
-    })
+    Ok(merge_segmented_transcripts(
+        &config.provider_name,
+        transcripts,
+    ))
+}
+
+#[cfg(feature = "sherpa-onnx")]
+async fn transcribe_vad_chunk(
+    engine: &dyn Transcriber,
+    samples: Vec<f32>,
+    upload_as_mp3: bool,
+) -> Result<Transcript> {
+    if !upload_as_mp3 {
+        return engine.transcribe(samples).await;
+    }
+
+    let wav = crate::audio::wav::encode_wav(&samples)?;
+    let temporary_wav = tempfile::Builder::new().suffix(".wav").tempfile()?;
+    tokio::fs::write(temporary_wav.path(), wav).await?;
+    let upload = extract_to_mp3(temporary_wav.path(), false).await?;
+    engine.transcribe_path(upload.as_ref()).await
 }
 
 async fn transcribe_segmented(
@@ -297,7 +319,7 @@ async fn transcribe_segmented(
     .await?;
     eprintln!("Found {} silence intervals.", silences.len());
 
-    let audio_segments = compute_segments(&silences, total_duration, config.max_segment_secs);
+    let audio_segments = compute_segments(&silences, total_duration, config.max_segment_secs)?;
     eprintln!("Processing {} segments...", audio_segments.len());
 
     let tmp_files = split_audio(wav_path, &audio_segments).await?;
@@ -322,7 +344,7 @@ async fn transcribe_segmented(
     } else {
         1
     };
-    let mut collected_segments: Vec<Option<Vec<Segment>>> =
+    let mut collected_transcripts: Vec<Option<TranscriptChunk>> =
         (0..segment_jobs.len()).map(|_| None).collect();
     for batch in segment_jobs.chunks(concurrency) {
         let mut jobs = Vec::with_capacity(batch.len());
@@ -337,39 +359,35 @@ async fn transcribe_segmented(
             let job = async move {
                 let segment_offset_ms = start_ms;
                 let local_transcript = if config.upload_as_mp3 {
-                    let mp3_path = extract_to_mp3(segment_path, config.normalize_audio).await?;
+                    let mp3_path = extract_to_mp3(segment_path, false).await?;
                     engine.transcribe_path(mp3_path.as_ref()).await?
                 } else {
                     engine.transcribe_path(segment_path.as_ref()).await?
                 };
 
-                let mut segments = local_transcript.segments;
-                for segment in segments.iter_mut() {
-                    segment.start_ms += segment_offset_ms;
-                    segment.end_ms += segment_offset_ms;
-                }
-
-                Ok::<(usize, Vec<Segment>), anyhow::Error>((index, segments))
+                Ok::<(usize, TranscriptChunk), anyhow::Error>((
+                    index,
+                    TranscriptChunk {
+                        index,
+                        offset_ms: segment_offset_ms,
+                        transcript: local_transcript,
+                    },
+                ))
             };
             jobs.push(job);
         }
 
         let batch_results = join_all(jobs).await;
         for batch_result in batch_results {
-            let (index, segments) = batch_result?;
-            collected_segments[index] = Some(segments);
+            let (index, transcript) = batch_result?;
+            collected_transcripts[index] = Some(transcript);
         }
     }
 
-    let mut all_segments = Vec::new();
-    for segment_parts in collected_segments.into_iter().flatten() {
-        all_segments.extend(segment_parts);
-    }
-
-    Ok(Transcript {
-        segments: all_segments,
-        provider_metadata: None,
-    })
+    Ok(merge_segmented_transcripts(
+        &config.provider_name,
+        collected_transcripts.into_iter().flatten().collect(),
+    ))
 }
 
 async fn transcribe_with_spinner<T, F>(message: &str, fut: F) -> Result<T>

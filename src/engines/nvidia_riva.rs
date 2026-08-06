@@ -200,6 +200,12 @@ struct ResponseContext<'a> {
     speakers: Option<i32>,
 }
 
+struct RivaWordGroup {
+    speaker_tag: i32,
+    language: Option<String>,
+    words: Vec<Word>,
+}
+
 fn parse_response(response: RecognizeResponse, context: ResponseContext<'_>) -> Transcript {
     let provider_request_id = response.id.as_ref().map(|id| id.value.clone());
     let mut segments = Vec::new();
@@ -227,8 +233,12 @@ fn parse_response(response: RecognizeResponse, context: ResponseContext<'_>) -> 
             }
         }
 
-        let mut words = Vec::new();
-        let mut speaker_tags = BTreeSet::new();
+        let alternative_language = alt
+            .language_code
+            .iter()
+            .find(|lang| !lang.trim().is_empty())
+            .cloned();
+        let mut word_groups: Vec<RivaWordGroup> = Vec::new();
         for word in alt.words {
             if word.word.trim().is_empty() {
                 continue;
@@ -236,46 +246,69 @@ fn parse_response(response: RecognizeResponse, context: ResponseContext<'_>) -> 
             if !word.language_code.trim().is_empty() {
                 languages.insert(word.language_code.clone());
             }
-            if word.speaker_tag > 0 {
-                speaker_tags.insert(word.speaker_tag);
-            }
-            words.push(Word {
+            let speaker_tag = word.speaker_tag;
+            let language = (!word.language_code.trim().is_empty()).then_some(word.language_code);
+            let parsed_word = Word {
                 start_ms: word.start_time as i64,
                 end_ms: word.end_time as i64,
                 text: word.word,
                 punctuation: None,
+            };
+            if let Some(group) = word_groups
+                .last_mut()
+                .filter(|group| group.speaker_tag == speaker_tag)
+            {
+                group.language = group.language.take().or(language);
+                group.words.push(parsed_word);
+            } else {
+                word_groups.push(RivaWordGroup {
+                    speaker_tag,
+                    language,
+                    words: vec![parsed_word],
+                });
+            }
+        }
+        word_count += word_groups
+            .iter()
+            .map(|group| group.words.len())
+            .sum::<usize>();
+
+        if word_groups.is_empty() {
+            segments.push(Segment {
+                start_ms: 0,
+                end_ms: (result.audio_processed as f64 * 1000.0).round() as i64,
+                text: alt.transcript,
+                speaker: None,
+                language: alternative_language,
+                emotion: None,
+                words: Vec::new(),
+            });
+            continue;
+        }
+
+        let has_speaker_change = word_groups.len() > 1;
+        for group in word_groups {
+            let start_ms = group.words.first().map(|word| word.start_ms).unwrap_or(0);
+            let end_ms = group
+                .words
+                .last()
+                .map(|word| word.end_ms)
+                .unwrap_or(start_ms);
+            let text = if has_speaker_change {
+                join_riva_words(&group.words)
+            } else {
+                alt.transcript.clone()
+            };
+            segments.push(Segment {
+                start_ms,
+                end_ms,
+                text,
+                speaker: (group.speaker_tag > 0).then(|| format!("Speaker {}", group.speaker_tag)),
+                language: group.language.or_else(|| alternative_language.clone()),
+                emotion: None,
+                words: group.words,
             });
         }
-        word_count += words.len();
-
-        let start_ms = words.first().map(|word| word.start_ms).unwrap_or(0);
-        let end_ms = words
-            .last()
-            .map(|word| word.end_ms)
-            .unwrap_or_else(|| (result.audio_processed as f64 * 1000.0).round() as i64);
-        let speaker = if speaker_tags.len() == 1 {
-            speaker_tags
-                .iter()
-                .next()
-                .map(|speaker| format!("Speaker {speaker}"))
-        } else {
-            None
-        };
-        let language = alt
-            .language_code
-            .iter()
-            .find(|lang| !lang.trim().is_empty())
-            .cloned();
-
-        segments.push(Segment {
-            start_ms,
-            end_ms,
-            text: alt.transcript,
-            speaker,
-            language,
-            emotion: None,
-            words,
-        });
     }
 
     let mean_confidence = if confidences.is_empty() {
@@ -318,6 +351,27 @@ fn parse_response(response: RecognizeResponse, context: ResponseContext<'_>) -> 
     }
 }
 
+fn join_riva_words(words: &[Word]) -> String {
+    let mut text = String::new();
+    for word in words {
+        let token = word.text.trim();
+        if token.is_empty() {
+            continue;
+        }
+        let attaches_to_previous = token.chars().next().is_some_and(|character| {
+            matches!(
+                character,
+                ',' | '.' | ';' | ':' | '!' | '?' | '%' | ')' | ']' | '}'
+            )
+        });
+        if !text.is_empty() && !attaches_to_previous {
+            text.push(' ');
+        }
+        text.push_str(token);
+    }
+    text
+}
+
 fn normalize_server_url(server: &str) -> String {
     let server = server.trim().trim_end_matches('/');
     if let Some(rest) = server.strip_prefix("grpc://") {
@@ -346,6 +400,9 @@ fn metadata_value(value: &str) -> Result<MetadataValue<tonic::metadata::Ascii>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proto::nvidia::riva::asr::{
+        SpeechRecognitionAlternative, SpeechRecognitionResult, WordInfo,
+    };
 
     #[test]
     fn normalizes_hosted_server_url() {
@@ -368,5 +425,69 @@ mod tests {
         assert_eq!(normalize_language(Some("en")), "en-US");
         assert_eq!(normalize_language(Some("de-DE")), "de-DE");
         assert_eq!(normalize_language(None), "en-US");
+    }
+
+    #[test]
+    fn splits_mixed_speaker_alternative_into_contiguous_segments() {
+        let response = RecognizeResponse {
+            results: vec![SpeechRecognitionResult {
+                alternatives: vec![SpeechRecognitionAlternative {
+                    transcript: "Hello there. General Kenobi! Back again.".to_string(),
+                    confidence: 0.9,
+                    words: vec![
+                        word(0, 500, "Hello", 1),
+                        word(500, 1_000, "there.", 1),
+                        word(1_000, 1_500, "General", 2),
+                        word(1_500, 2_000, "Kenobi!", 2),
+                        word(2_000, 2_500, "Back", 1),
+                        word(2_500, 3_000, "again.", 1),
+                    ],
+                    language_code: vec!["en-US".to_string()],
+                }],
+                channel_tag: 0,
+                audio_processed: 3.0,
+            }],
+            id: None,
+        };
+
+        let transcript = parse_response(
+            response,
+            ResponseContext {
+                server: "https://example.test",
+                request_id: "request-id",
+                model: None,
+                language: "en-US",
+                audio: AudioSpec::default(),
+                elapsed: std::time::Duration::from_millis(10),
+                speakers: Some(2),
+            },
+        );
+
+        assert_eq!(transcript.segments.len(), 3);
+        assert_eq!(transcript.segments[0].speaker.as_deref(), Some("Speaker 1"));
+        assert_eq!(transcript.segments[0].text, "Hello there.");
+        assert_eq!(transcript.segments[1].speaker.as_deref(), Some("Speaker 2"));
+        assert_eq!(transcript.segments[1].text, "General Kenobi!");
+        assert_eq!(transcript.segments[2].speaker.as_deref(), Some("Speaker 1"));
+        assert_eq!(transcript.segments[2].text, "Back again.");
+        assert_eq!(
+            transcript
+                .segments
+                .iter()
+                .map(|segment| segment.words.len())
+                .sum::<usize>(),
+            6
+        );
+    }
+
+    fn word(start_time: i32, end_time: i32, text: &str, speaker_tag: i32) -> WordInfo {
+        WordInfo {
+            start_time,
+            end_time,
+            word: text.to_string(),
+            confidence: 0.9,
+            speaker_tag,
+            language_code: "en-US".to_string(),
+        }
     }
 }

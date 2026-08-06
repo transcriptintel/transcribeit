@@ -1,14 +1,22 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use tokio::io::AsyncWriteExt;
 
+use crate::artifacts::{
+    ArtifactIntegrity, extract_verified_archive, verify_file, verify_installed_directory,
+    write_verified_response,
+};
 use crate::cli::ModelSize;
 use crate::models::{download_model, models_dir};
 
-const SHERPA_ONNX_VERSION: &str = "v1.13.2";
+mod qwen3;
+mod sherpa;
+#[cfg(feature = "sherpa-onnx")]
+pub(crate) use qwen3::QWEN3_ASR_ARCHIVE;
+pub(crate) use qwen3::setup_qwen3_asr;
+pub(crate) use sherpa::setup_sherpa_libs;
+use sherpa::sherpa_lib_dir_hint;
 
 pub(crate) async fn setup_models(
     output_dir: Option<PathBuf>,
@@ -16,12 +24,13 @@ pub(crate) async fn setup_models(
 ) -> Result<String> {
     let dir = output_dir.unwrap_or_else(models_dir);
     let dest = dir.join("ggml-base.bin");
-    if dest.exists() {
-        println!("models: already present (ggml-base.bin)");
-        return Ok("already present".into());
-    }
+    let existed = dest.exists();
     download_model(&ModelSize::Base, Some(dir), hf_token).await?;
-    Ok("installed (ggml-base.bin)".into())
+    Ok(if existed {
+        "verified (ggml-base.bin)".into()
+    } else {
+        "installed (ggml-base.bin)".into()
+    })
 }
 
 pub(crate) async fn setup_vad(output_dir: Option<PathBuf>) -> Result<String> {
@@ -31,6 +40,10 @@ pub(crate) async fn setup_vad(output_dir: Option<PathBuf>) -> Result<String> {
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
         &dest,
         "VAD model (silero_vad.onnx)",
+        ArtifactIntegrity {
+            sha256: "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+            size_bytes: 643_854,
+        },
     )
     .await
 }
@@ -45,6 +58,10 @@ pub(crate) async fn setup_diarize(output_dir: Option<PathBuf>) -> Result<String>
         &dir,
         &seg_dir,
         "diarize segmentation model",
+        ArtifactIntegrity {
+            sha256: "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488",
+            size_bytes: 6_958_444,
+        },
     )
     .await?;
     parts.push(format!("segmentation: {seg_status}"));
@@ -54,6 +71,10 @@ pub(crate) async fn setup_diarize(output_dir: Option<PathBuf>) -> Result<String>
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx",
         &emb_dest,
         "diarize embedding model (wespeaker)",
+        ArtifactIntegrity {
+            sha256: "c46fad10b5f81e1aa4a60c162714208577093655076c5450f8c469e522ec54ef",
+            size_bytes: 29_292_684,
+        },
     )
     .await?;
     parts.push(format!("embedding: {emb_status}"));
@@ -61,46 +82,14 @@ pub(crate) async fn setup_diarize(output_dir: Option<PathBuf>) -> Result<String>
     Ok(parts.join(", "))
 }
 
-pub(crate) async fn setup_sherpa_libs() -> Result<String> {
-    let os = std::env::consts::OS;
-    let arch = std::env::consts::ARCH;
-
-    let archive_suffix = match (os, arch) {
-        ("macos", "x86_64") => "osx-x64-shared-lib",
-        ("macos", "aarch64") => "osx-arm64-shared-lib",
-        ("linux", "x86_64") => "linux-x64-shared-lib",
-        ("linux", "aarch64") => "linux-aarch64-shared-cpu-lib",
-        _ => anyhow::bail!(
-            "Unsupported platform: {os}-{arch}. Download sherpa-onnx shared libraries manually."
-        ),
-    };
-
-    let archive_name = format!("sherpa-onnx-{SHERPA_ONNX_VERSION}-{archive_suffix}");
-    let url = format!(
-        "https://github.com/k2-fsa/sherpa-onnx/releases/download/{SHERPA_ONNX_VERSION}/{archive_name}.tar.bz2"
-    );
-
-    let vendor_dir = PathBuf::from("vendor");
-    let check_dir = vendor_dir.join(&archive_name);
-
-    let status = download_and_extract(
-        &url,
-        &vendor_dir,
-        &check_dir,
-        "sherpa-onnx shared libraries",
-    )
-    .await?;
-
-    Ok(format!("{status} ({archive_suffix})"))
-}
-
-pub(crate) fn print_setup_summary(summary: &[(&str, String)]) {
+pub(crate) fn print_setup_summary(summary: &[(&str, String)], output_dir: Option<&Path>) {
     println!("\n=== Setup Summary ===");
     for (name, status) in summary {
         println!("  {name:<14} {status}");
     }
 
-    let dir = models_dir();
+    let dir = absolute_path(output_dir.map(Path::to_path_buf).unwrap_or_else(models_dir))
+        .unwrap_or_else(|_| output_dir.map(Path::to_path_buf).unwrap_or_else(models_dir));
     println!("\nAdd to .env (if not already set):");
     println!("  MODEL_CACHE_DIR={}", dir.display());
 
@@ -119,37 +108,34 @@ pub(crate) fn print_setup_summary(summary: &[(&str, String)]) {
         println!("  DIARIZE_EMBEDDING_MODEL={}", emb_path.display());
     }
 
-    if let Some(lib_dir) = sherpa_lib_dir_hint() {
+    let sherpa_root = output_dir
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("vendor"));
+    if let Some(lib_dir) = sherpa_lib_dir_hint(&sherpa_root) {
         println!("  SHERPA_ONNX_LIB_DIR={}", lib_dir.display());
     }
 
     println!();
 }
 
-fn sherpa_lib_dir_hint() -> Option<PathBuf> {
-    let vendor_dir = PathBuf::from("vendor");
-    let expected_prefix = format!("sherpa-onnx-{SHERPA_ONNX_VERSION}-");
-
-    let entries: Vec<_> = std::fs::read_dir(&vendor_dir)
-        .ok()?
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir() && path.join("lib").exists())
-        .collect();
-
-    entries
-        .iter()
-        .find(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with(&expected_prefix))
-        })
-        .or_else(|| entries.first())
-        .map(|path| path.join("lib"))
+fn absolute_path(path: PathBuf) -> Result<PathBuf> {
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Ok(std::env::current_dir()
+            .context("Failed to resolve current directory")?
+            .join(path))
+    }
 }
 
-async fn download_file_with_progress(url: &str, dest: &Path, label: &str) -> Result<String> {
+async fn download_file_with_progress(
+    url: &str,
+    dest: &Path,
+    label: &str,
+    integrity: ArtifactIntegrity,
+) -> Result<String> {
     if dest.exists() {
+        verify_file(dest, integrity).await?;
         println!("{label}: already present at {}", dest.display());
         return Ok("already present".into());
     }
@@ -173,9 +159,9 @@ async fn download_file_with_progress(url: &str, dest: &Path, label: &str) -> Res
         anyhow::bail!("Download failed with status: {}", resp.status());
     }
 
-    let pb = download_progress_bar(resp.content_length().unwrap_or(0))?;
+    let pb = download_progress_bar(integrity.size_bytes)?;
     let tmp_dest = dest.with_extension("part");
-    write_response_to_path(resp, &tmp_dest, &pb).await?;
+    write_verified_response(resp, &tmp_dest, &pb, integrity).await?;
 
     tokio::fs::rename(&tmp_dest, dest)
         .await
@@ -191,8 +177,10 @@ async fn download_and_extract(
     extract_to: &Path,
     check_dir: &Path,
     label: &str,
+    integrity: ArtifactIntegrity,
 ) -> Result<String> {
     if check_dir.exists() {
+        verify_installed_directory(check_dir)?;
         println!("{label}: already present at {}", check_dir.display());
         return Ok("already present".into());
     }
@@ -213,53 +201,25 @@ async fn download_and_extract(
         anyhow::bail!("Download failed with status: {}", resp.status());
     }
 
-    let pb = download_progress_bar(resp.content_length().unwrap_or(0))?;
+    let pb = download_progress_bar(integrity.size_bytes)?;
     let tmp = tempfile::Builder::new()
         .suffix(".tar.bz2")
         .tempfile_in(extract_to)
         .context("Failed to create temp file")?;
     let tmp_path = tmp.path().to_path_buf();
 
-    write_response_to_path(resp, &tmp_path, &pb).await?;
+    write_verified_response(resp, &tmp_path, &pb, integrity).await?;
 
     pb.finish_and_clear();
     println!("Extracting...");
-    extract_archive(&tmp_path, extract_to).await?;
+    let directory_name = check_dir
+        .file_name()
+        .context("artifact destination has no directory name")?;
+    extract_verified_archive(&tmp_path, extract_to, Path::new(directory_name)).await?;
     let _ = tokio::fs::remove_file(&tmp_path).await;
 
     println!("Done: {}", check_dir.display());
     Ok("installed".into())
-}
-
-async fn write_response_to_path(
-    resp: reqwest::Response,
-    path: &Path,
-    pb: &ProgressBar,
-) -> Result<()> {
-    let mut file = tokio::fs::File::create(path)
-        .await
-        .context("Failed to create temp file")?;
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.context("Error reading download stream")?;
-        file.write_all(&chunk).await.context("Failed to write")?;
-        pb.inc(chunk.len() as u64);
-    }
-    file.flush().await?;
-    Ok(())
-}
-
-async fn extract_archive(archive_path: &Path, extract_to: &Path) -> Result<()> {
-    let archive_path = archive_path.to_path_buf();
-    let extract_to = extract_to.to_path_buf();
-    tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::open(&archive_path).context("Failed to open archive")?;
-        let decoder = bzip2::read::BzDecoder::new(file);
-        let mut archive = tar::Archive::new(decoder);
-        archive.unpack(&extract_to).context("Failed to extract")?;
-        Ok::<(), anyhow::Error>(())
-    })
-    .await?
 }
 
 fn download_progress_bar(total_size: u64) -> Result<ProgressBar> {
@@ -271,3 +231,6 @@ fn download_progress_bar(total_size: u64) -> Result<ProgressBar> {
     );
     Ok(pb)
 }
+
+#[cfg(test)]
+mod tests;

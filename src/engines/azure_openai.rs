@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use crate::audio::wav::encode_wav;
 use crate::engines::openai_api::{is_response_format_not_supported, parse_response_bytes};
-use crate::engines::rate_limit::{self, send_with_retry};
+use crate::engines::rate_limit::{self, RetryPolicy, send_with_retry};
 use crate::transcriber::{Transcriber, Transcript};
 
 const RESPONSE_FORMAT_UNKNOWN: u8 = 0;
@@ -86,22 +86,27 @@ impl AzureOpenAi {
                 let api_key = &self.api_key;
                 let build_form = &build_form;
                 let rf = response_format;
-                send_with_retry(&self.settings, "Azure transcription API", || {
-                    let url = url.clone();
-                    let client = client.clone();
-                    let api_key = api_key.clone();
-                    let form = build_form(rf);
-                    Box::pin(async move {
-                        let form = form?;
-                        client
-                            .post(&url)
-                            .header("api-key", &api_key)
-                            .multipart(form)
-                            .send()
-                            .await
-                            .context("Failed to send request to Azure transcription API")
-                    })
-                })
+                send_with_retry(
+                    &self.settings,
+                    "Azure transcription API",
+                    RetryPolicy::RateLimitOnly,
+                    || {
+                        let url = url.clone();
+                        let client = client.clone();
+                        let api_key = api_key.clone();
+                        let form = build_form(rf);
+                        Box::pin(async move {
+                            let form = form?;
+                            client
+                                .post(&url)
+                                .header("api-key", &api_key)
+                                .multipart(form)
+                                .send()
+                                .await
+                                .context("Failed to send request to Azure transcription API")
+                        })
+                    },
+                )
                 .await
             };
 

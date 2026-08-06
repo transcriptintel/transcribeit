@@ -1,0 +1,4 @@
+interface:
+  display_name: "Check TranscribeIt"
+  short_description: "Run focused or complete repository validation"
+  default_prompt: "Use $check-transcribeit to validate the current TranscribeIt changes."

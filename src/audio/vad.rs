@@ -128,19 +128,22 @@ pub fn split_long_chunks(
     chunks: &[SpeechChunk],
     max_chunk_secs: f32,
 ) -> Vec<SpeechChunk> {
-    let max_len = (max_chunk_secs * SAMPLE_RATE as f32) as usize;
+    let max_len = ((max_chunk_secs * SAMPLE_RATE as f32) as usize).max(1);
     let mut out = Vec::new();
 
     for c in chunks {
         let mut start = c.start_sample;
         while c.end_sample.saturating_sub(start) > max_len {
             let target = start + max_len;
-            // Search ±500ms around the target for the quietest spot
+            // Search up to 500ms before the hard limit for the quietest spot.
+            // Looking past the target would produce a chunk larger than max_len.
             let search_radius = (SAMPLE_RATE / 2) as usize;
             let left = target.saturating_sub(search_radius).max(start);
-            let right = (target + search_radius).min(c.end_sample);
+            let right = target.min(c.end_sample);
 
-            let cut = find_low_energy_cut(samples, left, right).unwrap_or(target);
+            let cut = find_low_energy_cut(samples, left, right)
+                .unwrap_or(target)
+                .clamp(start.saturating_add(1), target);
 
             out.push(SpeechChunk {
                 start_sample: start,
@@ -192,6 +195,10 @@ pub fn vad_segment(
     vad_model_path: &str,
     max_chunk_secs: f32,
 ) -> Result<Vec<SpeechChunk>> {
+    if !max_chunk_secs.is_finite() || max_chunk_secs <= 0.0 {
+        anyhow::bail!("maximum VAD chunk duration must be finite and greater than zero");
+    }
+
     let raw = detect_speech_chunks(samples, vad_model_path)?;
 
     // 250ms padding to protect word boundaries
@@ -258,6 +265,24 @@ mod tests {
     }
 
     #[test]
+    fn split_long_chunks_never_exceeds_hard_limit() {
+        let samples = vec![0.0; SAMPLE_RATE as usize * 65];
+        let chunks = vec![SpeechChunk {
+            start_sample: 0,
+            end_sample: samples.len(),
+        }];
+
+        let split = split_long_chunks(&samples, &chunks, 30.0);
+
+        assert!(split.len() >= 3);
+        assert!(
+            split
+                .iter()
+                .all(|chunk| chunk.end_sample - chunk.start_sample <= SAMPLE_RATE as usize * 30)
+        );
+    }
+
+    #[test]
     fn split_cuts_long_chunks() {
         let samples = vec![0.0f32; 80000]; // 5 seconds at 16kHz
         let chunks = vec![SpeechChunk {
@@ -267,7 +292,7 @@ mod tests {
         let split = split_long_chunks(&samples, &chunks, 2.0);
         assert!(split.len() >= 2);
         for chunk in &split {
-            assert!(chunk.duration_secs() <= 2.5); // some tolerance for cut point
+            assert!(chunk.duration_secs() <= 2.0);
         }
     }
 }

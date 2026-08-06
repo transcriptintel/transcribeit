@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "exception_budget": 10,
+  "exceptions": [
+    {
+      "path": "src/cli.rs",
+      "max_lines": 555,
+      "rationale": "Legacy command schema and validation boundary; extract provider option groups before adding another command family."
+    },
+    {
+      "path": "src/engines/deepgram.rs",
+      "max_lines": 575,
+      "rationale": "Legacy Deepgram request, response, metadata, and cleanup boundary; split response normalization before adding capability flags."
+    },
+    {
+      "path": "src/engines/gemini/file_cache.rs",
+      "max_lines": 514,
+      "rationale": "Legacy Gemini cache lifecycle with locking, quarantine, atomic persistence, and tests; extract storage mechanics before new cache behavior."
+    },
+    {
+      "path": "src/engines/gemini/files.rs",
+      "max_lines": 421,
+      "rationale": "Legacy Gemini upload, polling, generation, and cleanup lifecycle; split upload transport before another Files API operation."
+    },
+    {
+      "path": "src/engines/gemini/response.rs",
+      "max_lines": 315,
+      "rationale": "One structured Gemini response-normalization boundary with closely coupled fallback behavior and metadata extraction."
+    },
+    {
+      "path": "src/engines/nvidia_riva.rs",
+      "max_lines": 493,
+      "rationale": "Legacy Riva transport and word-speaker normalization boundary; extract response mapping before adding another RPC mode."
+    },
+    {
+      "path": "src/engines/openai_api.rs",
+      "max_lines": 351,
+      "rationale": "One OpenAI-compatible multipart request and response-format negotiation boundary; extract parsing before another compatibility branch."
+    },
+    {
+      "path": "src/models.rs",
+      "max_lines": 343,
+      "rationale": "One pinned model catalog and alias-resolution boundary; split artifact descriptors from selection before adding another artifact family."
+    },
+    {
+      "path": "src/pipeline.rs",
+      "max_lines": 420,
+      "rationale": "Legacy end-to-end media pipeline coordinator; extract remaining preparation and analysis orchestration before adding pipeline phases."
+    },
+    {
+      "path": "src/storage/s3.rs",
+      "max_lines": 324,
+      "rationale": "One S3 staging and cleanup abstraction with inline failure tests; extract tests or configuration before adding storage operations."
+    }
+  ]
+}
