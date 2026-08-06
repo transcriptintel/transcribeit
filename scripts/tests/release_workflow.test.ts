@@ -43,6 +43,7 @@ describe("release workflow", () => {
     const workflow = Bun.YAML.parse(
       await Bun.file(join(repository, ".github/workflows/ci.yml")).text(),
     ) as any;
+    expect(workflow.on.workflow_dispatch).toBeDefined();
     const job = workflow.jobs["release-build"];
     expect(job.strategy.matrix.include.map((variant: { os: string }) => variant.os)).toEqual([
       "ubuntu-latest",
