@@ -83,6 +83,29 @@ impl S3CleanupResult {
     }
 }
 
+pub fn finish_staged_operation<T>(
+    label: &str,
+    operation: Result<T>,
+    cleanup: &S3CleanupResult,
+) -> Result<T> {
+    if let Some(cleanup_error) = cleanup.error.as_deref() {
+        eprintln!(
+            "Failed to delete staged {label} object s3://{}/{}: {cleanup_error}",
+            cleanup.bucket, cleanup.key
+        );
+    }
+
+    match operation {
+        Err(primary_error) if cleanup.error.is_some() => Err(primary_error.context(format!(
+            "staged {label} object cleanup also failed for s3://{}/{}: {}",
+            cleanup.bucket,
+            cleanup.key,
+            cleanup.error.as_deref().unwrap_or("unknown cleanup error")
+        ))),
+        result => result,
+    }
+}
+
 impl S3Uploader {
     pub async fn new(config: S3Config) -> Result<Self> {
         let credentials = Credentials::new(
@@ -131,16 +154,25 @@ impl S3Uploader {
             .await
             .with_context(|| format!("Failed to upload {} to S3", path.display()))?;
 
-        let presigned = self
+        let presign_config = match PresigningConfig::expires_in(self.presign_expires) {
+            Ok(config) => config,
+            Err(error) => {
+                return Err(self.cleanup_after_presign_failure(&key, error.into()).await);
+            }
+        };
+        let presigned = match self
             .client
             .get_object()
             .bucket(&self.bucket)
             .key(&key)
-            .presigned(PresigningConfig::expires_in(self.presign_expires)?)
+            .presigned(presign_config)
             .await
-            .with_context(|| {
-                format!("Failed to presign S3 object: s3://{}/{}", self.bucket, key)
-            })?;
+        {
+            Ok(presigned) => presigned,
+            Err(error) => {
+                return Err(self.cleanup_after_presign_failure(&key, error.into()).await);
+            }
+        };
 
         Ok(S3UploadedObject {
             url: presigned.uri().to_string(),
@@ -165,6 +197,32 @@ impl S3Uploader {
             bucket: upload.bucket.clone(),
             key: upload.key.clone(),
             error: delete_result.err().map(|err| err.to_string()),
+        }
+    }
+
+    async fn cleanup_after_presign_failure(
+        &self,
+        key: &str,
+        primary_error: anyhow::Error,
+    ) -> anyhow::Error {
+        let upload = S3UploadedObject {
+            url: String::new(),
+            bucket: self.bucket.clone(),
+            key: key.to_string(),
+        };
+        let cleanup = self.cleanup_uploaded_object(&upload).await;
+        if let Some(cleanup_error) = cleanup.error {
+            anyhow::anyhow!(
+                "Failed to presign S3 object s3://{}/{}: {primary_error:#}; cleanup also failed: {cleanup_error}",
+                self.bucket,
+                key
+            )
+        } else {
+            anyhow::anyhow!(
+                "Failed to presign S3 object s3://{}/{}: {primary_error:#}; uploaded object was deleted",
+                self.bucket,
+                key
+            )
         }
     }
 
@@ -236,5 +294,31 @@ fn fallback_env(value: String, env_key: &str) -> String {
         std::env::var(env_key).unwrap_or(value)
     } else {
         value
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_operation_preserves_primary_and_cleanup_errors() {
+        let cleanup = S3CleanupResult {
+            attempted: true,
+            deleted: false,
+            bucket: "bucket".to_string(),
+            key: "key".to_string(),
+            error: Some("delete failed".to_string()),
+        };
+
+        let error = finish_staged_operation::<()>(
+            "test",
+            Err(anyhow::anyhow!("provider failed")),
+            &cleanup,
+        )
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("provider failed"));
+        assert!(message.contains("delete failed"));
     }
 }

@@ -1,22 +1,16 @@
 use super::{OutputFormat, PipelineConfig, run_pipeline};
 use crate::analysis::{AnalysisConfig, AnalysisResult, SummaryAnalysis, TranscriptAnalyzer};
-use crate::transcriber::{Segment, Transcriber, Transcript};
+use crate::transcriber::{Segment, Transcriber, Transcript, Word};
 use anyhow::Result;
 use async_trait::async_trait;
 use hound::WavSpec;
 use serde_json::{Value, json};
 use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tempfile::tempdir;
 
 #[tokio::test]
 async fn pipeline_end_to_end_writes_vtt_and_manifest() -> Result<()> {
-    if !command_exists("ffprobe") {
-        eprintln!("Skipping integration test: ffprobe not available");
-        return Ok(());
-    }
-
     let workdir = tempdir()?;
     let input_path = workdir.path().join("sample.wav");
     write_test_wav(&input_path, 1_000)?;
@@ -74,11 +68,6 @@ async fn pipeline_end_to_end_writes_vtt_and_manifest() -> Result<()> {
 
 #[tokio::test]
 async fn pipeline_manifest_wraps_provider_metadata_in_stable_envelope() -> Result<()> {
-    if !command_exists("ffprobe") {
-        eprintln!("Skipping integration test: ffprobe not available");
-        return Ok(());
-    }
-
     let workdir = tempdir()?;
     let input_path = workdir.path().join("sample.wav");
     write_test_wav(&input_path, 1_000)?;
@@ -133,11 +122,6 @@ async fn pipeline_manifest_wraps_provider_metadata_in_stable_envelope() -> Resul
 
 #[tokio::test]
 async fn pipeline_manifest_includes_analysis_when_requested() -> Result<()> {
-    if !command_exists("ffprobe") {
-        eprintln!("Skipping integration test: ffprobe not available");
-        return Ok(());
-    }
-
     let workdir = tempdir()?;
     let input_path = workdir.path().join("sample.wav");
     write_test_wav(&input_path, 1_000)?;
@@ -172,11 +156,6 @@ async fn pipeline_manifest_includes_analysis_when_requested() -> Result<()> {
 
 #[tokio::test]
 async fn pipeline_end_to_end_writes_text_file_and_manifest() -> Result<()> {
-    if !command_exists("ffprobe") {
-        eprintln!("Skipping integration test: ffprobe not available");
-        return Ok(());
-    }
-
     let workdir = tempdir()?;
     let input_path = workdir.path().join("sample.wav");
     write_test_wav(&input_path, 1_000)?;
@@ -203,16 +182,64 @@ async fn pipeline_end_to_end_writes_text_file_and_manifest() -> Result<()> {
     let text = std::fs::read_to_string(text_path)?;
     assert_eq!(text, "integration");
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(output_dir.join("sample.txt"))?
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        assert_eq!(
+            std::fs::metadata(manifest_path)?.permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pipeline_persists_transcript_and_records_analysis_failure() -> Result<()> {
+    let workdir = tempdir()?;
+    let input_path = workdir.path().join("sample.wav");
+    write_test_wav(&input_path, 1_000)?;
+    let output_dir = workdir.path().join("out");
+
+    let error = run_pipeline(
+        &FakeTranscriber,
+        Some(&FailingAnalyzer),
+        PipelineConfig {
+            analysis: AnalysisConfig { summary: true },
+            provider_name: "fake".into(),
+            model_name: "fake-model".into(),
+            ..test_config(input_path, output_dir.clone(), OutputFormat::Text)
+        },
+    )
+    .await
+    .expect_err("analysis failure must remain visible to the caller");
+
+    assert!(format!("{error:#}").contains("optional analysis failed"));
+    assert_eq!(
+        std::fs::read_to_string(output_dir.join("sample.txt"))?,
+        "integration"
+    );
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(output_dir.join("sample.manifest.json"))?)?;
+    assert_eq!(manifest["transcript"]["text"], "integration");
+    assert_eq!(
+        manifest["analysis_error"]["message"],
+        "analysis service unavailable"
+    );
+    assert!(manifest.get("analysis").is_none());
+
     Ok(())
 }
 
 #[tokio::test]
 async fn pipeline_end_to_end_writes_srt_file_and_manifest() -> Result<()> {
-    if !command_exists("ffprobe") {
-        eprintln!("Skipping integration test: ffprobe not available");
-        return Ok(());
-    }
-
     let workdir = tempdir()?;
     let input_path = workdir.path().join("sample.wav");
     write_test_wav(&input_path, 1_000)?;
@@ -247,11 +274,6 @@ async fn pipeline_end_to_end_writes_srt_file_and_manifest() -> Result<()> {
 
 #[tokio::test]
 async fn pipeline_segmented_api_uploads_are_processed_concurrently() -> Result<()> {
-    if !command_exists("ffprobe") {
-        eprintln!("Skipping integration test: ffprobe not available");
-        return Ok(());
-    }
-
     let workdir = tempdir()?;
     let input_path = workdir.path().join("sample.wav");
     write_test_wav(&input_path, 10_000)?;
@@ -281,16 +303,20 @@ async fn pipeline_segmented_api_uploads_are_processed_concurrently() -> Result<(
         .expect("manifest segments should be an array");
     assert_eq!(segments.len(), 2);
     assert_eq!(manifest["config"]["provider"], "fake-api");
+    assert_eq!(segments[1]["start_ms"], 5_000);
+    assert_eq!(segments[1]["words"][0]["start_ms"], 5_100);
+    assert_eq!(
+        manifest["provider_metadata"]["schema_version"],
+        "fake-api.segmented-metadata.v1"
+    );
+    assert_eq!(
+        manifest["provider_metadata"]["data"]["chunks"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
 
     Ok(())
-}
-
-fn command_exists(command: &str) -> bool {
-    Command::new(command)
-        .arg("-version")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
 }
 
 fn test_config(input: PathBuf, output_dir: PathBuf, output_format: OutputFormat) -> PipelineConfig {
@@ -305,16 +331,11 @@ fn test_config(input: PathBuf, output_dir: PathBuf, output_format: OutputFormat)
         max_segment_secs: 600.0,
         provider_name: "fake".into(),
         model_name: "fake-model".into(),
-        auto_split_for_api: false,
+        auto_split_max_bytes: None,
         upload_as_mp3: false,
         segment_concurrency: 1,
         normalize_audio: false,
         analysis: AnalysisConfig::default(),
-        diarize: false,
-        speakers: None,
-        diarize_segmentation_model: None,
-        diarize_embedding_model: None,
-        vad_model: None,
     }
 }
 
@@ -369,9 +390,15 @@ impl Transcriber for FakeApiTranscriber {
                 end_ms: 1000,
                 text: "integration".to_string(),
                 speaker: None,
+                words: vec![Word {
+                    start_ms: 100,
+                    end_ms: 400,
+                    text: "integration".to_string(),
+                    punctuation: None,
+                }],
                 ..Default::default()
             }],
-            provider_metadata: None,
+            provider_metadata: Some(json!({"request_id": "fake-request"})),
         })
     }
 
@@ -437,5 +464,18 @@ impl TranscriptAnalyzer for FakeAnalyzer {
                 }
             })),
         })
+    }
+}
+
+struct FailingAnalyzer;
+
+#[async_trait]
+impl TranscriptAnalyzer for FailingAnalyzer {
+    async fn analyze_transcript(
+        &self,
+        _transcript: &Transcript,
+        _config: &AnalysisConfig,
+    ) -> Result<AnalysisResult> {
+        anyhow::bail!("analysis service unavailable")
     }
 }

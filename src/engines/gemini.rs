@@ -7,7 +7,7 @@ use reqwest::Client;
 use crate::audio::segment::get_duration;
 use crate::audio::wav::encode_wav;
 use crate::engines::rate_limit;
-use crate::storage::s3::{S3CleanupResult, S3Uploader};
+use crate::storage::s3::{S3CleanupResult, S3Uploader, finish_staged_operation};
 use crate::transcriber::{Transcriber, Transcript};
 
 mod analysis;
@@ -21,7 +21,7 @@ mod streaming;
 use cached_content::add_cached_content_metadata;
 use file_cache::GeminiFileCache;
 pub use file_cache::GeminiFileCacheConfig;
-use files::{GeminiUploadRef, with_file_cleanup_metadata};
+use files::{GeminiUploadRef, finish_file_operation, with_file_cleanup_metadata};
 use response::{GeminiResponseContext, parse_stream_generate_response};
 use schema::{
     audio_mime, generate_payload, generate_payload_with_cached_content, prompt_text,
@@ -104,7 +104,7 @@ impl GeminiApi {
                 "Gemini signed URL input is not supported for Gemini 2.0 family models; use Gemini Files API mode instead"
             );
             let upload = uploader.upload_and_presign_object(audio_path).await?;
-            let mut transcript = self
+            let result = self
                 .generate_transcript(GeminiGenerateInput {
                     file_uri: &upload.url,
                     mime_type,
@@ -114,18 +114,13 @@ impl GeminiApi {
                     upload_method: "signed_url",
                     file_url_present: true,
                 })
-                .await?;
+                .await;
             let cleanup = if self.autoclean {
                 uploader.cleanup_uploaded_object(&upload).await
             } else {
                 S3CleanupResult::skipped(&upload)
             };
-            if let Some(error) = cleanup.error.as_deref() {
-                eprintln!(
-                    "Failed to delete staged Gemini object s3://{}/{}: {error}",
-                    cleanup.bucket, cleanup.key
-                );
-            }
+            let mut transcript = finish_staged_operation("Gemini", result, &cleanup)?;
             add_gemini_staging_metadata(&mut transcript, cleanup);
             return Ok(transcript);
         }
@@ -144,7 +139,7 @@ impl GeminiApi {
             .await;
         let cleanup = self.cleanup_file_after_run(&upload).await;
 
-        let mut transcript = response?;
+        let mut transcript = finish_file_operation(response, &cleanup, &upload.file.name)?;
         transcript.provider_metadata = Some(with_file_cleanup_metadata(
             transcript.provider_metadata.take(),
             upload,

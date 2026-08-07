@@ -1,0 +1,217 @@
+schema_version: 1
+corpus_id: transcribeit-representative-v1
+materialization_root: samples/corpus/v1
+
+sources:
+  fleurs_en_us_test_audio:
+    url: https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/en_us/audio/test.tar.gz
+    sha256: d9c2e37b41aacd41bc283554a0a82b5476b36887049774ecb2819dcaaa55a356
+    bytes: 289851356
+  fleurs_en_us_test_metadata:
+    url: https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/en_us/test.tsv
+    sha256: 74c046239374deeb60fa63f258f907388093a32bcaa3140965f70ef05c79f7ca
+    bytes: 367864
+  speechocean_audio_001570212:
+    url: https://raw.githubusercontent.com/jimbozhang/speechocean762/613968e3b0b789fc33936fb5eba1973176ba7d11/WAVE/SPEAKER0157/001570212.WAV
+    sha256: 147537ac415dbf33afb6a92b27f38d2da4c26a390465c4ad8f030502d815a7bf
+    bytes: 96044
+  speechocean_test_metadata:
+    url: https://raw.githubusercontent.com/jimbozhang/speechocean762/613968e3b0b789fc33936fb5eba1973176ba7d11/test/text
+    sha256: a0cf51d5f21b9e404b405672e85363e341dc2b8d510de41132d326f5f543382c
+    bytes: 99796
+  ami_es2002c_audio:
+    url: https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/ES2002c/audio/ES2002c.Mix-Headset.wav
+    sha256: 8aa5dca8a0d31aaa596ecec8e0d7d8df1646fd4328d2740b287650d8012412df
+    bytes: 77557804
+  ami_manual_annotations:
+    url: https://groups.inf.ed.ac.uk/ami/AMICorpusAnnotations/ami_public_manual_1.6.2.zip
+    sha256: b56e5babb2496b8795deeeda7e71178d7fbc9963f94276cf2a3f4b56ebbc9f9d
+    bytes: 22887865
+
+fixtures:
+  - id: fleurs-en-us-traffic-flow-clean
+    description: Clean US English read speech about traffic-flow prediction.
+    audio:
+      path: samples/corpus/v1/audio/fleurs-en-us-traffic-flow-clean.wav
+      sha256: 3e76cc5728bfd7c24f1039b5c9a47e8d79c7f225605862e977833a4f79249bff
+      bytes: 809018
+      duration_seconds: 12.64
+      container: wav
+      codec: pcm_f32le
+      sample_rate_hz: 16000
+      channels: 1
+      materialize:
+        kind: tar_member
+        source: fleurs_en_us_test_audio
+        member: test/12741024238657315067.wav
+    reference:
+      kind: inline_reviewed
+      path: samples/corpus/v1/references/fleurs-en-us-traffic-flow-clean.txt
+      sha256: 2b5cf28d5681dc0c3784013ab610380a21f3780a615f0e31449e2263b6c4ec1f
+      bytes: 130
+      text: Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with one-hundred percent certainty.
+      source: fleurs_en_us_test_metadata
+      source_key: 12741024238657315067.wav
+      source_key_column: 1
+      source_text_column: 2
+      reviewed: true
+    rights:
+      license: CC-BY-4.0
+      license_url: https://creativecommons.org/licenses/by/4.0/
+      source_url: https://huggingface.co/datasets/google/fleurs/tree/4683b04af03d2d9549064c7d72060a9a94bb6046/data/en_us
+      attribution: FLEURS dataset by Google; pinned test utterance from the en_us configuration.
+    coverage:
+      accents: [en-US]
+      conditions: [clean, read-speech]
+      speaker_count: 1
+      overlapping_speech: false
+      timestamp_reference: false
+      diarization_reference: false
+      domain_terms: [traffic flow, driver behavior, predicted]
+
+  - id: fleurs-en-us-traffic-flow-noisy-10db
+    description: Deterministic 10 dB SNR white-noise derivative of the clean FLEURS fixture.
+    audio:
+      path: samples/corpus/v1/audio/fleurs-en-us-traffic-flow-noisy-10db.wav
+      sha256: 0ce03952e2c7d4acc813a5a49b55f2675c2ff25dc58575068dd51b2fc54b63d9
+      bytes: 809018
+      duration_seconds: 12.64
+      container: wav
+      codec: pcm_f32le
+      sample_rate_hz: 16000
+      channels: 1
+      materialize:
+        kind: white_noise
+        source_fixture: fleurs-en-us-traffic-flow-clean
+        algorithm: xorshift32-white-noise-v1
+        seed: 20260806
+        snr_db: 10
+    reference:
+      kind: inline_reviewed
+      path: samples/corpus/v1/references/fleurs-en-us-traffic-flow-noisy-10db.txt
+      sha256: 2b5cf28d5681dc0c3784013ab610380a21f3780a615f0e31449e2263b6c4ec1f
+      bytes: 130
+      text: Unfortunately, studying traffic flow is difficult because driver behavior cannot be predicted with one-hundred percent certainty.
+      source: fleurs_en_us_test_metadata
+      source_key: 12741024238657315067.wav
+      source_key_column: 1
+      source_text_column: 2
+      reviewed: true
+    rights:
+      license: CC-BY-4.0
+      license_url: https://creativecommons.org/licenses/by/4.0/
+      source_url: https://huggingface.co/datasets/google/fleurs/tree/4683b04af03d2d9549064c7d72060a9a94bb6046/data/en_us
+      attribution: Modified from the FLEURS en_us test utterance by Google; deterministic noise added by TranscribeIt.
+    coverage:
+      accents: [en-US]
+      conditions: [noisy, read-speech, synthetic-white-noise-10db]
+      speaker_count: 1
+      overlapping_speech: false
+      timestamp_reference: false
+      diarization_reference: false
+      domain_terms: [traffic flow, driver behavior, predicted]
+
+  - id: speechocean-mandarin-l1-computer-clean
+    description: Clean non-native English read speech from an adult Mandarin-L1 speaker.
+    audio:
+      path: samples/corpus/v1/audio/speechocean-mandarin-l1-computer-clean.wav
+      sha256: 147537ac415dbf33afb6a92b27f38d2da4c26a390465c4ad8f030502d815a7bf
+      bytes: 96044
+      duration_seconds: 3.0
+      container: wav
+      codec: pcm_s16le
+      sample_rate_hz: 16000
+      channels: 1
+      materialize:
+        kind: remote_file
+        source: speechocean_audio_001570212
+    reference:
+      kind: inline_reviewed
+      path: samples/corpus/v1/references/speechocean-mandarin-l1-computer-clean.txt
+      sha256: 3e8f56cd74bda2e6dd21a98371ea8e636b839c1f7dffdc5f4134c04080b5c426
+      bytes: 29
+      text: I WANT TO BUY A NEW COMPUTER
+      source: speechocean_test_metadata
+      source_key: "001570212"
+      source_key_column: 0
+      source_text_column: 1
+      reviewed: true
+    rights:
+      license: CC-BY-4.0
+      license_url: https://creativecommons.org/licenses/by/4.0/
+      source_url: https://www.openslr.org/101/
+      attribution: SpeechOcean762 by Junbo Zhang and contributors; utterance 001570212.
+    coverage:
+      accents: [en-Mandarin-L1]
+      conditions: [clean, read-speech, non-native]
+      speaker_count: 1
+      overlapping_speech: false
+      timestamp_reference: false
+      diarization_reference: false
+      domain_terms: [computer]
+
+  - id: ami-es2002c-mix-headset
+    description: Long four-person design meeting with natural overlap and manual word/segment timings.
+    audio:
+      path: samples/corpus/v1/audio/ami-es2002c-mix-headset.wav
+      sha256: 8aa5dca8a0d31aaa596ecec8e0d7d8df1646fd4328d2740b287650d8012412df
+      bytes: 77557804
+      duration_seconds: 2423.68
+      container: wav
+      codec: pcm_s16le
+      sample_rate_hz: 16000
+      channels: 1
+      materialize:
+        kind: remote_file
+        source: ami_es2002c_audio
+    reference:
+      kind: archive_members
+      source: ami_manual_annotations
+      reviewed: true
+      format: AMI-NXT-XML
+      files:
+        - member: words/ES2002c.A.words.xml
+          path: samples/corpus/v1/references/ami-es2002c/ES2002c.A.words.xml
+          sha256: 915cd21e6614ca1de528393cb7d8fe3de9df09df5893f64c58c9d50add409196
+          bytes: 206341
+        - member: segments/ES2002c.A.segments.xml
+          path: samples/corpus/v1/references/ami-es2002c/ES2002c.A.segments.xml
+          sha256: 2e2577e3ed29e8735ff62409eaddc14cb24cc0f5508de986795ef0cfd09fcbb0
+          bytes: 20068
+        - member: words/ES2002c.B.words.xml
+          path: samples/corpus/v1/references/ami-es2002c/ES2002c.B.words.xml
+          sha256: 75dc070a8c3a385c24914ac3f385af7838d527104abc97b61a28b8d2446a75e3
+          bytes: 189724
+        - member: segments/ES2002c.B.segments.xml
+          path: samples/corpus/v1/references/ami-es2002c/ES2002c.B.segments.xml
+          sha256: 6e3d85b6561d0cc4c9170b0329cddfc118b62622e04cce0248bddbbc1988e672
+          bytes: 41790
+        - member: words/ES2002c.C.words.xml
+          path: samples/corpus/v1/references/ami-es2002c/ES2002c.C.words.xml
+          sha256: 93faee68a49e0ff0f937313388da743a2f06ea9c4d177269e62fd8abf6d4c601
+          bytes: 82096
+        - member: segments/ES2002c.C.segments.xml
+          path: samples/corpus/v1/references/ami-es2002c/ES2002c.C.segments.xml
+          sha256: 0cbb4d4338528c8c865db2d6aede2008c25bc581099c170fabeff1c80a93e0c0
+          bytes: 11023
+        - member: words/ES2002c.D.words.xml
+          path: samples/corpus/v1/references/ami-es2002c/ES2002c.D.words.xml
+          sha256: 4c4e04583a90f9640739be59e7a90fd5a198fcd6aed1622efed769e262270014
+          bytes: 273304
+        - member: segments/ES2002c.D.segments.xml
+          path: samples/corpus/v1/references/ami-es2002c/ES2002c.D.segments.xml
+          sha256: ba0bf7c69f3197791b4fa5bbf0c6c4dbb83bf17567e58a6dc82dcdfe2b0912a9
+          bytes: 43772
+    rights:
+      license: CC-BY-4.0
+      license_url: https://creativecommons.org/licenses/by/4.0/
+      source_url: https://groups.inf.ed.ac.uk/ami/download/
+      attribution: AMI Meeting Corpus by the AMI Consortium; meeting ES2002c and public manual annotations.
+    coverage:
+      accents: [en-European-meeting]
+      conditions: [clean, meeting, long-form, natural-overlap]
+      speaker_count: 4
+      overlapping_speech: true
+      timestamp_reference: true
+      diarization_reference: true
+      domain_terms: [remote control, industrial design, interface]

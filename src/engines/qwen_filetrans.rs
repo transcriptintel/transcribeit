@@ -15,8 +15,11 @@ use crate::engines::qwen_filetrans::types::{
     FileInput, QueryResponse, RequestParameters, ResultDocument, SubmitRequest, SubmitResponse,
     TaskResult, normalize_api_base_url,
 };
-use crate::engines::rate_limit::{self, send_with_retry};
-use crate::storage::s3::{S3CleanupResult, S3Uploader};
+use crate::engines::rate_limit::{
+    self, MAX_ERROR_RESPONSE_BYTES, MAX_RESULT_RESPONSE_BYTES, RetryPolicy, read_response_limited,
+    send_with_retry,
+};
+use crate::storage::s3::{S3CleanupResult, S3Uploader, finish_staged_operation};
 use crate::transcriber::{Transcriber, Transcript};
 
 pub struct QwenFileTrans {
@@ -81,22 +84,27 @@ impl QwenFileTrans {
             },
         };
 
-        let body = send_with_retry(&self.settings, "Qwen ASR submit", || {
-            let client = self.client.clone();
-            let api_key = self.api_key.clone();
-            let url = url.clone();
-            let payload = payload.clone();
-            Box::pin(async move {
-                client
-                    .post(url)
-                    .bearer_auth(api_key)
-                    .header("X-DashScope-Async", "enable")
-                    .json(&payload)
-                    .send()
-                    .await
-                    .context("Failed to submit Qwen ASR task")
-            })
-        })
+        let body = send_with_retry(
+            &self.settings,
+            "Qwen ASR submit",
+            RetryPolicy::RateLimitOnly,
+            || {
+                let client = self.client.clone();
+                let api_key = self.api_key.clone();
+                let url = url.clone();
+                let payload = payload.clone();
+                Box::pin(async move {
+                    client
+                        .post(url)
+                        .bearer_auth(api_key)
+                        .header("X-DashScope-Async", "enable")
+                        .json(&payload)
+                        .send()
+                        .await
+                        .context("Failed to submit Qwen ASR task")
+                })
+            },
+        )
         .await
         .map_err(|(status, body)| anyhow::anyhow!("Qwen ASR submit returned {status}: {body}"))?;
 
@@ -115,20 +123,25 @@ impl QwenFileTrans {
         for _ in 0..self.max_polls {
             tokio::time::sleep(self.poll_interval).await;
 
-            let body = send_with_retry(&self.settings, "Qwen ASR task query", || {
-                let client = self.client.clone();
-                let api_key = self.api_key.clone();
-                let url = url.clone();
-                Box::pin(async move {
-                    client
-                        .get(url)
-                        .bearer_auth(api_key)
-                        .header("X-DashScope-Async", "enable")
-                        .send()
-                        .await
-                        .context("Failed to query Qwen ASR task")
-                })
-            })
+            let body = send_with_retry(
+                &self.settings,
+                "Qwen ASR task query",
+                RetryPolicy::Idempotent,
+                || {
+                    let client = self.client.clone();
+                    let api_key = self.api_key.clone();
+                    let url = url.clone();
+                    Box::pin(async move {
+                        client
+                            .get(url)
+                            .bearer_auth(api_key)
+                            .header("X-DashScope-Async", "enable")
+                            .send()
+                            .await
+                            .context("Failed to query Qwen ASR task")
+                    })
+                },
+            )
             .await
             .map_err(|(status, body)| {
                 anyhow::anyhow!("Qwen ASR task query returned {status}: {body}")
@@ -165,17 +178,25 @@ impl QwenFileTrans {
         transcription_url: &str,
         task_metadata: serde_json::Value,
     ) -> Result<Transcript> {
-        let body = self
+        let response = self
             .client
             .get(transcription_url)
             .send()
             .await
-            .context("Failed to download Qwen ASR result")?
-            .error_for_status()
-            .context("Qwen ASR result download returned an error")?
-            .bytes()
-            .await
-            .context("Failed to read Qwen ASR result body")?;
+            .context("Failed to download Qwen ASR result")?;
+        let status = response.status();
+        let maximum_bytes = if status.is_success() {
+            MAX_RESULT_RESPONSE_BYTES
+        } else {
+            MAX_ERROR_RESPONSE_BYTES
+        };
+        let body = read_response_limited(response, maximum_bytes, "Qwen ASR result body").await?;
+        if !status.is_success() {
+            anyhow::bail!(
+                "Qwen ASR result download returned {status}: {}",
+                String::from_utf8_lossy(&body)
+            );
+        }
 
         let result: ResultDocument =
             serde_json::from_slice(&body).context("Failed to parse Qwen ASR result JSON")?;
@@ -194,18 +215,13 @@ impl Transcriber for QwenFileTrans {
     async fn transcribe_path(&self, audio_path: &Path) -> Result<Transcript> {
         validate_model_for_path(&self.model, audio_path).await?;
         let upload = self.uploader.upload_and_presign_object(audio_path).await?;
-        let mut transcript = self.transcribe_file_url(upload.url.clone()).await?;
+        let result = self.transcribe_file_url(upload.url.clone()).await;
         let cleanup = if self.autoclean {
             self.uploader.cleanup_uploaded_object(&upload).await
         } else {
             S3CleanupResult::skipped(&upload)
         };
-        if let Some(error) = cleanup.error.as_deref() {
-            eprintln!(
-                "Failed to delete staged Qwen object s3://{}/{}: {error}",
-                cleanup.bucket, cleanup.key
-            );
-        }
+        let mut transcript = finish_staged_operation("Qwen", result, &cleanup)?;
         add_qwen_staging_metadata(&mut transcript, cleanup);
         Ok(transcript)
     }

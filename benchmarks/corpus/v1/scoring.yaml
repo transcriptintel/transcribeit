@@ -1,0 +1,64 @@
+schema_version: 1
+scoring_id: transcribeit-asr-scoring-v1
+
+normalization:
+  profile: english-wer-v1
+  steps:
+    - Unicode NFKC
+    - lowercase
+    - normalize curly apostrophes to ASCII apostrophes
+    - remove punctuation except apostrophes inside words
+    - expand only the fixed aliases declared by a fixture
+    - collapse whitespace
+  forbidden:
+    - silently deleting filled pauses
+    - silently deleting repetitions
+    - provider-specific normalization
+
+metrics:
+  word_accuracy:
+    metric: word_error_rate
+    unit: ratio
+    direction: lower_is_better
+    numerator: substitutions + deletions + insertions
+    denominator: normalized reference word count
+    report: [substitutions, deletions, insertions, reference_words, wer]
+  domain_terms:
+    metric: term_recall
+    unit: ratio
+    direction: higher_is_better
+    matching: normalized contiguous token sequence
+    report: [expected_terms, matched_terms, missed_terms, term_recall]
+  timing:
+    eligibility: reference and hypothesis contain aligned word or segment times
+    metrics: [start_boundary_mae_ms, end_boundary_mae_ms, timestamp_coverage]
+    alignment: minimum-edit word alignment after english-wer-v1 normalization
+    missing_policy: report unsupported separately; do not score as zero error
+  speakers:
+    eligibility: reference and hypothesis contain speaker labels
+    metrics: [diarization_error_rate, speaker_count_absolute_error, attributed_word_error_rate]
+    collar_ms: 250
+    score_overlap: true
+    label_mapping: optimal one-to-one mapping before DER and attributed WER
+    missing_policy: report unsupported separately; do not infer labels from transcript text
+  metadata_completeness:
+    fields: [language, duration, segments, words, timestamps, speakers, usage, provider_model]
+    metric: present_applicable_fields / applicable_fields
+    unverifiable_values: missing
+  latency:
+    metrics: [conversion_ms, provider_ms, wall_ms, real_time_factor]
+    repetitions: 3
+    aggregation: [median, minimum, maximum]
+    real_time_factor: wall_seconds / fixture_duration_seconds
+    comparison_rule: compare like-for-like output modes and warm/cold state only
+  provider_failures:
+    categories: [authentication, rate_limit, timeout, transport, provider_5xx, rejected_format, malformed_response, unsupported, local_runtime]
+    report: [attempted, successful, failed, category, retry_count]
+    rule: retain every failed or rejected attempt; never replace it with a fallback model
+
+aggregation:
+  unit: fixture-provider-model-output-mode
+  macro_average_across_fixtures: true
+  retain_per_fixture_results: true
+  no_ground_truth: exclude only reference-dependent metrics and retain capability, latency, metadata, and failures
+  publishability: quality claims require all applicable fixtures; a single fixture remains an observation

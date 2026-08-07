@@ -1,16 +1,14 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use futures_util::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use tokio::io::AsyncWriteExt;
 
+use crate::artifacts::{
+    ArtifactIntegrity, verify_file, verify_file_blocking, write_verified_response,
+};
 use crate::cli::ModelSize;
 
-const HF_BASE_URL: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
-#[cfg(feature = "sherpa-onnx")]
-const SHERPA_ONNX_BASE_URL: &str =
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
+const HF_REVISION: &str = "5359861c739e955e79d9a303bcbc70fb988958b1";
 
 pub(crate) fn models_dir() -> PathBuf {
     PathBuf::from(std::env::var("MODEL_CACHE_DIR").unwrap_or_else(|_| ".cache".to_string()))
@@ -44,6 +42,7 @@ pub(crate) fn resolve_cached_model_path(model: &str) -> Result<String> {
     if let Some(file_name) = file_name {
         let cache_path = models_dir().join(file_name);
         if cache_path.exists() {
+            verify_file_blocking(&cache_path, ggml_integrity(file_name)?)?;
             return Ok(cache_path.to_string_lossy().into_owned());
         }
         anyhow::bail!(
@@ -79,14 +78,17 @@ pub(crate) async fn download_model(
         .with_context(|| format!("Failed to create directory: {}", dir.display()))?;
 
     let file_name = model_size.file_name();
+    let integrity = ggml_integrity(file_name)?;
     let dest = dir.join(file_name);
 
     if dest.exists() {
+        verify_file(&dest, integrity).await?;
         println!("Model already exists: {}", dest.display());
         return Ok(());
     }
 
-    let url = format!("{HF_BASE_URL}/{file_name}");
+    let url =
+        format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/{HF_REVISION}/{file_name}");
     println!("Downloading {file_name} ...");
     println!("  from: {url}");
     println!("  to:   {}", dest.display());
@@ -102,11 +104,10 @@ pub(crate) async fn download_model(
         anyhow::bail!("Download failed with status: {}", resp.status());
     }
 
-    let total_size = resp.content_length().unwrap_or(0);
-    let pb = download_progress_bar(total_size)?;
+    let pb = download_progress_bar(integrity.size_bytes)?;
 
     let tmp_dest = dest.with_extension("bin.part");
-    write_response_to_path(resp, &tmp_dest, &pb).await?;
+    write_verified_response(resp, &tmp_dest, &pb, integrity).await?;
 
     tokio::fs::rename(&tmp_dest, &dest)
         .await
@@ -114,110 +115,6 @@ pub(crate) async fn download_model(
 
     pb.finish_and_clear();
     println!("Done: {}", dest.display());
-    Ok(())
-}
-
-#[cfg(feature = "sherpa-onnx")]
-pub(crate) fn resolve_onnx_model_dir(model: &str) -> Result<PathBuf> {
-    let model = model.trim();
-
-    let direct = PathBuf::from(model);
-    if direct.is_dir() && has_tokens_file(&direct) {
-        return Ok(direct);
-    }
-
-    let normalized = match model {
-        "large-v3-turbo" => "turbo",
-        other => other,
-    };
-
-    let candidates = [
-        format!("sherpa-onnx-whisper-{normalized}"),
-        format!("sherpa-onnx-whisper-{model}"),
-        model.to_string(),
-    ];
-    for name in &candidates {
-        let cache_path = models_dir().join(name);
-        if cache_path.is_dir() && has_tokens_file(&cache_path) {
-            return Ok(cache_path);
-        }
-    }
-
-    let cache_dir = models_dir();
-    if cache_dir.is_dir() {
-        let pattern = format!("{}/*{}*", cache_dir.display(), normalized);
-        if let Ok(paths) = glob::glob(&pattern) {
-            for entry in paths.flatten() {
-                if entry.is_dir() && has_tokens_file(&entry) {
-                    return Ok(entry);
-                }
-            }
-        }
-    }
-
-    anyhow::bail!(
-        "ONNX model not found for '{model}'. Expected a directory with encoder.onnx, decoder.onnx, and tokens.txt.\n\
-         Download with: transcribeit download-model -f onnx -s <size>"
-    )
-}
-
-#[cfg(feature = "sherpa-onnx")]
-pub(crate) async fn download_onnx_model(
-    model_size: &ModelSize,
-    output_dir: Option<PathBuf>,
-) -> Result<()> {
-    let archive_name = model_size
-        .onnx_archive_name()
-        .context("This model size is not available in ONNX format")?;
-
-    let dir = output_dir.unwrap_or_else(models_dir);
-    tokio::fs::create_dir_all(&dir)
-        .await
-        .with_context(|| format!("Failed to create directory: {}", dir.display()))?;
-
-    let dest_dir = dir.join(archive_name);
-    if dest_dir.exists() {
-        println!("Model already exists: {}", dest_dir.display());
-        return Ok(());
-    }
-
-    let url = format!("{SHERPA_ONNX_BASE_URL}/{archive_name}.tar.bz2");
-    println!("Downloading {archive_name}.tar.bz2 ...");
-    println!("  from: {url}");
-    println!("  to:   {}", dest_dir.display());
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .context("Failed to start ONNX model download")?;
-
-    if !resp.status().is_success() {
-        anyhow::bail!("Download failed with status: {}", resp.status());
-    }
-
-    let pb = download_progress_bar(resp.content_length().unwrap_or(0))?;
-    let tmp = tempfile::Builder::new()
-        .suffix(".tar.bz2")
-        .tempfile_in(&dir)
-        .context("Failed to create temp file")?;
-    let tmp_path = tmp.path().to_path_buf();
-
-    write_response_to_path(resp, &tmp_path, &pb).await?;
-
-    pb.finish_and_clear();
-    println!("Extracting...");
-    extract_archive(&tmp_path, &dir)
-        .await
-        .context("Failed to extract ONNX model archive")?;
-    let _ = tokio::fs::remove_file(&tmp_path).await;
-
-    if dest_dir.exists() {
-        println!("Done: {}", dest_dir.display());
-    } else {
-        println!("Done: extracted to {}", dir.display());
-    }
     Ok(())
 }
 
@@ -250,15 +147,6 @@ pub(crate) fn list_models(dir: Option<PathBuf>) -> Result<()> {
         }
     }
 
-    #[cfg(feature = "sherpa-onnx")]
-    for entry in &entries {
-        let path = entry.path();
-        if path.is_dir() && has_tokens_file(&path) {
-            println!("  {}/ [onnx]", path.file_name().unwrap().to_string_lossy());
-            found = true;
-        }
-    }
-
     if !found {
         println!("No models found in {}", dir.display());
     }
@@ -266,47 +154,54 @@ pub(crate) fn list_models(dir: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "sherpa-onnx")]
-fn has_tokens_file(dir: &Path) -> bool {
-    if dir.join("tokens.txt").exists() {
-        return true;
-    }
-    glob::glob(&format!("{}/*-tokens.txt", dir.display()))
-        .ok()
-        .and_then(|mut paths| paths.next())
-        .is_some_and(|p| p.is_ok())
-}
-
-async fn write_response_to_path(
-    resp: reqwest::Response,
-    path: &Path,
-    pb: &ProgressBar,
-) -> Result<()> {
-    let mut file = tokio::fs::File::create(path)
-        .await
-        .context("Failed to create temp file")?;
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.context("Error reading download stream")?;
-        file.write_all(&chunk).await.context("Failed to write")?;
-        pb.inc(chunk.len() as u64);
-    }
-    file.flush().await?;
-    Ok(())
-}
-
-#[cfg(feature = "sherpa-onnx")]
-async fn extract_archive(archive_path: &Path, extract_to: &Path) -> Result<()> {
-    let archive_path = archive_path.to_path_buf();
-    let extract_to = extract_to.to_path_buf();
-    tokio::task::spawn_blocking(move || {
-        let file = std::fs::File::open(&archive_path).context("Failed to open archive")?;
-        let decoder = bzip2::read::BzDecoder::new(file);
-        let mut archive = tar::Archive::new(decoder);
-        archive.unpack(&extract_to).context("Failed to extract")?;
-        Ok::<(), anyhow::Error>(())
+fn ggml_integrity(file_name: &str) -> Result<ArtifactIntegrity> {
+    let integrity = match file_name {
+        "ggml-tiny.bin" => (
+            "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+            77_691_713,
+        ),
+        "ggml-tiny.en.bin" => (
+            "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
+            77_704_715,
+        ),
+        "ggml-base.bin" => (
+            "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+            147_951_465,
+        ),
+        "ggml-base.en.bin" => (
+            "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002",
+            147_964_211,
+        ),
+        "ggml-small.bin" => (
+            "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+            487_601_967,
+        ),
+        "ggml-small.en.bin" => (
+            "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d",
+            487_614_201,
+        ),
+        "ggml-medium.bin" => (
+            "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
+            1_533_763_059,
+        ),
+        "ggml-medium.en.bin" => (
+            "cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356",
+            1_533_774_781,
+        ),
+        "ggml-large-v3.bin" => (
+            "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+            3_095_033_483,
+        ),
+        "ggml-large-v3-turbo.bin" => (
+            "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+            1_624_555_275,
+        ),
+        _ => anyhow::bail!("No pinned integrity metadata for GGML artifact {file_name}"),
+    };
+    Ok(ArtifactIntegrity {
+        sha256: integrity.0,
+        size_bytes: integrity.1,
     })
-    .await?
 }
 
 fn download_progress_bar(total_size: u64) -> Result<ProgressBar> {

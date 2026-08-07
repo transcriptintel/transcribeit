@@ -1,0 +1,3714 @@
+{
+  "schema_version": "transcribeit.benchmark-result.v1",
+  "benchmark_id": "ti-007-clean-representative-corpus-2026-08-06",
+  "issue": "TI-007",
+  "recorded_at_utc": "2026-08-06T12:45:58.284Z",
+  "classification": "clean_baseline",
+  "baseline_eligible": true,
+  "baseline_limitations": [
+    "the long-form AMI fixture has one repetition per provider while short fixtures have three",
+    "provider behavior and floating hosted model aliases can change independently of this producing commit"
+  ],
+  "git": {
+    "commit": "64afbc29cffc65b654ad7a7eaf37dbcbad279765",
+    "worktree_dirty": false
+  },
+  "binary": {
+    "version": "transcribeit 1.6.0",
+    "features": [
+      "sherpa-onnx"
+    ],
+    "sha256": "175ca2417131913ba682f7fa0473271a5b14afe6a3cf78e41f9418e8d279eb61"
+  },
+  "machine": {
+    "cpu": "Apple M4 Pro",
+    "logical_cores": 12,
+    "memory_bytes": 25769803776,
+    "os": "Darwin",
+    "kernel": "25.5.0",
+    "architecture": "arm64"
+  },
+  "tools": {
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "ffmpeg": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers",
+    "bun": "1.3.14",
+    "llama_cpp": "version: 10210 (000547513)",
+    "sherpa_onnx": "1.13.4"
+  },
+  "corpus": {
+    "id": "transcribeit-representative-v1",
+    "manifest_sha256": "bfcb9146928a23a87edfa02082ed5a977e8c2971cd223a5707cf5bbb773b3a98",
+    "scoring_sha256": "dabeed558f1140c75960c46c24832bd48624cba61cee27eb8ac710ffb0229b22",
+    "fixtures": [
+      {
+        "id": "fleurs-en-us-traffic-flow-clean",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "container": "wav",
+        "codec": "pcm_f32le",
+        "sha256": "3e76cc5728bfd7c24f1039b5c9a47e8d79c7f225605862e977833a4f79249bff",
+        "accents": [
+          "en-US"
+        ],
+        "conditions": [
+          "clean",
+          "read-speech"
+        ],
+        "speaker_count": 1,
+        "timestamp_reference": false,
+        "diarization_reference": false,
+        "domain_terms": [
+          "traffic flow",
+          "driver behavior",
+          "predicted"
+        ],
+        "reference_classification": "reviewed"
+      },
+      {
+        "id": "fleurs-en-us-traffic-flow-noisy-10db",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "container": "wav",
+        "codec": "pcm_f32le",
+        "sha256": "0ce03952e2c7d4acc813a5a49b55f2675c2ff25dc58575068dd51b2fc54b63d9",
+        "accents": [
+          "en-US"
+        ],
+        "conditions": [
+          "noisy",
+          "read-speech",
+          "synthetic-white-noise-10db"
+        ],
+        "speaker_count": 1,
+        "timestamp_reference": false,
+        "diarization_reference": false,
+        "domain_terms": [
+          "traffic flow",
+          "driver behavior",
+          "predicted"
+        ],
+        "reference_classification": "reviewed"
+      },
+      {
+        "id": "speechocean-mandarin-l1-computer-clean",
+        "duration_seconds": 3,
+        "bytes": 96044,
+        "container": "wav",
+        "codec": "pcm_s16le",
+        "sha256": "147537ac415dbf33afb6a92b27f38d2da4c26a390465c4ad8f030502d815a7bf",
+        "accents": [
+          "en-Mandarin-L1"
+        ],
+        "conditions": [
+          "clean",
+          "read-speech",
+          "non-native"
+        ],
+        "speaker_count": 1,
+        "timestamp_reference": false,
+        "diarization_reference": false,
+        "domain_terms": [
+          "computer"
+        ],
+        "reference_classification": "reviewed"
+      },
+      {
+        "id": "ami-es2002c-mix-headset",
+        "duration_seconds": 2423.68,
+        "bytes": 77557804,
+        "container": "wav",
+        "codec": "pcm_s16le",
+        "sha256": "8aa5dca8a0d31aaa596ecec8e0d7d8df1646fd4328d2740b287650d8012412df",
+        "accents": [
+          "en-European-meeting"
+        ],
+        "conditions": [
+          "clean",
+          "meeting",
+          "long-form",
+          "natural-overlap"
+        ],
+        "speaker_count": 4,
+        "timestamp_reference": true,
+        "diarization_reference": true,
+        "domain_terms": [
+          "remote control",
+          "industrial design",
+          "interface"
+        ],
+        "reference_classification": "reviewed"
+      }
+    ]
+  },
+  "protocol": {
+    "execution": "sequential",
+    "output_format": "text for every provider; capabilities are read from manifests",
+    "short_fixture_repetitions": 3,
+    "long_fixture_repetitions": 1,
+    "request_timeout_seconds": 3600,
+    "max_retries": 5,
+    "language_hint": "en; NVIDIA Riva requires en-US",
+    "normalization": false,
+    "segmentation": "provider default whole-file path; provider size limits may trigger TranscribeIt VAD segmentation, with the evaluation-owned Silero model supplied explicitly",
+    "hosted_warm_state": "provider-controlled and not observable",
+    "local_warm_state": "whisper.cpp and both Sherpa models load a new process for each run; llama.cpp Qwen uses one server and records first-client versus warm requests",
+    "preprocessing": "TranscribeIt prepares mono 16 kHz media using each provider path"
+  },
+  "commands": {
+    "convention": "$FIXTURE, $RUN, and $SPEAKERS are replaced from the corpus manifest; credentials come only from provider environment variables",
+    "azure": "./target/release/transcribeit run -p azure --language en --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/azure-whisper/.../run-$RUN",
+    "deepgram": "./target/release/transcribeit run -p deepgram --remote-model nova-3 --language en --diarize --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/deepgram-nova-3/.../run-$RUN",
+    "gemini": "./target/release/transcribeit run -p gemini --remote-model gemini-3.6-flash --language en --gemini-autoclean --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/gemini-3-6-flash/.../run-$RUN",
+    "nvidia_riva": "./target/release/transcribeit run -p nvidia-riva --language en-US --diarize --speakers $SPEAKERS --vad-model output/ti-007-clean-20260806-64afbc2/models/sherpa-base-eval/silero_vad.onnx --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/nvidia-riva/.../run-$RUN",
+    "openai_gpt_transcribe": "./target/release/transcribeit run -p openai --remote-model gpt-transcribe --language en --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/openai-gpt-transcribe/.../run-$RUN",
+    "openai_diarize": "./target/release/transcribeit run -p openai --remote-model gpt-4o-transcribe-diarize --diarize --language en --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/openai-gpt-4o-transcribe-diarize/.../run-$RUN",
+    "qwen_filetrans": "./target/release/transcribeit run -p qwen-filetrans --remote-model qwen3-asr-flash-filetrans --language en --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/qwen-filetrans/.../run-$RUN",
+    "local_whisper": "./target/release/transcribeit run -p local -m output/ti-007-clean-20260806-64afbc2/models/local-whisper-base-eval/ggml-base.bin --language en --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/local-whisper-base/.../run-$RUN",
+    "sherpa_onnx_whisper": "DYLD_LIBRARY_PATH=output/ti-007-clean-20260806-64afbc2/models/sherpa-base-eval/.../lib ./target/release/transcribeit run -p sherpa-onnx -m output/ti-007-clean-20260806-64afbc2/models/sherpa-base-eval/models/sherpa-onnx-whisper-base --vad-model output/ti-007-clean-20260806-64afbc2/models/sherpa-base-eval/silero_vad.onnx --language en --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/sherpa-onnx-whisper-base/.../run-$RUN",
+    "sherpa_onnx_qwen3_asr": "DYLD_LIBRARY_PATH=output/ti-007-clean-20260806-64afbc2/models/sherpa-base-eval/.../lib ./target/release/transcribeit run -p sherpa-onnx -m output/ti-007-clean-20260806-64afbc2/models/qwen3-asr-native-eval/sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25 --vad-model output/ti-007-clean-20260806-64afbc2/models/sherpa-base-eval/silero_vad.onnx --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/sherpa-qwen3-asr-0.6b-int8/.../run-$RUN",
+    "qwen3_asr_llama_server": "HF_HOME=output/ti-007-clean-20260806-64afbc2/models/qwen3-asr-llama-eval/hf HF_HUB_CACHE=... XDG_CACHE_HOME=... llama-server -hf ggml-org/Qwen3-ASR-1.7B-GGUF --port 18081 --no-ui -n 16384 --temp 0",
+    "qwen3_asr_llama_client": "./target/release/transcribeit run -p openai --api-key local --base-url http://127.0.0.1:18081 --remote-model ggml-org/Qwen3-ASR-1.7B-GGUF --request-timeout-secs 3600 -i $FIXTURE -f text -o output/ti-007-clean-20260806-64afbc2/runs/qwen3-asr-llama/.../run-$RUN"
+  },
+  "scoring": {
+    "profile": "english-wer-v1",
+    "scorer_sha256": "4a37b99be0ce628f0f8d83026d515b5d9063fb86d8381ebfe6ee449f973f7719",
+    "word_accuracy": "Levenshtein substitutions + deletions + insertions divided by reviewed reference words",
+    "domain_terms": "normalized contiguous-token recall",
+    "timing": "exact-token alignment from hypothesis segments to AMI word times; boundary MAE and reference-token coverage",
+    "speakers": "10 ms DER, 250 ms collar, overlap scored, optimal one-to-one speaker mapping",
+    "ami_overlap_boundary": "AMI WER time-orders overlapping reference words by start time with speaker as the stable tie-breaker; interpret it with DER and attributed WER rather than as overlap-invariant cpWER"
+  },
+  "providers": [
+    {
+      "id": "azure-whisper",
+      "provider": "azure",
+      "model": "deployment:whisper",
+      "api_version": "2025-04-01-preview",
+      "attempts": 10,
+      "successful": 10,
+      "failed": 0,
+      "retry_events": 4,
+      "short_fixture_macro_wer": 0.11764705882352942,
+      "short_fixture_median_wall_seconds": 1.1314012079999998,
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            1.043322417,
+            1.230145875,
+            1.1314012079999998
+          ],
+          "median_wall_seconds": 1.1314012079999998,
+          "processing_seconds": [
+            0.985724959,
+            1.168121417,
+            1.068833083
+          ],
+          "median_processing_seconds": 1.068833083,
+          "median_real_time_factor": 0.08950958924050631,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 1,
+            "characters": 114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "85b20073df4967399c661ec897c4ab8b46f4dc6f648e153b2f022f555080b631",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "8e7b28387268cbf8661bd2cc0e89091af3472c47862f968c95105107ba79768e",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "af20b75ddf1b22b91fdc799b073be3b00f21b3628c38143aba1423f5fd9a1673",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            58.190880958,
+            1.099129915999998,
+            0.9794616249999962
+          ],
+          "median_wall_seconds": 1.099129915999998,
+          "processing_seconds": [
+            58.124394209,
+            1.040655209,
+            0.91579975
+          ],
+          "median_processing_seconds": 1.040655209,
+          "median_real_time_factor": 0.08695648069620238,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 2,
+            "characters": 113,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "b2df331389167d8ed2aef671bdd9ef73eb21884ddc62a13394f9146ae564cd4f",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "aa59e9b03a5b8db28e750d255cebbbeb9d20b69de4dfe1b83890d57d362420a4",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "45f0954ba4af89fbad6f4a0e937b80fa12759c844403a7b911ef42b914aecbde",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            57.812745666999994,
+            1.9411439160000008,
+            1.0234382500000065
+          ],
+          "median_wall_seconds": 1.9411439160000008,
+          "processing_seconds": [
+            57.754619833,
+            1.898312708,
+            0.975310875
+          ],
+          "median_processing_seconds": 1.898312708,
+          "median_real_time_factor": 0.6470479720000003,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 1,
+            "characters": 29,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "377613217353827f4c6fd2c7675c9f279b8824cb3c51614a23d9a294bd96f9d7",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "89be2d50d16840b57b705c2fd0581216d359aa406c844ece6d8a3649b2365872",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "d46b258b28d290c808fdafe3ff332a73880c0e7b45d3b7293eee865c2f359830",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "wall_seconds": [
+            149.90384941700003
+          ],
+          "median_wall_seconds": 149.90384941700003,
+          "processing_seconds": [
+            149.745181125
+          ],
+          "median_processing_seconds": 149.745181125,
+          "median_real_time_factor": 0.06184968701189928,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.2676485525647537
+            ],
+            "median_wer": 0.2676485525647537,
+            "reference_words": 7876
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": {
+            "start_boundary_mae_ms": 556.8197278911584,
+            "end_boundary_mae_ms": 690.6972789115483,
+            "timestamp_coverage": 0.739461655662773,
+            "scored_segments": 588,
+            "timing_origin": "provider_native",
+            "timing_reliable": true
+          },
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 600,
+            "characters": 32446,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "6936d425b34ee3dad3f66c626e7c64b694f1259558d29880fd714bef3aa968d9",
+              "output_sha256": "751854c17983428889d49fde98f9fda52132107a83dd6ac00436ad09916b7f05"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "deepgram-nova-3",
+      "provider": "deepgram",
+      "model": "nova-3",
+      "resolved_model_info": {
+        "2187e11a-3532-4498-b076-81fa530bdd49": {
+          "arch": "nova-3",
+          "name": "general-nova-3",
+          "version": "2025-07-31.0"
+        }
+      },
+      "attempts": 10,
+      "successful": 10,
+      "failed": 0,
+      "retry_events": 0,
+      "short_fixture_macro_wer": 0.17647058823529413,
+      "short_fixture_median_wall_seconds": 1.3692565410000388,
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            1.8186643749999931,
+            1.2855715410000412,
+            1.3441958330000052
+          ],
+          "median_wall_seconds": 1.3441958330000052,
+          "processing_seconds": [
+            1.749894833,
+            1.225040042,
+            1.2940834589999999
+          ],
+          "median_processing_seconds": 1.2940834589999999,
+          "median_real_time_factor": 0.10634460704113965,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.23529411764705882,
+              0.23529411764705882,
+              0.23529411764705882
+            ],
+            "median_wer": 0.23529411764705882,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 4,
+            "characters": 111,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": true,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": "provider_native",
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "62dac959910d5606a216af42ede8659c238e55ef3a7310b9772c39d55c5c8794",
+              "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "87f798595dfdbf91e02a71123ef27b575cbe60d249e8f35576117e7107aa2abf",
+              "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "718ed0173cb06a95f04d5760e65964a00b14a3ebad7bd79ba37afff56d54ba7c",
+              "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            1.4051473750000005,
+            1.7480990829999792,
+            1.3692565410000388
+          ],
+          "median_wall_seconds": 1.4051473750000005,
+          "processing_seconds": [
+            1.349204334,
+            1.689411958,
+            1.319720667
+          ],
+          "median_processing_seconds": 1.349204334,
+          "median_real_time_factor": 0.11116672270569623,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.29411764705882354,
+              0.29411764705882354,
+              0.29411764705882354
+            ],
+            "median_wer": 0.29411764705882354,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              0.6666666666666666,
+              0.6666666666666666,
+              0.6666666666666666
+            ],
+            "median_recall": 0.6666666666666666
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 4,
+            "characters": 110,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": true,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": "provider_native",
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "75b7cf4a48759173177e1cf9da11367fee424d17024bd8881b1f5481ee9df14e",
+              "output_sha256": "c7c305a4d81bdc6c8e5abd7bd16de071e437b29c7573bb7b359cb0cb114a6f6e"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "ccdde2df802e35595938c5bc07fc2602d038863bafc026aac09dc3257ddf2ff7",
+              "output_sha256": "c7c305a4d81bdc6c8e5abd7bd16de071e437b29c7573bb7b359cb0cb114a6f6e"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "41e8285cc5749aab23d97bf1f87cb0e80b3d8b4c62fe415e25a03423e400bee9",
+              "output_sha256": "c7c305a4d81bdc6c8e5abd7bd16de071e437b29c7573bb7b359cb0cb114a6f6e"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.946997791999951,
+            2.2182848329999834,
+            0.9499370420000051
+          ],
+          "median_wall_seconds": 0.9499370420000051,
+          "processing_seconds": [
+            0.89346075,
+            2.158859333,
+            0.894449333
+          ],
+          "median_processing_seconds": 0.894449333,
+          "median_real_time_factor": 0.31664568066666837,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 1,
+            "characters": 29,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": true,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": "provider_native",
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "5d642e635bb7ffab44cfad37988e228c0404849c672c2372e7d79adf07d4e503",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "d460a463d0eca6342f7d263c84f86c3be6528d4e0a19d5ae46e30dced753f25a",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "4becb6f5355b6081f75aec58789a612f64bf1d18a54def56543d3c6b32d5e2e9",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "wall_seconds": [
+            30.171209583000046
+          ],
+          "median_wall_seconds": 30.171209583000046,
+          "processing_seconds": [
+            28.776470125
+          ],
+          "median_processing_seconds": 28.776470125,
+          "median_real_time_factor": 0.012448512007773324,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.18448450990350432
+            ],
+            "median_wer": 0.18448450990350432,
+            "reference_words": 7876
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": {
+            "start_boundary_mae_ms": 184.5107398568047,
+            "end_boundary_mae_ms": 406.90930787590133,
+            "timestamp_coverage": 0.8211020822752666,
+            "scored_segments": 419,
+            "timing_origin": "provider_native",
+            "timing_reliable": true
+          },
+          "speakers": {
+            "diarization_error_rate": 0.25612530861873284,
+            "miss_rate": 0.18148126233802558,
+            "false_alarm_rate": 0.0017696830169599104,
+            "confusion_rate": 0.07287436326374731,
+            "speaker_count_absolute_error": 1,
+            "attributed_word_error_rate": 0.3696038598273235,
+            "reference_speakers": 4,
+            "hypothesis_speakers": 5,
+            "collar_ms": 250,
+            "score_overlap": true
+          },
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 424,
+            "characters": 35863,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": true,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": "provider_native",
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "80aba674c2decdd018b0cf57cc10c5d83925ca01b3f45ee4d1b79668d7173261",
+              "output_sha256": "ae652891817252c72328c6cccb69a427ec1cbcd968ce558b9be4322ba79e0e96"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gemini-3-6-flash",
+      "provider": "gemini",
+      "model": "gemini-3.6-flash",
+      "attempts": 10,
+      "successful": 10,
+      "failed": 0,
+      "retry_events": 0,
+      "short_fixture_macro_wer": 0.11764705882352942,
+      "short_fixture_median_wall_seconds": 9.289352249999997,
+      "remote_cleanup": {
+        "attempted_runs": 10,
+        "deleted_runs": 10,
+        "cleanup_failures": 0
+      },
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            11.98115716599999,
+            8.978446292000008,
+            9.485977709000057
+          ],
+          "median_wall_seconds": 9.485977709000057,
+          "processing_seconds": [
+            11.937916584,
+            8.919866416,
+            9.430966125
+          ],
+          "median_processing_seconds": 9.430966125,
+          "median_real_time_factor": 0.7504729200158272,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 1,
+            "characters": 114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_generated",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "Gemini timestamps, speakers, language, and emotion are model-generated structured output, not a dedicated ASR schema."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "e422d73bd0c9aae61317d6252ccfe998f1469df367bb158425575a11600568cf",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "e650e80c53d44bfa106a2456ce0b5848697a348b4c58c022857b733b93c09bb3",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "253345de8b1075e5de8f9427c864581270d390f508b6f31ad49da7b0d73ba5f2",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            9.289352249999997,
+            9.479217125000025,
+            9.390015291000019
+          ],
+          "median_wall_seconds": 9.390015291000019,
+          "processing_seconds": [
+            9.237727542,
+            9.421076875,
+            9.333109958
+          ],
+          "median_processing_seconds": 9.333109958,
+          "median_real_time_factor": 0.7428809565664571,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 1,
+            "characters": 114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_generated",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "Gemini timestamps, speakers, language, and emotion are model-generated structured output, not a dedicated ASR schema."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "ead19f2bee9bcbf55658d94d26ab625db518d5036a777dcea86f2afa89fca4dc",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "c5c9bc6c5d602131fd19250029ab7006b44b098a1335e4821c6c5bd524b6008c",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "a9c64fe44c4a85a18419170497c83206606a643edd000b9c4d1bbf67a5fae6ee",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            8.42804904199997,
+            7.686736708000011,
+            8.129832874999964
+          ],
+          "median_wall_seconds": 8.129832874999964,
+          "processing_seconds": [
+            8.3771775,
+            7.631965958,
+            8.077882125
+          ],
+          "median_processing_seconds": 8.077882125,
+          "median_real_time_factor": 2.709944291666655,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 1,
+            "characters": 29,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_generated",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "Gemini timestamps, speakers, language, and emotion are model-generated structured output, not a dedicated ASR schema."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "304c3b605ee14bed5e90945fcdabee63af9eff661b4d4483b7e5058119251891",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "f6a802fe5ea29fee00f80dcd4c92f37d7bef01efe262d6a422749adc419f2b2d",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "7ed289d7d2ffa90ca97830afd2624ab32a7532dc4e1d1714721d4a1a1792581d",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "wall_seconds": [
+            490.668164834
+          ],
+          "median_wall_seconds": 490.668164834,
+          "processing_seconds": [
+            490.560532167
+          ],
+          "median_processing_seconds": 490.560532167,
+          "median_real_time_factor": 0.2024475858339385,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.19553072625698323
+            ],
+            "median_wer": 0.19553072625698323,
+            "reference_words": 7876
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": {
+            "start_boundary_mae_ms": 419133.4259259259,
+            "end_boundary_mae_ms": 426862.8703703704,
+            "timestamp_coverage": 0.4951752158456069,
+            "scored_segments": 108,
+            "timing_origin": "model_generated",
+            "timing_reliable": false
+          },
+          "speakers": null,
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 195,
+            "characters": 36704,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_generated",
+              "timing_reliable": false,
+              "timestamps_clamped": true,
+              "speaker_source": null,
+              "warnings": [
+                "Gemini timestamps, speakers, language, and emotion are model-generated structured output, not a dedicated ASR schema.",
+                "One or more provider timestamps exceeded the source duration and were clamped.",
+                "85 segment(s) have zero-duration timestamps."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "2437a3fcf6a8b611b23237472204e70ecb71a0ff0280117f2a9c8cd94de3e454",
+              "output_sha256": "c821a9e333bd37432c465d84165063442d4a094a2aa97602e57032e69f1b776a"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nvidia-riva",
+      "provider": "nvidia-riva",
+      "model": "function:71203149",
+      "attempts": 10,
+      "successful": 10,
+      "failed": 0,
+      "retry_events": 0,
+      "short_fixture_macro_wer": 0.05882352941176471,
+      "short_fixture_median_wall_seconds": 1.0089683340000337,
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            1.0089683340000337,
+            1.1173955409999472,
+            1.1039756249999628
+          ],
+          "median_wall_seconds": 1.1039756249999628,
+          "processing_seconds": [
+            0.95384925,
+            1.06509475,
+            1.047876875
+          ],
+          "median_processing_seconds": 1.047876875,
+          "median_real_time_factor": 0.08733984374999705,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 2,
+            "characters": 131,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "8ddd2df82e63b39cb1b5287f40e00b7e8d8745d084148c57b6f7d8a3262b5e3c",
+              "output_sha256": "8cf2ba737b7078940786cf188e5a7519c6fb763ccd18fd61d54b2ad42eaf65db"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "da9e4a34319e4977a1ab534fbf00f71593bda075793bd7dc9bdb45f3da678187",
+              "output_sha256": "8cf2ba737b7078940786cf188e5a7519c6fb763ccd18fd61d54b2ad42eaf65db"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "e558e48f86356160845feff7feee2beedabeb4c44c71ffae1923042e2b2f07f6",
+              "output_sha256": "8cf2ba737b7078940786cf188e5a7519c6fb763ccd18fd61d54b2ad42eaf65db"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            1.2606932500000112,
+            1.2355569999999716,
+            0.8750760840000003
+          ],
+          "median_wall_seconds": 1.2355569999999716,
+          "processing_seconds": [
+            1.209196042,
+            1.183076709,
+            0.818184708
+          ],
+          "median_processing_seconds": 1.183076709,
+          "median_real_time_factor": 0.0977497626582256,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              0.6666666666666666,
+              0.6666666666666666,
+              0.6666666666666666
+            ],
+            "median_recall": 0.6666666666666666
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 2,
+            "characters": 134,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "972b8f51d935b4b1d76f609f6da1ab8ce79cb62422e361f4e08fd9a9bdbd348f",
+              "output_sha256": "284e912545b7e4981f9f03ca79f38d8eaced14e5f43c1ce963fca08a577f07bf"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "bcdf930f943461c7c0eef52fb84b94234cbfe79b4f361fd491dae531b2dc97b5",
+              "output_sha256": "284e912545b7e4981f9f03ca79f38d8eaced14e5f43c1ce963fca08a577f07bf"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "a2a13fd3963e6eb24c92d4d5291f17b883980ee53bfd39ef7a95550fc042cb10",
+              "output_sha256": "284e912545b7e4981f9f03ca79f38d8eaced14e5f43c1ce963fca08a577f07bf"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.6422067919999827,
+            0.7746882089999854,
+            0.6323357499999692
+          ],
+          "median_wall_seconds": 0.6422067919999827,
+          "processing_seconds": [
+            0.595927917,
+            0.724837875,
+            0.576904666
+          ],
+          "median_processing_seconds": 0.595927917,
+          "median_real_time_factor": 0.21406893066666088,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.75,
+          "output_shape": {
+            "segments": 1,
+            "characters": 30,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "041dda1b6d69d7912f706988c4c8d586e3d94b9d66b3a88df75b351a9788d906",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "acd6ab9937781ed687af6146ddc33e14bb303ef928f961acb2dd721c8b11a1a7",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "cc01d9c78905dc0a160b29aeb8964b8f73a4d8a38263079fdf0727b6f28401c2",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "wall_seconds": [
+            104.629800042
+          ],
+          "median_wall_seconds": 104.629800042,
+          "processing_seconds": [
+            103.252206084
+          ],
+          "median_processing_seconds": 103.252206084,
+          "median_real_time_factor": 0.04316980791276076,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.2898679532757745
+            ],
+            "median_wer": 0.2898679532757745,
+            "reference_words": 7876
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": {
+            "start_boundary_mae_ms": 192.24943310657406,
+            "end_boundary_mae_ms": 506.44444444444275,
+            "timestamp_coverage": 0.7083544946673438,
+            "scored_segments": 441,
+            "timing_origin": "provider_native",
+            "timing_reliable": false
+          },
+          "speakers": {
+            "diarization_error_rate": 0.8897578923021479,
+            "miss_rate": 0.8045764325557128,
+            "false_alarm_rate": 0.0013178490551829121,
+            "confusion_rate": 0.08386361069125217,
+            "speaker_count_absolute_error": 1,
+            "attributed_word_error_rate": 0.866937531742001,
+            "reference_speakers": 4,
+            "hypothesis_speakers": 3,
+            "collar_ms": 250,
+            "score_overlap": true
+          },
+          "metadata_completeness": 0.875,
+          "output_shape": {
+            "segments": 507,
+            "characters": 31114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": true,
+              "language_per_segment": true,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": "provider_native",
+              "warnings": [
+                "61 segment(s) have zero-duration timestamps."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "f3b83f0d56dc93eb2c607c0c89a7ca43b4310e0fb5e5a6462c8fba9a09baa0a8",
+              "output_sha256": "21acdcc7c0b27b92a6317a4117c001598b719993d959803fc488a40e05cf70d6"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "openai-gpt-transcribe",
+      "provider": "openai",
+      "model": "gpt-transcribe",
+      "attempts": 10,
+      "successful": 10,
+      "failed": 0,
+      "retry_events": 0,
+      "short_fixture_macro_wer": 0.11764705882352942,
+      "short_fixture_median_wall_seconds": 1.2234146670000046,
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            2.110725665999984,
+            1.2234146670000046,
+            1.1657912919999798
+          ],
+          "median_wall_seconds": 1.2234146670000046,
+          "processing_seconds": [
+            2.070956625,
+            1.171066,
+            1.1126705000000001
+          ],
+          "median_processing_seconds": 1.171066,
+          "median_real_time_factor": 0.09678913504746871,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 1,
+            "characters": 114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "1e623c06146d9feb089c4671eff70601a72be7119df1e42c96fe3477a4aa0b1d",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "7612a6fd35ec7a89b32ac58bed27378b2765fa887fbd4bd8a2304eeff35044cf",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "6ed18c6cb19eaacee15977b6b97e6d6522929eef3c32bbca04e1c98ed63e5c47",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            1.2449507910000392,
+            0.9707541249999776,
+            1.101391500000027
+          ],
+          "median_wall_seconds": 1.101391500000027,
+          "processing_seconds": [
+            1.186788958,
+            0.907214667,
+            1.038167625
+          ],
+          "median_processing_seconds": 1.038167625,
+          "median_real_time_factor": 0.08713540348101478,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 1,
+            "characters": 114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "4d024b0360f54e44a5ebda53238bcc18e0c9cb8edbe2aa0005e2b15a71b6502b",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "b99709284b39ad822134ea44d128a2ed738de84fc586b1fb93d191b6ffca86dc",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "a7fbeaacd5007b0c34be41b1e6fe8f8444c3d3b68494705a024d79fe88df5d66",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            8.402222499999974,
+            0.7465329159999965,
+            1.2393397499999845
+          ],
+          "median_wall_seconds": 1.2393397499999845,
+          "processing_seconds": [
+            8.344627167,
+            0.686268584,
+            1.176291333
+          ],
+          "median_processing_seconds": 1.176291333,
+          "median_real_time_factor": 0.4131132499999948,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 1,
+            "characters": 29,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "19c72277d189a96266248e3a54ba16aa98bbf584a8e9728c1b609a2dbb5846dd",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "6ad47908623e75aa3a09927eedef5442fe67147b4cc472b65b7522e64d4a825d",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "71e23d15b1a6f23d693b024f6c60bf158f8257d1e05568563f32f431b0ed42c3",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "wall_seconds": [
+            108.49901641599998
+          ],
+          "median_wall_seconds": 108.49901641599998,
+          "processing_seconds": [
+            108.436207667
+          ],
+          "median_processing_seconds": 108.436207667,
+          "median_real_time_factor": 0.04476623003696857,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.2249873031995937
+            ],
+            "median_wer": 0.2249873031995937,
+            "reference_words": 7876
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 1,
+            "characters": 34871,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "c9e68ff11e8b20cbf004589bf93f15cbe61db209a29a73e2cb409ffe1aba45da",
+              "output_sha256": "dda7b26fdb216aa3e0e15063724bdb32132890ef3b0434861bc4c1dc05197ab5"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "openai-gpt-4o-transcribe-diarize",
+      "provider": "openai",
+      "model": "gpt-4o-transcribe-diarize",
+      "request": {
+        "response_format": "diarized_json",
+        "chunking_strategy": "auto"
+      },
+      "attempts": 10,
+      "successful": 9,
+      "failed": 1,
+      "retry_events": 0,
+      "short_fixture_macro_wer": 0.17647058823529413,
+      "short_fixture_median_wall_seconds": 4.874454250000068,
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            5.522320916999947,
+            4.658934291000012,
+            5.771306834000046
+          ],
+          "median_wall_seconds": 5.522320916999947,
+          "processing_seconds": [
+            5.4489905,
+            4.5957935,
+            5.709303792
+          ],
+          "median_processing_seconds": 5.4489905,
+          "median_real_time_factor": 0.4368924776107553,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.875,
+          "output_shape": {
+            "segments": 2,
+            "characters": 113,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": true,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": "provider_native",
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "1184ec0e36990ade65b7d4a4f0dd9302d6988b6eff049ad8b8bebe3052cb2498",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "2c119b82ff84bd6381fad07cf653019ad7c43c57452f9c713b3808aa7faab270",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "9fc4173d20285a7c4ffab54f099521bdffe025801f7ca43f50f00099ec607518",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            5.108617375000031,
+            5.035532125000027,
+            4.874454250000068
+          ],
+          "median_wall_seconds": 5.035532125000027,
+          "processing_seconds": [
+            5.048472666,
+            4.9721867920000005,
+            4.818865958
+          ],
+          "median_processing_seconds": 4.9721867920000005,
+          "median_real_time_factor": 0.3983807060917743,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.35294117647058826,
+              0.11764705882352941,
+              0.35294117647058826
+            ],
+            "median_wer": 0.35294117647058826,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              0.6666666666666666,
+              0.6666666666666666,
+              0.6666666666666666
+            ],
+            "median_recall": 0.6666666666666666
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.875,
+          "output_shape": {
+            "segments": 1,
+            "characters": 115,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": true,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": "provider_native",
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "2c3a6c8141be4b3a3b20f88ca6fb6b1cd766b05790114143f641b190324b72ae",
+              "output_sha256": "38f277ddaca4ed93f4f45382ab4be2fb362cd370fc3149a19a312f90d034ef8d"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "b57d333dd18a2f6e291d31fa24af30d784bccea6463eed926eb9a472ebc2be60",
+              "output_sha256": "d37e4e5fa96c61da8e52a631f52b5d5087fc0f9686b77bff39774005414e2f2d"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "0e98a6d06dabbbe1b6fcfdf93615efdb4b9ce1e8946f9b726b58a330ad45dec0",
+              "output_sha256": "08c1e13c8f27155ff97883978022788c348f09257de7266229824a318b4119ee"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            2.3139334999999264,
+            2.179314916000003,
+            2.3866040839999916
+          ],
+          "median_wall_seconds": 2.3139334999999264,
+          "processing_seconds": [
+            2.261809042,
+            2.120352375,
+            2.337048208
+          ],
+          "median_processing_seconds": 2.261809042,
+          "median_real_time_factor": 0.7713111666666421,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.875,
+          "output_shape": {
+            "segments": 1,
+            "characters": 29,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": true,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": "provider_native",
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "4124d1fc76009c0356bbcc5e9fa7dd2c28b2b1c8a9f1abf9df9a300766cd1b2c",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "bf68c43469e8f9925f6a12a408277c65efba5bed17f510397c3f2ea4d9cc48cf",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "8ec38d33c076b37c7363ff1b9ea4957ecf3b89fca6eace4f121271d9f6e086c5",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 0,
+          "failed": 1,
+          "wall_seconds": [],
+          "median_wall_seconds": null,
+          "processing_seconds": [],
+          "median_processing_seconds": null,
+          "median_real_time_factor": null,
+          "word_accuracy": null,
+          "domain_terms": null,
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": null,
+          "output_shape": null,
+          "artifact_hashes": []
+        }
+      ]
+    },
+    {
+      "id": "qwen-filetrans",
+      "provider": "qwen-filetrans",
+      "model": "qwen3-asr-flash-filetrans",
+      "attempts": 10,
+      "successful": 10,
+      "failed": 0,
+      "retry_events": 0,
+      "short_fixture_macro_wer": 0.11764705882352942,
+      "short_fixture_median_wall_seconds": 4.172192625000025,
+      "remote_cleanup": {
+        "attempted_runs": 10,
+        "deleted_runs": 10,
+        "cleanup_failures": 0
+      },
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            4.545507582999999,
+            4.261489583999967,
+            3.9190632500000064
+          ],
+          "median_wall_seconds": 4.261489583999967,
+          "processing_seconds": [
+            4.388075125,
+            4.108756292,
+            3.7664746669999998
+          ],
+          "median_processing_seconds": 4.108756292,
+          "median_real_time_factor": 0.3371431632911366,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.875,
+          "output_shape": {
+            "segments": 1,
+            "characters": 114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": true,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "519406c6a1c0a4b4d1d67e280e6c302417c98cad4ec9dca805f9f46787858c58",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "05ba9af4fadd537b8312a48854f58b8320fa1624d147ce487a20ba7fbac5b1c3",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "0daa349625ffdd8935f053bc1833c115110b66ade727f7aa8831f9c1c394f666",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            4.058134125000099,
+            4.019129207999911,
+            4.39498529099999
+          ],
+          "median_wall_seconds": 4.058134125000099,
+          "processing_seconds": [
+            3.897832583,
+            3.864712667,
+            4.2405725
+          ],
+          "median_processing_seconds": 3.897832583,
+          "median_real_time_factor": 0.32105491495253946,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.875,
+          "output_shape": {
+            "segments": 1,
+            "characters": 114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": true,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "82e48dd60ee02a368c05ec07e0f8be2a1bc72937ded25afa76c442dc423ad545",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "59531dab0e22b0639186e09b809f6eaa974f35332e2981e38c75035f08edd12e",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "9b386339d9ecea11152b0856e839fbf3e0856fa3b42bd0d439303f0ae39e3a9a",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            4.501884958000039,
+            4.172192625000025,
+            4.023846707999939
+          ],
+          "median_wall_seconds": 4.172192625000025,
+          "processing_seconds": [
+            4.34749025,
+            4.018447791,
+            3.872051083
+          ],
+          "median_processing_seconds": 4.018447791,
+          "median_real_time_factor": 1.3907308750000082,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.875,
+          "output_shape": {
+            "segments": 1,
+            "characters": 29,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": true,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "7e8615fd549c439d65c692ed7f81a5593fa8dce780abee1c85b6f2e720449a9f",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "bb6f292f100e2c3e7f8600e277fa334487c156ea2d21cd60793887896bb1aa50",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "a3c40826f6a138406d7a04266453d83b0980fb7eddcc2d6dfa6f173867f0fc75",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "wall_seconds": [
+            108.78662791699998
+          ],
+          "median_wall_seconds": 108.78662791699998,
+          "processing_seconds": [
+            107.136806667
+          ],
+          "median_processing_seconds": 107.136806667,
+          "median_real_time_factor": 0.044884897311938864,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.2107668867445404
+            ],
+            "median_wer": 0.2107668867445404,
+            "reference_words": 7876
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": {
+            "start_boundary_mae_ms": 415.32727272727107,
+            "end_boundary_mae_ms": 475.7527272727288,
+            "timestamp_coverage": 0.7950736414423565,
+            "scored_segments": 550,
+            "timing_origin": "provider_native",
+            "timing_reliable": false
+          },
+          "speakers": null,
+          "metadata_completeness": 0.875,
+          "output_shape": {
+            "segments": 575,
+            "characters": 35114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": true,
+              "speaker_labels": false,
+              "language_per_segment": true,
+              "emotion_per_segment": true,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "13 segment(s) have zero-duration timestamps."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "a7a46a4d86c41539df3301ef0647c0679912ccd10014695f14894774eff37d9b",
+              "output_sha256": "741d288f64618042666db725dafcd07f7e5e5083951e45721ca9846a9d356a17"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "local-whisper-base",
+      "provider": "local",
+      "model": "whisper.cpp base GGML",
+      "artifact": {
+        "source": "ggerganov/whisper.cpp",
+        "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+        "file": "ggml-base.bin",
+        "bytes": 147951465,
+        "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+        "tree": {
+          "files": 1,
+          "symlinks": 0,
+          "logical_bytes": 147951465,
+          "disk_bytes": 151928832,
+          "tree_sha256": "0096102158d0d57a3f37b0032f108292b4649ce942efdce4f8367b67aa6c9baa"
+        }
+      },
+      "attempts": 10,
+      "successful": 10,
+      "failed": 0,
+      "retry_events": 0,
+      "short_fixture_macro_wer": 0.2549019607843137,
+      "short_fixture_median_wall_seconds": 0.3428069580000592,
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.3816368340000045,
+            0.3433752910000039,
+            0.35164158399996814
+          ],
+          "median_wall_seconds": 0.35164158399996814,
+          "processing_seconds": [
+            0.329372791,
+            0.306445,
+            0.31206525
+          ],
+          "median_processing_seconds": 0.31206525,
+          "median_real_time_factor": 0.02781974556961773,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.23529411764705882,
+              0.23529411764705882,
+              0.23529411764705882
+            ],
+            "median_wer": 0.23529411764705882,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.5,
+          "output_shape": {
+            "segments": 2,
+            "characters": 115,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "2583731c6caf21daabff8a86ba7d655096977282489f67da329721ab1ba2b114",
+              "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "ead41796f29511c6a3547df1da7a20e9ad01d8a43ff9b372d66337e73d0a3b5f",
+              "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "cd9eef1c63291630f8024600bcc51228b556d4fbf10c86345dfee5b5f6f5d083",
+              "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.34549420900002586,
+            0.33165904199995566,
+            0.3428069580000592
+          ],
+          "median_wall_seconds": 0.3428069580000592,
+          "processing_seconds": [
+            0.3094945,
+            0.298255125,
+            0.308369291
+          ],
+          "median_processing_seconds": 0.308369291,
+          "median_real_time_factor": 0.02712080363924519,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.5294117647058824,
+              0.5294117647058824,
+              0.5294117647058824
+            ],
+            "median_wer": 0.5294117647058824,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              0.3333333333333333,
+              0.3333333333333333,
+              0.3333333333333333
+            ],
+            "median_recall": 0.3333333333333333
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.5,
+          "output_shape": {
+            "segments": 2,
+            "characters": 112,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "863afab61a199a20fbfb8bf4a95a6aa7fa492e26273755085069b5f7e716c721",
+              "output_sha256": "8e7cc56084a775fa3b78f6922bf6c3ce26d88ea83b208d78a9e444435607d238"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "4092845a9395466b2d8f7531503013ff10f3e7ace7c23530dac6d63a78ac8c17",
+              "output_sha256": "8e7cc56084a775fa3b78f6922bf6c3ce26d88ea83b208d78a9e444435607d238"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "029e133d08b052c8503da93119ddeb6db47f6fa852d32d48b52fad7664aff04b",
+              "output_sha256": "8e7cc56084a775fa3b78f6922bf6c3ce26d88ea83b208d78a9e444435607d238"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.29767425000004005,
+            0.2966220839999151,
+            0.294843082999927
+          ],
+          "median_wall_seconds": 0.2966220839999151,
+          "processing_seconds": [
+            0.261987208,
+            0.262985,
+            0.261231041
+          ],
+          "median_processing_seconds": 0.261987208,
+          "median_real_time_factor": 0.09887402799997169,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.5,
+          "output_shape": {
+            "segments": 1,
+            "characters": 30,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "d505858a9c362d55aa0a06eceec2de3b535db262a99b83c9539afd7f00d88216",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "f8552d33b4f1554961ca767e6e1f73480ba22b636c0e782f99fa1d6f2b9b5c9f",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "a84c42eb0ca6be53fdef7101ee247aaf4c6901f4ec7661d0d58344e30c238e2c",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "wall_seconds": [
+            33.693786708
+          ],
+          "median_wall_seconds": 33.693786708,
+          "processing_seconds": [
+            33.556185583
+          ],
+          "median_processing_seconds": 33.556185583,
+          "median_real_time_factor": 0.01390191226069448,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.3158963941086846
+            ],
+            "median_wer": 0.3158963941086846,
+            "reference_words": 7876
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": {
+            "start_boundary_mae_ms": 945.51094890512,
+            "end_boundary_mae_ms": 1005.036496350352,
+            "timestamp_coverage": 0.6940071102082275,
+            "scored_segments": 548,
+            "timing_origin": "model_native",
+            "timing_reliable": true
+          },
+          "speakers": null,
+          "metadata_completeness": 0.5,
+          "output_shape": {
+            "segments": 579,
+            "characters": 32808,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": true
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": true,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": []
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "fbe16612cf889cca9a1be3f389f87b6acabb00ff713d86d12b2da82836a705a8",
+              "output_sha256": "522b46a0af1147a68b34f02721972ccb812d736b2eefac4758dd5d8ff13a0569"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sherpa-onnx-whisper-base",
+      "provider": "sherpa-onnx",
+      "model": "sherpa-onnx-whisper-base",
+      "artifact": {
+        "source": "k2-fsa/sherpa-onnx",
+        "model": "sherpa-onnx-whisper-base",
+        "native_library_revision": "v1.13.4",
+        "model_tree": {
+          "files": 10,
+          "symlinks": 0,
+          "logical_bytes": 453070168,
+          "disk_bytes": 456699904,
+          "tree_sha256": "e4278664a74950f4771dfea2792cb1895202825319271f36318fbf3e3424251b"
+        },
+        "vad": {
+          "bytes": 643854,
+          "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"
+        },
+        "native_library_tree": {
+          "files": 5,
+          "symlinks": 0,
+          "logical_bytes": 60322441,
+          "disk_bytes": 60338176,
+          "tree_sha256": "36d72f06a23c738fcc851dd6d6ca8680f72d6540e81a2a76f3b2f12fe81a0dcc"
+        },
+        "evaluation_tree": {
+          "files": 16,
+          "symlinks": 0,
+          "logical_bytes": 514036463,
+          "disk_bytes": 517685248,
+          "tree_sha256": "e33a5070a19d9dd08d18963c4c4ac03d8b186f8ff3b2166f599d2d0f66142d0a"
+        }
+      },
+      "attempts": 10,
+      "successful": 10,
+      "failed": 0,
+      "retry_events": 0,
+      "short_fixture_macro_wer": 0.2156862745098039,
+      "short_fixture_median_wall_seconds": 0.7573410000000149,
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.8231654999998864,
+            0.7573410000000149,
+            0.7629414999999572
+          ],
+          "median_wall_seconds": 0.7629414999999572,
+          "processing_seconds": [
+            0.515353083,
+            0.471649542,
+            0.464481208
+          ],
+          "median_processing_seconds": 0.471649542,
+          "median_real_time_factor": 0.06035929588607256,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.23529411764705882,
+              0.23529411764705882,
+              0.23529411764705882
+            ],
+            "median_wer": 0.23529411764705882,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.375,
+          "output_shape": {
+            "segments": 1,
+            "characters": 114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "9ceb34dab601c2440bd78e626174aca47fb89b5cc5d2d360da50b001a4ea6f5b",
+              "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "867afd43e0e7339c266d7b0462856294600029d030d139b0eb6eaaeb7eb1b23d",
+              "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "fc4b1b7907ebca3b64785cc6bb166b7234df71d8d97b1b1b3b56735405c61463",
+              "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.7258375000000232,
+            0.811265000000014,
+            1.0203691249999682
+          ],
+          "median_wall_seconds": 0.811265000000014,
+          "processing_seconds": [
+            0.456277833,
+            0.521474791,
+            0.643154209
+          ],
+          "median_processing_seconds": 0.521474791,
+          "median_real_time_factor": 0.06418235759493782,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.4117647058823529,
+              0.4117647058823529,
+              0.4117647058823529
+            ],
+            "median_wer": 0.4117647058823529,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              0.3333333333333333,
+              0.3333333333333333,
+              0.3333333333333333
+            ],
+            "median_recall": 0.3333333333333333
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.375,
+          "output_shape": {
+            "segments": 1,
+            "characters": 112,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "551ec19e2558e892a2a8fa9ca400d6c60f8fdaa4bae66b8ad04d744dc55edab7",
+              "output_sha256": "54576959068b722bf7a7aeaec1bab344a5a075ad2894bd4894966466345fdd28"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "4fffcea73edfc6372a6654282445c79fe0b93b321b2e2aee0f5d975853c6fcd1",
+              "output_sha256": "54576959068b722bf7a7aeaec1bab344a5a075ad2894bd4894966466345fdd28"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "3edd178957721fdd6effc5774a0b027133299fd8198f5922224ec4449950ba6d",
+              "output_sha256": "54576959068b722bf7a7aeaec1bab344a5a075ad2894bd4894966466345fdd28"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.5467314169999444,
+            0.533422709000064,
+            0.5389125420000637
+          ],
+          "median_wall_seconds": 0.5389125420000637,
+          "processing_seconds": [
+            0.248800542,
+            0.242099334,
+            0.238741833
+          ],
+          "median_processing_seconds": 0.242099334,
+          "median_real_time_factor": 0.17963751400002123,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.375,
+          "output_shape": {
+            "segments": 1,
+            "characters": 29,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "f5520e8dc7435b5352051d8a401ba475219ec2ddcdb2424372027ad7b4a131ed",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "01540952a3e9f12e2eebc3d3697e7f5017b43054569b45c5851b2474142eac64",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "67648afd63dc9f7f9cf01d660ce5f598ec6e3c85cc457ca3f48489f0faf2a5af",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "wall_seconds": [
+            121.46707420799997
+          ],
+          "median_wall_seconds": 121.46707420799997,
+          "processing_seconds": [
+            121.135502584
+          ],
+          "median_processing_seconds": 121.135502584,
+          "median_real_time_factor": 0.05011679520728808,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.32122905027932963
+            ],
+            "median_wer": 0.32122905027932963,
+            "reference_words": 7876
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.375,
+          "output_shape": {
+            "segments": 120,
+            "characters": 31882,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "120 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "d57bef406fbb22c8bf0a5d393bc21e3b6e75f87c392a1c62f28f51895090ec26",
+              "output_sha256": "fb238aca2021426cc38accd0326be0368f621ad51ff25c8893feb6b6657006da"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sherpa-qwen3-asr-0.6b-int8",
+      "provider": "sherpa-onnx",
+      "model": "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25",
+      "artifact": {
+        "source": "k2-fsa/sherpa-onnx",
+        "model": "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25",
+        "archive_sha256": "393f8a14e2f5fb96746aaab342997a40641001fbd5bf9592a080a8329178ee96",
+        "archive_size_bytes": 878702423,
+        "model_tree": {
+          "files": 25,
+          "symlinks": 0,
+          "logical_bytes": 1000089742,
+          "disk_bytes": 1019572224,
+          "tree_sha256": "6506de1e37adc8aceec85889ef33e5e3ad0a23b8e46fdcae0af50db337ecf76a"
+        },
+        "evaluation_tree": {
+          "files": 25,
+          "symlinks": 0,
+          "logical_bytes": 1000089742,
+          "disk_bytes": 1019572224,
+          "tree_sha256": "6451f4e584696010e7dbc8ff7231e8fcff4bd2f88873f6ddc4ffb80acb01f0ac"
+        }
+      },
+      "attempts": 10,
+      "successful": 10,
+      "failed": 0,
+      "retry_events": 0,
+      "short_fixture_macro_wer": 0.05882352941176471,
+      "short_fixture_median_wall_seconds": 2.6324218330000293,
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            2.8796114170000657,
+            2.6901874160000587,
+            2.673647709000041
+          ],
+          "median_wall_seconds": 2.6901874160000587,
+          "processing_seconds": [
+            1.533153083,
+            1.471340125,
+            1.509274416
+          ],
+          "median_processing_seconds": 1.509274416,
+          "median_real_time_factor": 0.21283128291139705,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.17647058823529413,
+              0.17647058823529413,
+              0.17647058823529413
+            ],
+            "median_wer": 0.17647058823529413,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.375,
+          "output_shape": {
+            "segments": 1,
+            "characters": 114,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "81ea7b06a0685b60e99abeed95768597ac4ff4dd17029633c36883265aeda619",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "f44b4bb6135d502e78649cba46cabbc2d6f643034972139de1d7e1a3a1e2ee1e",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "1320bfb82a96492913359f170556b7843d10131e98b716c88d19c66756b45519",
+              "output_sha256": "2826ac5e26de5aa43d46b705d3477c9bc05c64db76eba0cdd89cccd364a39968"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            2.6324218330000293,
+            2.620870916999993,
+            2.7723747079999885
+          ],
+          "median_wall_seconds": 2.6324218330000293,
+          "processing_seconds": [
+            1.461215084,
+            1.456239917,
+            1.5680627089999999
+          ],
+          "median_processing_seconds": 1.461215084,
+          "median_real_time_factor": 0.20826122096519217,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.375,
+          "output_shape": {
+            "segments": 1,
+            "characters": 129,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "c43a865bd60a7f0d3c35eaa72ad9444036720b158ab458fafceba3898093ded9",
+              "output_sha256": "e0d2e7533ae2462054fe81103877ea2f32c08b5d04192a349667a22271e4420e"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "80b9cb3772644f5cc1d41b327b36b060beec646eb10073f304abd3620436e7b7",
+              "output_sha256": "e0d2e7533ae2462054fe81103877ea2f32c08b5d04192a349667a22271e4420e"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "a773507ef7b63e028f7d92f99bfe626acc41d672a60cbd6a836f137d055e6db4",
+              "output_sha256": "e0d2e7533ae2462054fe81103877ea2f32c08b5d04192a349667a22271e4420e"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            1.759047375000082,
+            1.7785023749999236,
+            1.7775339170000515
+          ],
+          "median_wall_seconds": 1.7775339170000515,
+          "processing_seconds": [
+            0.582103708,
+            0.621739583,
+            0.582152291
+          ],
+          "median_processing_seconds": 0.582152291,
+          "median_real_time_factor": 0.5925113056666839,
+          "word_accuracy": {
+            "wer_by_run": [
+              0,
+              0,
+              0
+            ],
+            "median_wer": 0,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.375,
+          "output_shape": {
+            "segments": 1,
+            "characters": 29,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "9e8f48ccfd3d76bc6e8559736c9d354795076fcbc0012e998f7f5f08d04fa09f",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "1accef6e452bbc1fdae728f2d2b3d4ee54cc0bddb21c3d58e376148a4d9efaa1",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "e8acd2b5abde62b167aa974728ebc8d1eaa8363db9e99aeaafba304293ad9afd",
+              "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "wall_seconds": [
+            431.1029546660001
+          ],
+          "median_wall_seconds": 431.1029546660001,
+          "processing_seconds": [
+            429.887146708
+          ],
+          "median_processing_seconds": 429.887146708,
+          "median_real_time_factor": 0.17787123492622792,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.2271457592686643
+            ],
+            "median_wer": 0.2271457592686643,
+            "reference_words": 7876
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.375,
+          "output_shape": {
+            "segments": 156,
+            "characters": 34946,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "model_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "156 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "1da6f9ab10663c818e9e28e9229be04ad78344602e7a2cd039163458391b9742",
+              "output_sha256": "561e010135c79e9ed9fe663726b717b77a6a08723f23e7afae218d8a95b57b81"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "qwen3-asr-llama",
+      "provider": "openai-compatible-local",
+      "model": "ggml-org/Qwen3-ASR-1.7B-GGUF",
+      "artifact": {
+        "source": "ggml-org/Qwen3-ASR-1.7B-GGUF",
+        "resolved_revision": "36a678687ba7d07a74ca70ccb0e36902e005fb80",
+        "evaluation_tree": {
+          "files": 3,
+          "symlinks": 2,
+          "logical_bytes": 2520744480,
+          "disk_bytes": 2550272000,
+          "tree_sha256": "321a359fe2658d3a55d6ffabc8ded97b4d274e1149dd0df772fa17af5afa1770"
+        },
+        "llama_cpp": "version: 10210 (000547513)",
+        "context_tokens": 16384
+      },
+      "attempts": 10,
+      "successful": 10,
+      "failed": 0,
+      "retry_events": 0,
+      "short_fixture_macro_wer": 0.46498599439775906,
+      "short_fixture_median_wall_seconds": 0.35368325000000184,
+      "fixtures": [
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.6943732080000918,
+            0.3620169159998186,
+            0.4169031249999534
+          ],
+          "median_wall_seconds": 0.4169031249999534,
+          "processing_seconds": [
+            0.586254,
+            0.32077475,
+            0.376876458
+          ],
+          "median_processing_seconds": 0.376876458,
+          "median_real_time_factor": 0.03298284216771783,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.4117647058823529,
+              0.4117647058823529,
+              0.4117647058823529
+            ],
+            "median_wer": 0.4117647058823529,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 1,
+            "characters": 140,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "d7de72a3ce0b125f5670729e0eb4ea62c2781d8afd6847fdd8b09335702ec327",
+              "output_sha256": "6e1fd014ea7dd9896b1885c90d05aebf88c8cef4df5dbb67c4660f00f9894653"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "0f285221e9f824090ac0803b8b659426b74c144caab59f4811940f01817f3dab",
+              "output_sha256": "6e1fd014ea7dd9896b1885c90d05aebf88c8cef4df5dbb67c4660f00f9894653"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "58d1ab23c919c7e32a5d8e2d8cabcf9bddda355fc0c0bacdcd9c834bb85cb93e",
+              "output_sha256": "6e1fd014ea7dd9896b1885c90d05aebf88c8cef4df5dbb67c4660f00f9894653"
+            }
+          ]
+        },
+        {
+          "fixture_id": "fleurs-en-us-traffic-flow-noisy-10db",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.5847690830000211,
+            0.3531385409999639,
+            0.35368325000000184
+          ],
+          "median_wall_seconds": 0.35368325000000184,
+          "processing_seconds": [
+            0.540082208,
+            0.319727541,
+            0.318121667
+          ],
+          "median_processing_seconds": 0.319727541,
+          "median_real_time_factor": 0.027981269778481158,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.4117647058823529,
+              0.4117647058823529,
+              0.4117647058823529
+            ],
+            "median_wer": 0.4117647058823529,
+            "reference_words": 17
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 1,
+            "characters": 140,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "89ba53e8b0cd237da6638d06ac21267dcd2f31f0eb9f1948b1eb0d2ef7b2b2fe",
+              "output_sha256": "6e1fd014ea7dd9896b1885c90d05aebf88c8cef4df5dbb67c4660f00f9894653"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "c96638e8ad837e98baf2b56e90f376fb7c3ea5b763ee52d120ee4ca7c17d37b0",
+              "output_sha256": "6e1fd014ea7dd9896b1885c90d05aebf88c8cef4df5dbb67c4660f00f9894653"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "8bcf7d70abd20c0564f561f4e98815d6a7f98b0f4da27066afb44f94503d4464",
+              "output_sha256": "6e1fd014ea7dd9896b1885c90d05aebf88c8cef4df5dbb67c4660f00f9894653"
+            }
+          ]
+        },
+        {
+          "fixture_id": "speechocean-mandarin-l1-computer-clean",
+          "attempts": 3,
+          "successful": 3,
+          "failed": 0,
+          "wall_seconds": [
+            0.28221450000000187,
+            0.19990866700001061,
+            0.20772937500011177
+          ],
+          "median_wall_seconds": 0.20772937500011177,
+          "processing_seconds": [
+            0.244982417,
+            0.164806916,
+            0.171106084
+          ],
+          "median_processing_seconds": 0.171106084,
+          "median_real_time_factor": 0.06924312500003725,
+          "word_accuracy": {
+            "wer_by_run": [
+              0.5714285714285714,
+              0.5714285714285714,
+              0.5714285714285714
+            ],
+            "median_wer": 0.5714285714285714,
+            "reference_words": 7
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              1,
+              1,
+              1
+            ],
+            "median_recall": 1
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 1,
+            "characters": 55,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "a23cde696c683804bd17b8bfa2d3027d3573d9a22eca9f865eb60e127a544bb1",
+              "output_sha256": "00486909152d0c9d196ec26dabc1da803548ebde6a95d8fad53272e497eec325"
+            },
+            {
+              "run": 2,
+              "manifest_sha256": "edcf5953b6c89250979c70e920c4ff727dc472985faf5820b0c3298a2c7a5ec2",
+              "output_sha256": "00486909152d0c9d196ec26dabc1da803548ebde6a95d8fad53272e497eec325"
+            },
+            {
+              "run": 3,
+              "manifest_sha256": "be2f9ed72fbe5d60d7bd447b190c2df391fc541faebb7bdd37958ea70687c95c",
+              "output_sha256": "00486909152d0c9d196ec26dabc1da803548ebde6a95d8fad53272e497eec325"
+            }
+          ]
+        },
+        {
+          "fixture_id": "ami-es2002c-mix-headset",
+          "attempts": 1,
+          "successful": 1,
+          "failed": 0,
+          "wall_seconds": [
+            523.7546653749998
+          ],
+          "median_wall_seconds": 523.7546653749998,
+          "processing_seconds": [
+            523.705290042
+          ],
+          "median_processing_seconds": 523.705290042,
+          "median_real_time_factor": 0.21609893441997288,
+          "word_accuracy": {
+            "wer_by_run": [
+              1.0226003047232097
+            ],
+            "median_wer": 1.0226003047232097,
+            "reference_words": 7876
+          },
+          "domain_terms": {
+            "recall_by_run": [
+              0
+            ],
+            "median_recall": 0
+          },
+          "timing": null,
+          "speakers": null,
+          "metadata_completeness": 0.625,
+          "output_shape": {
+            "segments": 1,
+            "characters": 49718,
+            "capabilities": {
+              "segments": true,
+              "word_timestamps": false,
+              "speaker_labels": false,
+              "language_per_segment": false,
+              "emotion_per_segment": false,
+              "native_timestamps": false
+            },
+            "quality": {
+              "timing_source": "provider_native",
+              "timing_reliable": false,
+              "timestamps_clamped": false,
+              "speaker_source": null,
+              "warnings": [
+                "1 segment(s) have zero-duration timestamps.",
+                "No positive-duration segment timestamps were returned."
+              ]
+            }
+          },
+          "artifact_hashes": [
+            {
+              "run": 1,
+              "manifest_sha256": "0754dfc431b5d9cac28d68367f5f1d8c7b2a9e073c2a4ab4d815e919e6b22409",
+              "output_sha256": "7d3ac9c09f4df407d7e452167923664a3ffa87f1eaeb10307929ac3c1e6b3ab4"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "failures": [
+    {
+      "provider": "openai",
+      "model": "gpt-4o-transcribe-diarize",
+      "fixture_id": "ami-es2002c-mix-headset",
+      "result": "provider_rejection",
+      "http_status": 400,
+      "error_type": "invalid_request_error",
+      "error_code": "invalid_value",
+      "classification": "duration_limit",
+      "fixture_duration_seconds": 2423.68,
+      "provider_limit_seconds": 1400,
+      "wall_seconds": 12.044638750000042,
+      "raw_error_sha256": "7889fa9bef3c597aebcbd8ebf6e9ad1c77da9210fa7b2c94a341f5eda03a422e",
+      "transcript_produced": false
+    }
+  ],
+  "compatibility_probes": [
+    {
+      "provider": "openai",
+      "model": "gpt-transcribe",
+      "fixture_id": "fleurs-en-us-traffic-flow-clean",
+      "requested_response_format": "diarized_json",
+      "chunking_strategy": "auto",
+      "http_status": 400,
+      "processing_ms": 253,
+      "wall_seconds": 1.180581541,
+      "error_type": "invalid_request_error",
+      "error_code": "unsupported_value",
+      "error_param": "response_format",
+      "raw_response_sha256": "9c390baafdd162273659aaa73b2b1fdc506cb088aed66ab5ec0d674664a34ecd",
+      "transcript_produced": false
+    }
+  ],
+  "downloaded_model_cleanup": {
+    "initial": {
+      "root_preexisting": false,
+      "initial_bytes": 0,
+      "free_bytes_before": 57031499776
+    },
+    "recorded_at_utc": "2026-08-06T12:45:54.207Z",
+    "policy": "Only the four new evaluation-owned directories were removed after artifact and benchmark evidence capture.",
+    "total_bytes_removed": 4239458304,
+    "free_bytes_before": 51235966976,
+    "free_bytes_after": 55475781632,
+    "evaluation_root_absent_after_cleanup": true,
+    "evaluations": [
+      {
+        "scope": "whisper.cpp base GGML",
+        "preexisting": false,
+        "bytes_removed": 151928832,
+        "cleanup_completed": true,
+        "path_absent_after_cleanup": true
+      },
+      {
+        "scope": "Sherpa base model, VAD, and v1.13.4 native libraries",
+        "preexisting": false,
+        "bytes_removed": 517685248,
+        "cleanup_completed": true,
+        "path_absent_after_cleanup": true
+      },
+      {
+        "scope": "Sherpa Qwen3-ASR 0.6B int8",
+        "preexisting": false,
+        "bytes_removed": 1019572224,
+        "cleanup_completed": true,
+        "path_absent_after_cleanup": true
+      },
+      {
+        "scope": "Qwen3-ASR llama.cpp Hugging Face and XDG cache",
+        "preexisting": false,
+        "bytes_removed": 2550272000,
+        "cleanup_completed": true,
+        "path_absent_after_cleanup": true
+      }
+    ]
+  },
+  "raw_evidence_hashes": {
+    "scored_runs_sha256": "a426977e2463a563731f8ee1c56115863338863b0326876e0a3187d7e32479bf",
+    "model_artifacts_sha256": "34303974045ae17a388d78be37b8af988d75da6a472e5086cb407b8f99841082",
+    "environment_sha256": "94c45cdb8d58b475c53b0ec2d211e13f703f429a4c529b942b5927b1960a78fb"
+  },
+  "sanitization": {
+    "transcript_text_removed": true,
+    "segment_and_word_text_removed": true,
+    "speaker_names_and_mappings_removed": true,
+    "local_absolute_paths_removed": true,
+    "provider_request_and_task_ids_removed": true,
+    "remote_object_names_and_signed_urls_removed": true,
+    "provider_error_messages_removed": true,
+    "secrets_removed": true
+  },
+  "conclusion": {
+    "evidence_scope": "Clean-commit representative-corpus regression baseline produced from the recorded commit.",
+    "quality_scope": "Reviewed WER and terms on all successful outputs; AMI timing and DER only where output capabilities permit.",
+    "long_form": "10 provider/model paths produced AMI transcripts; OpenAI diarization rejected input beyond 1,400 seconds.",
+    "diarization": "Deepgram and NVIDIA Riva produced scoreable AMI speaker labels; OpenAI diarization did not reach inference on the long fixture.",
+    "historical_boundary": "The 2026-06 and earlier 2026-08 medical-interview observations remain historical and were not relabeled.",
+    "remaining_blocker": null
+  }
+}

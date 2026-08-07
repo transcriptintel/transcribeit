@@ -1,6 +1,9 @@
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use anyhow::{Context, Result};
+use bytes::{Bytes, BytesMut};
+use futures_util::StreamExt;
 use regex::Regex;
 use reqwest::header::HeaderMap;
 
@@ -11,6 +14,8 @@ const DEFAULT_MAX_RETRIES: u32 = 5;
 const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 120;
 const DEFAULT_RETRY_SECS: u64 = 10;
 const MAX_RETRY_SECS: u64 = 120;
+pub const MAX_RESULT_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_ERROR_RESPONSE_BYTES: usize = 1024 * 1024;
 
 #[derive(Clone, Copy)]
 pub struct ApiRequestSettings {
@@ -18,6 +23,14 @@ pub struct ApiRequestSettings {
     pub max_retries: u32,
     pub default_retry_wait: Duration,
     pub max_retry_wait: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RetryPolicy {
+    /// Safe to repeat after ambiguous transport failures and server errors.
+    Idempotent,
+    /// Retry only explicit rate-limit responses; ambiguous submissions are not replayed.
+    RateLimitOnly,
 }
 
 impl Default for ApiRequestSettings {
@@ -81,13 +94,39 @@ pub enum RateLimitCheck {
     },
 }
 
+pub async fn read_response_limited(
+    response: reqwest::Response,
+    maximum_bytes: usize,
+    context: &str,
+) -> Result<Bytes> {
+    if let Some(content_length) = response.content_length() {
+        anyhow::ensure!(
+            content_length <= maximum_bytes as u64,
+            "{context} Content-Length {content_length} exceeds the {maximum_bytes}-byte limit"
+        );
+    }
+
+    let mut body = BytesMut::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.with_context(|| format!("Failed to read {context}"))?;
+        anyhow::ensure!(
+            chunk.len() <= maximum_bytes.saturating_sub(body.len()),
+            "{context} exceeds the {maximum_bytes}-byte limit"
+        );
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body.freeze())
+}
+
 /// Check a response for rate limiting. Returns the appropriate action.
 pub async fn check_response(
     resp: reqwest::Response,
     settings: &ApiRequestSettings,
+    retry_policy: RetryPolicy,
 ) -> RateLimitCheck {
     if resp.status().is_success() {
-        match resp.bytes().await {
+        match read_response_limited(resp, MAX_RESULT_RESPONSE_BYTES, "API response body").await {
             Ok(body) => return RateLimitCheck::Ok(body),
             Err(e) => return RateLimitCheck::Error(reqwest::StatusCode::OK, e.to_string()),
         }
@@ -95,7 +134,10 @@ pub async fn check_response(
 
     let status = resp.status();
     let headers = resp.headers().clone();
-    let body = resp.text().await.unwrap_or_default();
+    let body = read_response_limited(resp, MAX_ERROR_RESPONSE_BYTES, "API error response body")
+        .await
+        .map(|body| String::from_utf8_lossy(&body).into_owned())
+        .unwrap_or_else(|error| error.to_string());
 
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
         let wait = parse_retry_after(&headers, &body, settings);
@@ -104,7 +146,7 @@ pub async fn check_response(
             wait,
             reason: "rate limited",
         }
-    } else if status.is_server_error() {
+    } else if status.is_server_error() && retry_policy == RetryPolicy::Idempotent {
         RateLimitCheck::RetryAfter {
             status,
             wait: settings.default_retry_wait.min(settings.max_retry_wait),
@@ -122,6 +164,7 @@ pub async fn check_response(
 pub async fn send_with_retry<F>(
     settings: &ApiRequestSettings,
     api_label: &str,
+    retry_policy: RetryPolicy,
     mut build_request: F,
 ) -> Result<bytes::Bytes, (reqwest::StatusCode, String)>
 where
@@ -134,6 +177,14 @@ where
             Ok(r) => r,
             Err(e) => {
                 let error = e.to_string();
+                if retry_policy == RetryPolicy::RateLimitOnly {
+                    return Err((
+                        reqwest::StatusCode::SERVICE_UNAVAILABLE,
+                        format!(
+                            "Request to {api_label} failed after submission became ambiguous and was not retried: {error}"
+                        ),
+                    ));
+                }
                 if attempt == settings.max_retries {
                     return Err((
                         reqwest::StatusCode::SERVICE_UNAVAILABLE,
@@ -155,7 +206,7 @@ where
             }
         };
 
-        match check_response(resp, settings).await {
+        match check_response(resp, settings, retry_policy).await {
             RateLimitCheck::Ok(body) => return Ok(body),
             RateLimitCheck::RetryAfter {
                 status,
@@ -188,4 +239,38 @@ where
         reqwest::StatusCode::INTERNAL_SERVER_ERROR,
         "Retry loop exited unexpectedly".into(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RetryPolicy, read_response_limited};
+
+    #[test]
+    fn non_idempotent_policy_is_distinct_from_idempotent_retries() {
+        assert_ne!(RetryPolicy::RateLimitOnly, RetryPolicy::Idempotent);
+    }
+
+    #[tokio::test]
+    async fn response_reader_rejects_declared_oversize_body() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut request = [0_u8; 1024];
+            let _ = socket.read(&mut request).await;
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nabcdef")
+                .await
+                .unwrap();
+        });
+
+        let response = reqwest::get(format!("http://{address}")).await.unwrap();
+        let error = read_response_limited(response, 5, "test response")
+            .await
+            .expect_err("declared oversize response must fail");
+
+        assert!(format!("{error:#}").contains("exceeds the 5-byte limit"));
+        server.await.unwrap();
+    }
 }

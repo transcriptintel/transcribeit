@@ -4,6 +4,10 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::engines::rate_limit::{
+    MAX_ERROR_RESPONSE_BYTES, MAX_RESULT_RESPONSE_BYTES, read_response_limited,
+};
+
 use super::GeminiApi;
 use super::file_cache::GeminiFileCache;
 
@@ -33,6 +37,24 @@ pub(super) struct GeminiFileCleanup {
     error: Option<String>,
 }
 
+pub(super) fn finish_file_operation<T>(
+    operation: Result<T>,
+    cleanup: &GeminiFileCleanup,
+    file_name: &str,
+) -> Result<T> {
+    if let Some(cleanup_error) = cleanup.error.as_deref() {
+        eprintln!("Failed to delete Gemini file {file_name}: {cleanup_error}");
+    }
+
+    match operation {
+        Err(primary_error) if cleanup.error.is_some() => Err(primary_error.context(format!(
+            "Gemini file cleanup also failed for {file_name}: {}",
+            cleanup.error.as_deref().unwrap_or("unknown cleanup error")
+        ))),
+        result => result,
+    }
+}
+
 impl GeminiApi {
     pub(super) async fn resolve_file(
         &self,
@@ -42,7 +64,7 @@ impl GeminiApi {
     ) -> Result<GeminiUploadRef> {
         let Some(cache) = &self.file_cache else {
             let file = self.upload_file(audio_path, bytes, mime_type, None).await?;
-            let file = self.wait_for_active_file(file).await?;
+            let file = self.wait_for_active_uploaded_file(file).await?;
             return Ok(GeminiUploadRef {
                 file,
                 cache_hash: None,
@@ -90,7 +112,7 @@ impl GeminiApi {
         let file = self
             .upload_file(audio_path, bytes, mime_type, Some(&display_name))
             .await?;
-        let active_file = self.wait_for_active_file(file).await?;
+        let active_file = self.wait_for_active_uploaded_file(file).await?;
         cache.record(
             &self.api_base_url,
             &hash,
@@ -140,7 +162,14 @@ impl GeminiApi {
 
         let status = start_response.status();
         if !status.is_success() {
-            let body = start_response.text().await.unwrap_or_default();
+            let body = read_response_limited(
+                start_response,
+                MAX_ERROR_RESPONSE_BYTES,
+                "Gemini file upload start error response",
+            )
+            .await
+            .map(|body| String::from_utf8_lossy(&body).into_owned())
+            .unwrap_or_else(|error| error.to_string());
             anyhow::bail!("Gemini file upload start returned {status}: {body}");
         }
 
@@ -163,10 +192,17 @@ impl GeminiApi {
             .context("Failed to upload audio bytes to Gemini Files API")?;
 
         let status = upload_response.status();
-        let body = upload_response
-            .bytes()
-            .await
-            .context("Failed to read Gemini file upload response")?;
+        let maximum_bytes = if status.is_success() {
+            MAX_RESULT_RESPONSE_BYTES
+        } else {
+            MAX_ERROR_RESPONSE_BYTES
+        };
+        let body = read_response_limited(
+            upload_response,
+            maximum_bytes,
+            "Gemini file upload response",
+        )
+        .await?;
         if !status.is_success() {
             anyhow::bail!(
                 "Gemini file upload returned {status}: {}",
@@ -192,6 +228,21 @@ impl GeminiApi {
         anyhow::bail!("Gemini file did not become ACTIVE within 60 seconds");
     }
 
+    async fn wait_for_active_uploaded_file(&self, file: FileRef) -> Result<FileRef> {
+        let file_name = file.name.clone();
+        match self.wait_for_active_file(file).await {
+            Ok(active) => Ok(active),
+            Err(primary_error) => match self.delete_file(&file_name).await {
+                Ok(()) => Err(primary_error.context(format!(
+                    "new Gemini upload {file_name} was deleted after processing failed"
+                ))),
+                Err(cleanup_error) => Err(primary_error.context(format!(
+                    "cleanup of failed Gemini upload {file_name} also failed: {cleanup_error:#}"
+                ))),
+            },
+        }
+    }
+
     async fn get_file(&self, name: &str) -> Result<FileRef> {
         let url = format!("{}/{}", self.api_base_url, name);
         let response = self
@@ -202,10 +253,13 @@ impl GeminiApi {
             .await
             .context("Failed to get Gemini file metadata")?;
         let status = response.status();
-        let body = response
-            .bytes()
-            .await
-            .context("Failed to read Gemini file metadata response")?;
+        let maximum_bytes = if status.is_success() {
+            MAX_RESULT_RESPONSE_BYTES
+        } else {
+            MAX_ERROR_RESPONSE_BYTES
+        };
+        let body =
+            read_response_limited(response, maximum_bytes, "Gemini file metadata response").await?;
         if !status.is_success() {
             anyhow::bail!(
                 "Gemini file metadata returned {status}: {}",
@@ -228,7 +282,14 @@ impl GeminiApi {
             Ok(())
         } else {
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+            let body = read_response_limited(
+                response,
+                MAX_ERROR_RESPONSE_BYTES,
+                "Gemini file delete error response",
+            )
+            .await
+            .map(|body| String::from_utf8_lossy(&body).into_owned())
+            .unwrap_or_else(|error| error.to_string());
             anyhow::bail!("Gemini file delete returned {status}: {body}");
         }
     }
@@ -314,7 +375,7 @@ pub(super) fn with_file_cleanup_metadata(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_file_response;
+    use super::{GeminiFileCleanup, finish_file_operation, parse_file_response};
 
     #[test]
     fn parse_file_response_accepts_upload_wrapper() {
@@ -338,5 +399,23 @@ mod tests {
 
         assert_eq!(file.name, "files/abc");
         assert_eq!(file.uri, "https://example.test/files/abc");
+    }
+
+    #[test]
+    fn failed_generation_preserves_cleanup_failure() {
+        let cleanup = GeminiFileCleanup {
+            attempted: true,
+            deleted: false,
+            error: Some("delete failed".to_string()),
+        };
+        let error = finish_file_operation::<()>(
+            Err(anyhow::anyhow!("generation failed")),
+            &cleanup,
+            "files/abc",
+        )
+        .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("generation failed"));
+        assert!(message.contains("delete failed"));
     }
 }

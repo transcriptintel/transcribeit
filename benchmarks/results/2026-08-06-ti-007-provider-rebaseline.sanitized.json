@@ -1,0 +1,261 @@
+{
+  "schema_version": "transcribeit.benchmark-result.v1",
+  "recorded_at_utc": "2026-08-06T07:45:43Z",
+  "issue": "TI-007",
+  "classification": "reference",
+  "baseline_eligible": false,
+  "baseline_exclusion_reasons": [
+    "The producing worktree contained uncommitted remediation changes.",
+    "The available fixture set is one untracked medical interview and does not satisfy TI-006's representative-corpus requirements."
+  ],
+  "git": {
+    "commit": "2559d807bd333447b39db5a125a5cbc1b31e3b2d",
+    "worktree_dirty": true
+  },
+  "machine": {
+    "cpu": "Apple M4 Pro",
+    "logical_cores": 12,
+    "memory_bytes": 25769803776,
+    "os": "Darwin",
+    "kernel": "25.5.0",
+    "architecture": "arm64"
+  },
+  "tools": {
+    "transcribeit": "1.6.0",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "ffmpeg": "ffmpeg 8.1.2",
+    "llama_cpp": "10210 (000547513)",
+    "sherpa_onnx": "1.13.2"
+  },
+  "fixture": {
+    "id": "medical-interview-5m-local",
+    "tracked": false,
+    "duration_seconds": 300.010688,
+    "bytes": 1960635,
+    "container_codec": "MP3",
+    "sha256": "14ff4dc83b8788bb9052aea72ec3f45f7b112581ba9a13a67baaabc844526e5a",
+    "ground_truth": "none",
+    "quality_scope": "Reviewed presence of seven audible domain terms only; no WER, DER, or corpus-level quality claim."
+  },
+  "protocol": {
+    "repetitions": 3,
+    "execution": "sequential",
+    "remote_preprocessing": "TranscribeIt mono 16 kHz provider upload; MP3 where the provider path supports it",
+    "local_whisper_preprocessing": "TranscribeIt mono 16 kHz WAV",
+    "sherpa_preprocessing": "TranscribeIt mono 16 kHz WAV with pinned Silero VAD and 34 speech chunks",
+    "warm_state": {
+      "hosted_providers": "provider-controlled and not observable",
+      "local_whisper": "model loaded separately for every CLI process",
+      "sherpa_onnx": "model loaded separately for every CLI process",
+      "qwen3_asr_llama": "one loaded server; run 1 first request, runs 2-3 warm server"
+    },
+    "retry_policy": "TRANSCRIBEIT_MAX_RETRIES default 5; no retry was reported in successful run logs",
+    "run_ids": [1, 2, 3],
+    "command_convention": "$RUN is set to each value in run_ids; provider secrets come only from their documented environment variables"
+  },
+  "commands": {
+    "azure": "/usr/bin/time -lp ./target/release/transcribeit run -p azure --language en --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f vtt -o output/ti-007-20260806/azure/run-$RUN",
+    "deepgram": "/usr/bin/time -lp ./target/release/transcribeit run -p deepgram --remote-model nova-3-medical --language en --diarize --deepgram-intelligence --deepgram-keyterm Ofev --deepgram-keyterm Esbriet --deepgram-keyterm IPF --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f vtt -o output/ti-007-20260806/deepgram-nova-3-medical/run-$RUN",
+    "gemini": "/usr/bin/time -lp ./target/release/transcribeit run -p gemini --remote-model gemini-3.5-flash --language en --gemini-autoclean --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f text -o output/ti-007-20260806/gemini-3-5-flash-text/run-$RUN",
+    "local_whisper": "/usr/bin/time -lp ./target/release/transcribeit run -p local -m output/ti-007-20260806/models/whisper-base/ggml-base.bin --language en -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f vtt -o output/ti-007-20260806/local-whisper-base/run-$RUN",
+    "nvidia_riva": "/usr/bin/time -lp ./target/release/transcribeit run -p nvidia-riva --language en-US --diarize --speakers 2 --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f text -o output/ti-007-20260806/nvidia-riva-text/run-$RUN",
+    "openai_diarize": "/usr/bin/time -lp ./target/release/transcribeit run -p openai --remote-model gpt-4o-transcribe-diarize --diarize --language en --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f vtt -o output/ti-007-20260806/openai-gpt-4o-transcribe-diarize/run-$RUN",
+    "openai_gpt_transcribe": "/usr/bin/time -lp ./target/release/transcribeit run -p openai --remote-model gpt-transcribe --language en --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f text -o output/ti-007-20260806/openai-gpt-transcribe-text/run-$RUN",
+    "qwen_filetrans": "/usr/bin/time -lp ./target/release/transcribeit run -p qwen-filetrans --remote-model qwen3-asr-flash-filetrans --language en --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f text -o output/ti-007-20260806/qwen-filetrans-text/run-$RUN",
+    "qwen3_asr_llama_server": "HF_HOME=output/ti-007-20260806/models/qwen3-asr-llama-eval/hf HF_HUB_CACHE=output/ti-007-20260806/models/qwen3-asr-llama-eval/hf/hub XDG_CACHE_HOME=output/ti-007-20260806/models/qwen3-asr-llama-eval/xdg llama-server -hf ggml-org/Qwen3-ASR-1.7B-GGUF --port 18080 --no-ui -n 4096 --temp 0",
+    "qwen3_asr_llama_client": "/usr/bin/time -lp ./target/release/transcribeit run -p openai --api-key local --base-url http://127.0.0.1:18080 --remote-model ggml-org/Qwen3-ASR-1.7B-GGUF --request-timeout-secs 300 -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f text -o output/ti-007-20260806/qwen3-asr-llama/run-$RUN",
+    "sherpa_onnx": "DYLD_LIBRARY_PATH=output/ti-007-20260806/models/sherpa-base-text-eval/sherpa-onnx-v1.13.2-osx-arm64-shared-lib/lib /usr/bin/time -lp ./target/release/transcribeit run -p sherpa-onnx -m output/ti-007-20260806/models/sherpa-base-text-eval/models/sherpa-onnx-whisper-base --vad-model output/ti-007-20260806/models/sherpa-base-text-eval/silero_vad.onnx --language en -i samples/4289US19IPFSegA17Apr20256.45am_5m.mp3 -f text -o output/ti-007-20260806/sherpa-base-text/run-$RUN"
+  },
+  "providers": [
+    {
+      "id": "azure-whisper",
+      "provider": "azure",
+      "model": "deployment:whisper",
+      "resolved_api_version": "2025-04-01-preview",
+      "median_wall_seconds": 11.18,
+      "median_processing_rtf": 0.0370,
+      "capabilities": {"native_timestamps": true, "word_timestamps": false, "speaker_labels": false},
+      "reviewed_quality": {"tracked_domain_terms_present_run_1": "5/7", "ground_truth": false},
+      "runs": [
+        {"run": 1, "wall_seconds": 11.30, "processing_seconds": 11.25106125, "rtf": 0.037502, "segments": 42, "characters": 3376, "manifest_sha256": "1773c0a0e504e0ff48a5b0c03c376b2a516b29487b3414ca1cb91306d8bba0db", "output_sha256": "e1de5224fa02c7bf3ff6cd909a624bcf2f62565f92e37b491c93d6d511119653"},
+        {"run": 2, "wall_seconds": 11.18, "processing_seconds": 11.110317541, "rtf": 0.037033, "segments": 42, "characters": 3376, "manifest_sha256": "7a0a74a83d55f66580b869845935d130854f8a2c5dbeed8a094ef04f1a433fe9", "output_sha256": "e1de5224fa02c7bf3ff6cd909a624bcf2f62565f92e37b491c93d6d511119653"},
+        {"run": 3, "wall_seconds": 11.12, "processing_seconds": 11.056188458, "rtf": 0.036853, "segments": 42, "characters": 3376, "manifest_sha256": "5048964583b14ec45b060e09efa6aee5d8c73deec916ad3978737a7172837f9c", "output_sha256": "e1de5224fa02c7bf3ff6cd909a624bcf2f62565f92e37b491c93d6d511119653"}
+      ]
+    },
+    {
+      "id": "deepgram-nova-3-medical",
+      "provider": "deepgram",
+      "model": "nova-3-medical",
+      "resolved_model": {"uuid": "c0244ab1-78fc-4baf-886a-2e3f17013da8", "name": "medical-nova-3", "version": "2026-05-18.18466"},
+      "median_wall_seconds": 7.49,
+      "median_processing_rtf": 0.0242,
+      "capabilities": {"native_timestamps": true, "word_timestamps": true, "speaker_labels": true, "intelligence": true},
+      "reviewed_quality": {"tracked_domain_terms_present_run_1": "7/7", "ground_truth": false},
+      "runs": [
+        {"run": 1, "wall_seconds": 8.07, "processing_seconds": 7.88452875, "rtf": 0.026281, "segments": 66, "characters": 3507, "manifest_sha256": "3cf5b8b7d69461db6bdb8a5a7b6900c0230c64c86e2fd2bca3c0be20b440d9f8", "output_sha256": "ccb7c35f068727a6dee44d02fdc9628b7496de73369ee44186f65609989c52d6"},
+        {"run": 2, "wall_seconds": 6.35, "processing_seconds": 6.135150042, "rtf": 0.020450, "segments": 66, "characters": 3507, "manifest_sha256": "d8d5a8bd7aa635192d98e3102b570b4c46dc89769ff5a453b5166fd7f30a2cb6", "output_sha256": "38db30c96e32bf4707ad6a929a967f29145bcb6958c4ae08cb888e7b313d73bf"},
+        {"run": 3, "wall_seconds": 7.49, "processing_seconds": 7.273810333, "rtf": 0.024245, "segments": 66, "characters": 3507, "manifest_sha256": "60a3c18086b025655b88e217967537007626ef0a1a59bd5a8d892ceacc5719f4", "output_sha256": "ccb7c35f068727a6dee44d02fdc9628b7496de73369ee44186f65609989c52d6"}
+      ]
+    },
+    {
+      "id": "gemini-3.5-flash",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash",
+      "median_wall_seconds": 48.51,
+      "median_processing_rtf": 0.1615,
+      "capabilities": {"model_generated_timestamps": true, "model_generated_speakers": true, "word_timestamps": false},
+      "quality_warnings": ["timestamps and speakers are model-generated", "non-monotonic timestamps occurred", "zero-duration segments occurred"],
+      "reviewed_quality": {"tracked_domain_terms_present_run_1": "7/7", "ground_truth": false},
+      "remote_cleanup": {"files_api_delete_attempted_all_runs": true, "files_api_deleted_all_runs": true},
+      "runs": [
+        {"run": 1, "wall_seconds": 43.71, "processing_seconds": 43.666029125, "rtf": 0.145548, "segments": 33, "characters": 3685, "manifest_sha256": "566995b2af814d307f043e4b3209a8974263ebae6fec7915cba66d3ff4ea006e", "output_sha256": "388ae7a6749a7020119f813c0cdb21e425f5ee301c741c8ed8b19b796319d51c"},
+        {"run": 2, "wall_seconds": 48.51, "processing_seconds": 48.452292959, "rtf": 0.161502, "segments": 29, "characters": 3549, "manifest_sha256": "d8f34fe3eb6537fe1c0e1aeaf983d23329a0e0113b7d5722ac923ed214ac78a8", "output_sha256": "bd610e5091981d796a690a9e88244ef9785988500b96cf7cb4a9bbd5cbc8fa52"},
+        {"run": 3, "wall_seconds": 51.83, "processing_seconds": 51.807509375, "rtf": 0.172686, "segments": 32, "characters": 3678, "manifest_sha256": "e3dabccbfe32e5c14e250f2b2a361cfc5b4d55fe49f932610071edb4dbaf5912", "output_sha256": "f0dd834ef701e6bfc9b1b47788d8e7cee61df6f945d779ae74eb07f32affd6b0"}
+      ]
+    },
+    {
+      "id": "local-whisper-base",
+      "provider": "local",
+      "model": "whisper.cpp base GGML",
+      "artifact": {"source_revision": "5359861c739e955e79d9a303bcbc70fb988958b1", "bytes": 147951465, "sha256": "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"},
+      "median_wall_seconds": 3.99,
+      "median_processing_rtf": 0.0132,
+      "capabilities": {"native_timestamps": true, "word_timestamps": false, "speaker_labels": false},
+      "reviewed_quality": {"tracked_domain_terms_present_run_1": "4/7", "ground_truth": false},
+      "runs": [
+        {"run": 1, "wall_seconds": 4.00, "processing_seconds": 3.963416417, "rtf": 0.013211, "segments": 42, "characters": 3349, "manifest_sha256": "23e23d68f1724e200e7230fb485ef803ecd5b4e03c5145ba03677c8a09d2ac48", "output_sha256": "98e970ccb7f219cd8cb6dda7218b8e746f2f17c2589eb592c6319183ba38db60"},
+        {"run": 2, "wall_seconds": 3.97, "processing_seconds": 3.9339665, "rtf": 0.013113, "segments": 42, "characters": 3349, "manifest_sha256": "7df4c4ac8082dba5dbdd13b3c8583388677531bc758f9584b24bc1ce16f9b586", "output_sha256": "98e970ccb7f219cd8cb6dda7218b8e746f2f17c2589eb592c6319183ba38db60"},
+        {"run": 3, "wall_seconds": 3.99, "processing_seconds": 3.951157667, "rtf": 0.013170, "segments": 42, "characters": 3349, "manifest_sha256": "5cc96696452f7c0523ca32fee0d4d7963f35fddf5bcad3390ed4f0fa0e57b238", "output_sha256": "98e970ccb7f219cd8cb6dda7218b8e746f2f17c2589eb592c6319183ba38db60"}
+      ]
+    },
+    {
+      "id": "nvidia-riva",
+      "provider": "nvidia-riva",
+      "model": "function:71203149",
+      "median_wall_seconds": 9.66,
+      "median_processing_rtf": 0.0316,
+      "capabilities": {"native_timestamps": true, "word_timestamps": true, "speaker_labels": true},
+      "quality_warnings": ["one zero-duration segment made VTT unsupported for this fixture"],
+      "reviewed_quality": {"tracked_domain_terms_present_run_1": "5/7", "ground_truth": false},
+      "runs": [
+        {"run": 1, "wall_seconds": 9.32, "processing_seconds": 9.136590125, "rtf": 0.030454, "segments": 49, "characters": 3386, "manifest_sha256": "620dc69ec03f5ded8da80c9941568663fd615cfe8b4305b473eb8815c801832f", "output_sha256": "e84482bb198f92f2f8a79be8b3563732b93e7fe1a210d02be6f30b0c33cf666a"},
+        {"run": 2, "wall_seconds": 9.66, "processing_seconds": 9.471605541, "rtf": 0.031571, "segments": 49, "characters": 3386, "manifest_sha256": "92f422fecce3b57ed0766b83a9121daef0ed2689bc05aabbe45056ba5767f9fe", "output_sha256": "e84482bb198f92f2f8a79be8b3563732b93e7fe1a210d02be6f30b0c33cf666a"},
+        {"run": 3, "wall_seconds": 9.79, "processing_seconds": 9.559612583, "rtf": 0.031864, "segments": 49, "characters": 3386, "manifest_sha256": "cc5ded97fd06c6c6f782cb0e38b49fe8c9c8edeae183a09cece777bae1487699", "output_sha256": "e84482bb198f92f2f8a79be8b3563732b93e7fe1a210d02be6f30b0c33cf666a"}
+      ]
+    },
+    {
+      "id": "openai-gpt-4o-transcribe-diarize",
+      "provider": "openai",
+      "model": "gpt-4o-transcribe-diarize",
+      "request": {"response_format": "diarized_json", "chunking_strategy": "auto"},
+      "median_wall_seconds": 110.94,
+      "median_processing_rtf": 0.3695,
+      "capabilities": {"native_timestamps": true, "word_timestamps": false, "speaker_labels": true},
+      "reviewed_quality": {"tracked_domain_terms_present_run_1": "6/7", "ground_truth": false},
+      "runs": [
+        {"run": 1, "wall_seconds": 112.65, "processing_seconds": 112.586566375, "rtf": 0.375275, "segments": 88, "characters": 3327, "manifest_sha256": "3360ae7eff47bf14111df3b40e0ca7404a9b06a36e894e043644b40cd04b1ad6", "output_sha256": "19e9200c011565a251334d0c3732f06151b40de3e1b3c67044c4d23b163921ee"},
+        {"run": 2, "wall_seconds": 104.96, "processing_seconds": 104.895088709, "rtf": 0.349638, "segments": 73, "characters": 3312, "manifest_sha256": "68c13378ce2283d25d4acbd9e5c02546282aacb058335f499445abbec0126896", "output_sha256": "8ff26900dc33845d3eb257449cc253172eecb6af79aab8a96385e49908c938a1"},
+        {"run": 3, "wall_seconds": 110.94, "processing_seconds": 110.867088625, "rtf": 0.369544, "segments": 81, "characters": 3333, "manifest_sha256": "82ed06a8a816e164e1ce721d1dee36d39203a98ddb211a49862f2b2fe62b0e72", "output_sha256": "3dd4e6dd97772f200092fd593910354c7e78f356c7673223032e088427e888ef"}
+      ]
+    },
+    {
+      "id": "openai-gpt-transcribe",
+      "provider": "openai",
+      "model": "gpt-transcribe",
+      "median_wall_seconds": 10.45,
+      "median_processing_rtf": 0.0347,
+      "capabilities": {"native_timestamps": false, "word_timestamps": false, "speaker_labels": false, "detected_languages": ["en"]},
+      "reviewed_quality": {"tracked_domain_terms_present_run_1": "7/7", "ground_truth": false},
+      "runs": [
+        {"run": 1, "wall_seconds": 13.10, "processing_seconds": 13.074813417, "rtf": 0.043581, "segments": 1, "characters": 3342, "manifest_sha256": "c110c005fe605233f016aeeabfc59a561ddaee155bfc07cc9e3976d783cfddc7", "output_sha256": "8827d9c83421fd9f54c5ba8cbd90c843d5f938ccea0f7bbf8693e1959caae35a"},
+        {"run": 2, "wall_seconds": 10.45, "processing_seconds": 10.409983042, "rtf": 0.034699, "segments": 1, "characters": 3348, "manifest_sha256": "0f5e3680c3d527085e373422d53a0d2e3d6b23d6552abf00d6b15aa2a0906e4a", "output_sha256": "b8c8ef80d1624e7848e033b3e82ad5068aa7652849be67660ed23b4160bbae5c"},
+        {"run": 3, "wall_seconds": 8.42, "processing_seconds": 8.387370667, "rtf": 0.027957, "segments": 1, "characters": 3348, "manifest_sha256": "0d80b9fa172ec4571d1310ec0e6e1808167df5ed9f2b4d2e7a36216c44186b3f", "output_sha256": "b8c8ef80d1624e7848e033b3e82ad5068aa7652849be67660ed23b4160bbae5c"}
+      ]
+    },
+    {
+      "id": "qwen-filetrans",
+      "provider": "qwen-filetrans",
+      "model": "qwen3-asr-flash-filetrans",
+      "median_wall_seconds": 11.92,
+      "median_processing_rtf": 0.0387,
+      "capabilities": {"native_timestamps": true, "word_timestamps": true, "speaker_labels": false, "language_per_segment": true, "emotion_per_segment": true},
+      "quality_warnings": ["zero-duration segments made VTT unsupported for this fixture"],
+      "reviewed_quality": {"tracked_domain_terms_present_run_1": "7/7", "ground_truth": false},
+      "remote_cleanup": {"staged_object_deleted_all_runs": true},
+      "runs": [
+        {"run": 1, "wall_seconds": 12.15, "processing_seconds": 11.856635917, "rtf": 0.039521, "segments": 68, "characters": 3389, "manifest_sha256": "462c5fa2da6bab4f0747c28adff58e309ff5051b3ebe0c9a9609ef05f515cf47", "output_sha256": "ab7d5f91c680658701ac5993de6e6ab8d0e4c5a5330082b9dafa1d8da2557230"},
+        {"run": 2, "wall_seconds": 11.92, "processing_seconds": 11.618848292, "rtf": 0.038728, "segments": 66, "characters": 3384, "manifest_sha256": "662b94f25b8d67eca19ab2f43eab39ef4f454207c90c90bf6858f1523fe0e63d", "output_sha256": "a0a2d65293de27081f3166063ed118e3eb08ec25cf21e7359a44fdcef859ed8a"},
+        {"run": 3, "wall_seconds": 11.70, "processing_seconds": 11.395648083, "rtf": 0.037984, "segments": 68, "characters": 3388, "manifest_sha256": "6e9ac72a8552424c34417d24297be0cfb272d2e27c403c7a8a565229d912e89e", "output_sha256": "e28e27cc0074e621c99ddb3579c2d74c7d5e52fe0671ff3edf16334edb6d8342"}
+      ]
+    },
+    {
+      "id": "qwen3-asr-llama",
+      "provider": "openai-compatible-local",
+      "model": "ggml-org/Qwen3-ASR-1.7B-GGUF",
+      "resolved_revision": "36a678687ba7d07a74ca70ccb0e36902e005fb80",
+      "artifact": {"bytes": 2550272000, "tree_sha256": "03d68fbe503549f9b0f669998e87489be556c17fa9afbcd9640c6e404e96f598"},
+      "median_wall_seconds": 10.82,
+      "median_processing_rtf": 0.0360,
+      "capabilities": {"native_timestamps": false, "word_timestamps": false, "speaker_labels": false},
+      "quality_warnings": ["llama.cpp audio support identified itself as experimental", "server accepted only JSON and rejected the initial verbose_json compatibility attempt before TranscribeIt fallback"],
+      "reviewed_quality": {"tracked_domain_terms_present_run_1": "7/7", "ground_truth": false},
+      "runs": [
+        {"run": 1, "wall_seconds": 15.96, "processing_seconds": 15.414241041, "rtf": 0.051379, "segments": 1, "characters": 3579, "manifest_sha256": "b24dc894a1f08c3d359976afb5f0e7c59b301ea6c7de710acd40dfd28c191a71", "output_sha256": "262c7e2b2e7f139cad151035024a9745131a314ac4aba4bb1741bcb3c516e725"},
+        {"run": 2, "wall_seconds": 10.82, "processing_seconds": 10.7859435, "rtf": 0.035952, "segments": 1, "characters": 3579, "manifest_sha256": "cd71437b91b061a97e90ed9bac7d1d2832bf61f6cff58b83c8888167a6b1d3fb", "output_sha256": "262c7e2b2e7f139cad151035024a9745131a314ac4aba4bb1741bcb3c516e725"},
+        {"run": 3, "wall_seconds": 10.81, "processing_seconds": 10.783425375, "rtf": 0.035943, "segments": 1, "characters": 3579, "manifest_sha256": "ead8d7df404c2259c95b21b7986d66a1ea7d7bb237b764ee6680eba825585306", "output_sha256": "262c7e2b2e7f139cad151035024a9745131a314ac4aba4bb1741bcb3c516e725"}
+      ]
+    },
+    {
+      "id": "sherpa-onnx-whisper-base",
+      "provider": "sherpa-onnx",
+      "model": "sherpa-onnx-whisper-base",
+      "artifact": {"model_tree_sha256": "169aa13b5e173045813930b5b5bb468ea467d308ba0216380beea6b084af7355", "model_bytes": 468893696, "native_library_revision": "v1.13.2", "native_library_tree_sha256": "73402113629b8a68d8a11fb88fccb3f324356b822ae9d712457ac775060c2590", "vad_sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6"},
+      "median_wall_seconds": 13.70,
+      "median_processing_rtf": 0.0446,
+      "capabilities": {"native_timestamps": false, "word_timestamps": false, "speaker_labels": false},
+      "quality_warnings": ["all 34 model segments were untimed", "VTT was unsupported for this result shape"],
+      "reviewed_quality": {"tracked_domain_terms_present_run_1": "2/7", "ground_truth": false},
+      "runs": [
+        {"run": 1, "wall_seconds": 13.54, "processing_seconds": 13.256154584, "rtf": 0.044186, "segments": 34, "characters": 3310, "manifest_sha256": "a19e7d241d8676968b3dd14c6b108ce12a33ee00ac080384f1224738d81e7c28", "output_sha256": "0846969fa95c1bdc63f5d537e80c7e3a4e554411d48cbe688491ed0b0e3948fc"},
+        {"run": 2, "wall_seconds": 13.76, "processing_seconds": 13.467744875, "rtf": 0.044891, "segments": 34, "characters": 3310, "manifest_sha256": "e2655985bc48edbd1c85e61f78a13fbedfc6e09f81e167c68abd52611c7c0cdf", "output_sha256": "0846969fa95c1bdc63f5d537e80c7e3a4e554411d48cbe688491ed0b0e3948fc"},
+        {"run": 3, "wall_seconds": 13.70, "processing_seconds": 13.372989917, "rtf": 0.044575, "segments": 34, "characters": 3310, "manifest_sha256": "f0ecab739eb33646a02f89fab4748e06d8ef886b1b6c7b7098f21c130cdfc961", "output_sha256": "0846969fa95c1bdc63f5d537e80c7e3a4e554411d48cbe688491ed0b0e3948fc"}
+      ]
+    }
+  ],
+  "compatibility_failures": [
+    {"provider": "openai", "model": "gpt-transcribe", "requested_output": "vtt", "wall_seconds": 13.51, "result": "subtitle_rejected", "reason": "one untimed 0ms..0ms segment"},
+    {"provider": "openai", "model": "gpt-transcribe", "requested_response_format": "diarized_json", "chunking_strategy": "auto", "http_status": 400, "wall_seconds": 3.720436333, "server_processing_ms": 2696, "result": "unsupported_value", "error_parameter": "response_format", "raw_error_sha256": "9c390baafdd162273659aaa73b2b1fdc506cb088aed66ab5ec0d674664a34ecd", "transcript_produced": false},
+    {"provider": "qwen-filetrans", "model": "qwen3-asr-flash-filetrans", "requested_output": "vtt", "wall_seconds": 11.85, "result": "subtitle_rejected", "reason": "zero-duration provider segment"},
+    {"provider": "gemini", "model": "gemini-3.5-flash", "requested_output": "vtt", "wall_seconds": 36.78, "result": "subtitle_rejected", "reason": "zero-duration model-generated segment"},
+    {"provider": "nvidia-riva", "model": "function:71203149", "requested_output": "vtt", "wall_seconds": 9.24, "result": "subtitle_rejected", "reason": "zero-duration provider segment"},
+    {"provider": "sherpa-onnx", "model": "sherpa-onnx-whisper-base", "requested_output": "vtt", "wall_seconds": 14.32, "result": "subtitle_rejected", "reason": "zero-duration model segment"},
+    {"provider": "sherpa-onnx", "model": "sherpa-onnx-whisper-base", "wall_seconds": 0.42, "result": "configuration_error", "reason": "configured VAD_MODEL referred to an absent shared-cache file"}
+  ],
+  "downloaded_model_cleanup": {
+    "policy": "Every model evaluation used a new narrow directory. Only that directory was removed after artifact hashing and evidence capture.",
+    "total_bytes_removed": 4278595584,
+    "evaluations": [
+      {"scope": "whisper base GGML", "preexisting": false, "bytes_removed": 151896064, "cleanup_completed": true, "path_absent_after_cleanup": true},
+      {"scope": "Sherpa base model and native libraries; missing-VAD failure", "preexisting": false, "bytes_removed": 525684736, "cleanup_completed": true, "path_absent_after_cleanup": true},
+      {"scope": "Sherpa base model, VAD, and native libraries; VTT compatibility run", "preexisting": false, "bytes_removed": 525864960, "cleanup_completed": true, "path_absent_after_cleanup": true},
+      {"scope": "Sherpa base model, VAD, and native libraries; text latency runs", "preexisting": false, "bytes_removed": 524877824, "cleanup_completed": true, "path_absent_after_cleanup": true},
+      {"scope": "Qwen3-ASR llama.cpp Hugging Face and XDG cache", "preexisting": false, "bytes_removed": 2550272000, "cleanup_completed": true, "path_absent_after_cleanup": true}
+    ]
+  },
+  "sanitization": {
+    "transcript_text_removed": true,
+    "segment_text_removed": true,
+    "speaker_names_removed": true,
+    "local_absolute_paths_removed": true,
+    "request_ids_removed": true,
+    "task_ids_removed": true,
+    "signed_urls_removed": true,
+    "secrets_removed": true
+  },
+  "conclusion": {
+    "latency_scope": "Reference medians for one five-minute fixture on one dirty-worktree host; not regression baselines.",
+    "quality_scope": "Term-presence review only. The observed order is not a quality ranking.",
+    "representative_corpus_blocker": "TI-006 remains open, so TI-007 cannot honestly be resolved or promoted to a clean representative baseline from this record alone.",
+    "historical_boundary": "The 2026-06 observations remain historical and were not relabeled as this baseline."
+  }
+}

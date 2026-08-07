@@ -2,7 +2,12 @@ use anyhow::{Context, Result};
 use futures_util::StreamExt;
 use serde_json::Value;
 
+use crate::engines::rate_limit::{MAX_ERROR_RESPONSE_BYTES, read_response_limited};
+
 use super::GeminiApi;
+
+const MAX_SSE_EVENT_BYTES: usize = 16 * 1024 * 1024;
+const MAX_SSE_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 
 impl GeminiApi {
     pub(super) async fn stream_generate_chunks(
@@ -23,23 +28,25 @@ impl GeminiApi {
             let response = match response {
                 Ok(response) => response,
                 Err(err) => {
-                    if attempt == self.settings.max_retries {
-                        return Err(err).context("Failed to stream Gemini generateContent");
-                    }
-                    self.wait_before_retry(
-                        attempt,
-                        "Gemini streamGenerateContent transport error",
-                        None,
-                    )
-                    .await;
-                    continue;
+                    return Err(err).context(
+                        "Gemini streamGenerateContent submission became ambiguous and was not retried",
+                    );
                 }
             };
 
             let status = response.status();
             if !status.is_success() {
-                let body = response.text().await.unwrap_or_default();
-                if is_retryable_status(status) && attempt < self.settings.max_retries {
+                let body = read_response_limited(
+                    response,
+                    MAX_ERROR_RESPONSE_BYTES,
+                    "Gemini streamGenerateContent error response",
+                )
+                .await
+                .map(|body| String::from_utf8_lossy(&body).into_owned())
+                .unwrap_or_else(|error| error.to_string());
+                if status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                    && attempt < self.settings.max_retries
+                {
                     self.wait_before_retry(
                         attempt,
                         "Gemini streamGenerateContent retryable response",
@@ -53,25 +60,12 @@ impl GeminiApi {
 
             match read_sse_chunks(response).await {
                 Ok(chunks) if !chunks.is_empty() => return Ok(chunks),
-                Ok(_) if attempt < self.settings.max_retries => {
-                    self.wait_before_retry(
-                        attempt,
-                        "Gemini streamGenerateContent returned an empty stream",
-                        None,
-                    )
-                    .await;
-                }
                 Ok(_) => anyhow::bail!("Gemini streamGenerateContent returned an empty stream"),
-                Err(err) if attempt < self.settings.max_retries => {
-                    eprintln!("    Gemini stream failed: {err:#}");
-                    self.wait_before_retry(
-                        attempt,
-                        "Gemini streamGenerateContent stream error",
-                        None,
-                    )
-                    .await;
+                Err(err) => {
+                    return Err(err).context(
+                        "Gemini stream failed after the request was accepted and was not retried",
+                    );
                 }
-                Err(err) => return Err(err),
             }
         }
 
@@ -103,34 +97,88 @@ impl GeminiApi {
 
 async fn read_sse_chunks(response: reqwest::Response) -> Result<Vec<Value>> {
     let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
-    let mut chunks = Vec::new();
+    let mut decoder = SseDecoder::new(MAX_SSE_EVENT_BYTES, MAX_SSE_RESPONSE_BYTES);
 
     while let Some(next) = stream.next().await {
         let bytes = next.context("Failed to read Gemini stream chunk")?;
-        buffer.push_str(&String::from_utf8_lossy(&bytes));
+        decoder.push(&bytes)?;
+    }
 
-        while let Some((event_end, separator_len)) = next_sse_event(&buffer) {
-            let remaining = buffer.split_off(event_end + separator_len);
-            let event_data = std::mem::replace(&mut buffer, remaining);
-            if let Some(value) = parse_sse_event(&event_data[..event_end])? {
-                chunks.push(value);
-            }
+    decoder.finish()
+}
+
+struct SseDecoder {
+    buffer: Vec<u8>,
+    chunks: Vec<Value>,
+    total_bytes: usize,
+    maximum_event_bytes: usize,
+    maximum_response_bytes: usize,
+}
+
+impl SseDecoder {
+    fn new(maximum_event_bytes: usize, maximum_response_bytes: usize) -> Self {
+        Self {
+            buffer: Vec::new(),
+            chunks: Vec::new(),
+            total_bytes: 0,
+            maximum_event_bytes,
+            maximum_response_bytes,
         }
     }
 
-    if !buffer.trim().is_empty()
-        && let Some(value) = parse_sse_event(&buffer)?
-    {
-        chunks.push(value);
+    fn push(&mut self, bytes: &[u8]) -> Result<()> {
+        anyhow::ensure!(
+            bytes.len() <= self.maximum_response_bytes.saturating_sub(self.total_bytes),
+            "Gemini SSE response exceeds the {}-byte limit",
+            self.maximum_response_bytes
+        );
+        self.total_bytes += bytes.len();
+        self.buffer.extend_from_slice(bytes);
+        self.drain_complete_events()?;
+        anyhow::ensure!(
+            self.buffer.len() <= self.maximum_event_bytes,
+            "Gemini SSE event exceeds the {}-byte limit",
+            self.maximum_event_bytes
+        );
+        Ok(())
     }
 
-    Ok(chunks)
+    fn finish(mut self) -> Result<Vec<Value>> {
+        self.drain_complete_events()?;
+        if !self.buffer.iter().all(u8::is_ascii_whitespace)
+            && let Some(value) = parse_sse_event(&self.buffer)?
+        {
+            self.chunks.push(value);
+        }
+        Ok(self.chunks)
+    }
+
+    fn drain_complete_events(&mut self) -> Result<()> {
+        while let Some((event_end, separator_len)) = next_sse_event(&self.buffer) {
+            anyhow::ensure!(
+                event_end <= self.maximum_event_bytes,
+                "Gemini SSE event exceeds the {}-byte limit",
+                self.maximum_event_bytes
+            );
+            let remaining = self.buffer.split_off(event_end + separator_len);
+            let event_data = std::mem::replace(&mut self.buffer, remaining);
+            if let Some(value) = parse_sse_event(&event_data[..event_end])? {
+                self.chunks.push(value);
+            }
+        }
+        Ok(())
+    }
 }
 
-fn next_sse_event(buffer: &str) -> Option<(usize, usize)> {
-    let lf = buffer.find("\n\n").map(|index| (index, 2));
-    let crlf = buffer.find("\r\n\r\n").map(|index| (index, 4));
+fn next_sse_event(buffer: &[u8]) -> Option<(usize, usize)> {
+    let lf = buffer
+        .windows(2)
+        .position(|window| window == b"\n\n")
+        .map(|index| (index, 2));
+    let crlf = buffer
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|index| (index, 4));
     match (lf, crlf) {
         (Some((lf_index, lf_len)), Some((crlf_index, crlf_len))) => {
             if lf_index < crlf_index {
@@ -144,7 +192,9 @@ fn next_sse_event(buffer: &str) -> Option<(usize, usize)> {
     }
 }
 
-fn parse_sse_event(event: &str) -> Result<Option<Value>> {
+fn parse_sse_event(event: &[u8]) -> Result<Option<Value>> {
+    let event = std::str::from_utf8(event)
+        .context("Gemini SSE event was not valid UTF-8 after complete event framing")?;
     let data = event
         .lines()
         .filter_map(|line| line.trim_start().strip_prefix("data:"))
@@ -160,6 +210,28 @@ fn parse_sse_event(event: &str) -> Result<Option<Value>> {
         .with_context(|| format!("Failed to parse Gemini SSE data: {data}"))
 }
 
-fn is_retryable_status(status: reqwest::StatusCode) -> bool {
-    status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
+#[cfg(test)]
+mod tests {
+    use super::SseDecoder;
+
+    #[test]
+    fn preserves_utf8_split_across_network_chunks() {
+        let payload = "data: {\"text\":\"café\"}\n\n".as_bytes();
+        let split = payload.iter().position(|byte| *byte == 0xc3).unwrap() + 1;
+        let mut decoder = SseDecoder::new(1024, 2048);
+        decoder.push(&payload[..split]).unwrap();
+        decoder.push(&payload[split..]).unwrap();
+
+        let chunks = decoder.finish().unwrap();
+        assert_eq!(chunks[0]["text"], "café");
+    }
+
+    #[test]
+    fn rejects_oversize_event_and_response() {
+        let mut event_decoder = SseDecoder::new(5, 100);
+        assert!(event_decoder.push(b"data: x").is_err());
+
+        let mut response_decoder = SseDecoder::new(100, 5);
+        assert!(response_decoder.push(b"123456").is_err());
+    }
 }

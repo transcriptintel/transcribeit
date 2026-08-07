@@ -13,7 +13,27 @@ tasks:
   print-openai-base-url:
     cmds:
       - |
-        echo "${OPENAI_BASE_URL}"
+        echo "${OPENAI_BASE_URL:-https://api.openai.com}"
+
+  test-openai:
+    cmds:
+      - |
+        test -n "$OPENAI_API_KEY" || (echo "OPENAI_API_KEY is not set" >&2; exit 1)
+        OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.openai.com}"
+        command -v ffmpeg >/dev/null || (echo "ffmpeg is not installed" >&2; exit 1)
+        smoke_dir="$(mktemp -d "${TMPDIR:-/tmp}/transcribeit-openai-smoke.XXXXXX")"
+        smoke_audio="$smoke_dir/smoke.wav"
+        trap 'rm -f "$smoke_audio"; rmdir "$smoke_dir"' EXIT
+        ffmpeg -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=1" \
+          -ar 16000 -ac 1 -c:a pcm_s16le "$smoke_audio"
+
+        curl --silent --show-error --fail-with-body \
+          --output /dev/null \
+          --write-out "HTTP_STATUS:%{http_code}\n" \
+          --header "Authorization: Bearer ${OPENAI_API_KEY}" \
+          --form "file=@$smoke_audio" \
+          --form model=gpt-transcribe \
+          "${OPENAI_BASE_URL%/}/v1/audio/transcriptions"
 
   test-dashscope:
     cmds:
@@ -21,8 +41,9 @@ tasks:
         test -n "$DASHSCOPE_API_KEY" || (echo "DASHSCOPE_API_KEY is not set" >&2; exit 1)
         DASHSCOPE_BASE_URL="${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}"
 
-        curl --silent --show-error --location "${DASHSCOPE_BASE_URL%/}/chat/completions" \
-          --write-out "\nHTTP_STATUS:%{http_code}\n" \
+        curl --silent --show-error --fail-with-body --location "${DASHSCOPE_BASE_URL%/}/chat/completions" \
+          --output /dev/null \
+          --write-out "HTTP_STATUS:%{http_code}\n" \
           --header "Authorization: Bearer ${DASHSCOPE_API_KEY}" \
           --header "Content-Type: application/json" \
           --data '{
@@ -44,8 +65,9 @@ tasks:
         test -n "$DASHSCOPE_API_KEY" || (echo "DASHSCOPE_API_KEY is not set" >&2; exit 1)
         DASHSCOPE_BASE_URL="${DASHSCOPE_BASE_URL:-https://dashscope-intl.aliyuncs.com/compatible-mode/v1}"
 
-        curl --silent --show-error --location "${DASHSCOPE_BASE_URL%/}/chat/completions" \
-        --write-out "\nHTTP_STATUS:%{http_code}\n" \
+        curl --silent --show-error --fail-with-body --location "${DASHSCOPE_BASE_URL%/}/chat/completions" \
+        --output /dev/null \
+        --write-out "HTTP_STATUS:%{http_code}\n" \
         -H "Authorization: Bearer $DASHSCOPE_API_KEY" \
         -H "Content-Type: application/json" \
         -d '{
@@ -74,10 +96,23 @@ tasks:
         test -n "$DEEPGRAM_API_KEY" || (echo "DEEPGRAM_API_KEY is not set" >&2; exit 1)
         DEEPGRAM_API_BASE_URL="${DEEPGRAM_API_BASE_URL:-https://api.deepgram.com/v1}"
 
-        curl --silent --show-error --location \
+        curl --silent --show-error --fail-with-body --location \
           --request POST \
-          --write-out "\nHTTP_STATUS:%{http_code}\n" \
+          --output /dev/null \
+          --write-out "HTTP_STATUS:%{http_code}\n" \
           --header "Authorization: Token ${DEEPGRAM_API_KEY}" \
           --header "Content-Type: application/json" \
           --data '{"url":"https://dpgr.am/spacewalk.wav"}' \
           "${DEEPGRAM_API_BASE_URL%/}/listen?model=nova-3&smart_format=true"
+
+  test-gemini:
+    cmds:
+      - |
+        test -n "$GEMINI_API_KEY" || (echo "GEMINI_API_KEY is not set" >&2; exit 1)
+        GEMINI_API_BASE_URL="${GEMINI_API_BASE_URL:-https://generativelanguage.googleapis.com/v1beta}"
+
+        curl --silent --show-error --fail-with-body \
+          --output /dev/null \
+          --write-out "HTTP_STATUS:%{http_code}\n" \
+          --header "x-goog-api-key: ${GEMINI_API_KEY}" \
+          "${GEMINI_API_BASE_URL%/}/models?pageSize=1"

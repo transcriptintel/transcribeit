@@ -1,0 +1,175 @@
+{
+  "schema_version": "transcribeit.benchmark-result.v1",
+  "benchmark_id": "ti-004-qwen3-asr-onnx-2026-08-06",
+  "issue": "TI-004",
+  "recorded_at_utc": "2026-08-06T11:45:00Z",
+  "classification": "reference",
+  "baseline_eligible": false,
+  "baseline_exclusion_reasons": [
+    "worktree was dirty before the run",
+    "the long-form fixture has one successful repetition",
+    "the model-specific 20-second safety cap was derived from this evaluation"
+  ],
+  "git": {
+    "commit": "2559d807bd333447b39db5a125a5cbc1b31e3b2d",
+    "worktree_dirty": true
+  },
+  "machine": {
+    "cpu": "Apple M4 Pro",
+    "logical_cores": 12,
+    "memory_bytes": 25769803776,
+    "os": "Darwin",
+    "kernel": "25.5.0",
+    "architecture": "arm64"
+  },
+  "tools": {
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "ffmpeg": "ffmpeg 8.1.2",
+    "bun": "1.3.14",
+    "sherpa_onnx_crate": "1.13.4",
+    "sherpa_native_libraries": "1.13.4",
+    "onnxruntime": "1.27.0"
+  },
+  "binary": {
+    "version": "transcribeit 1.6.0",
+    "features": ["sherpa-onnx"],
+    "sha256": "66ee082d8811e58cce8008f033ab8957033c5f4666ef2f5a64af1319fc6fcd8a"
+  },
+  "upstream_model_audit": {
+    "captured_on": "2026-08-06",
+    "official_hugging_face_revisions": {
+      "Qwen/Qwen3-ASR-0.6B-hf": "7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c",
+      "Qwen/Qwen3-ASR-0.6B": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+      "Qwen/Qwen3-ASR-1.7B-hf": "bcd2b5b7f32b480ab5790554cfa8347f246a14f3",
+      "Qwen/Qwen3-ASR-1.7B": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+      "Qwen/Qwen3-ForcedAligner-0.6B": "c7cbfc2048c462b0d63a45797104fc9db3ad62b7"
+    },
+    "selection": "The newest maintained official Sherpa-ONNX Qwen package was selected. No maintained official Sherpa 1.7B ONNX package was available.",
+    "forced_aligner_excluded": "The separate aligner is not part of the Sherpa package, supports audio up to five minutes, and would add another model/runtime path."
+  },
+  "artifact": {
+    "model": "sherpa-onnx-qwen3-asr-0.6B-int8-2026-03-25",
+    "source": "k2-fsa/sherpa-onnx asr-models release",
+    "archive_size_bytes": 878702423,
+    "archive_sha256": "393f8a14e2f5fb96746aaab342997a40641001fbd5bf9592a080a8329178ee96",
+    "installed_tree_sha256": "d82e0c1096f0018318ccca71b91f3dff616a67b81c09cdcb5f52392b2d7f4df7",
+    "native_archive": "sherpa-onnx-v1.13.4-osx-arm64-shared-lib",
+    "native_archive_size_bytes": 15741101,
+    "native_archive_sha256": "995d38d323eef0bfbfe7432dcceffda91bbd95525a15fa64fed517ed368378b9",
+    "installed_native_tree_sha256_after_signature_repair": "9cc9e2f4c95643f87041fcef60b909641b0fe054280f53bfea29c193de85ec1b",
+    "vad_sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+    "vad_size_bytes": 643854,
+    "macos_packaging_observation": "The two ONNX Runtime dylibs in the official arm64 archive had invalid embedded signatures. Setup ad-hoc signed only those files after archive verification and resealed the installed tree."
+  },
+  "corpus": {
+    "id": "transcribeit-representative-v1",
+    "manifest_sha256": "bfcb9146928a23a87edfa02082ed5a977e8c2971cd223a5707cf5bbb773b3a98",
+    "scoring_sha256": "dabeed558f1140c75960c46c24832bd48624cba61cee27eb8ac710ffb0229b22",
+    "short_fixture_repetitions": 3,
+    "long_fixture_repetitions": 1
+  },
+  "protocol": {
+    "process_state": "new process and model load for every attempt",
+    "execution": "sequential",
+    "output_format": "text",
+    "normalization": false,
+    "segmentation": "Silero VAD with the provider hard cap",
+    "language_hint": null,
+    "commands": [
+      "DYLD_LIBRARY_PATH=$SHERPA_LIB ./target/release/transcribeit run -p sherpa-onnx -m $QWEN3_MODEL --vad-model $VAD_MODEL -i $FIXTURE -f text -o $RUN_DIR",
+      "DYLD_LIBRARY_PATH=$SHERPA_LIB ./target/release/transcribeit run -p sherpa-onnx -m $QWEN3_MODEL --vad-model $VAD_MODEL --max-segment-secs 20 -i $AMI_FIXTURE -f text -o $RUN_DIR"
+    ]
+  },
+  "results": {
+    "attempts": 11,
+    "successful": 10,
+    "failed": 1,
+    "short_fixture_macro_wer": 0.058823529411764705,
+    "fixtures": [
+      {
+        "id": "fleurs-en-us-traffic-flow-clean",
+        "wall_seconds": [3.496959, 2.976443959, 2.94700225],
+        "median_real_time_factor": 0.23547816131329113,
+        "wer_by_run": [0.17647058823529413, 0.17647058823529413, 0.17647058823529413],
+        "term_recall_by_run": [1, 1, 1],
+        "maximum_resident_set_size_bytes": [1732476928, 1778368512, 1744650240]
+      },
+      {
+        "id": "fleurs-en-us-traffic-flow-noisy-10db",
+        "wall_seconds": [2.9778445, 2.869761, 2.930609958],
+        "median_real_time_factor": 0.23185205363924047,
+        "wer_by_run": [0, 0, 0],
+        "term_recall_by_run": [1, 1, 1],
+        "maximum_resident_set_size_bytes": [1721335808, 1712259072, 1707884544]
+      },
+      {
+        "id": "speechocean-mandarin-l1-computer-clean",
+        "wall_seconds": [1.880637084, 1.873382834, 1.948533334],
+        "median_real_time_factor": 0.626879028,
+        "wer_by_run": [0, 0, 0],
+        "term_recall_by_run": [1, 1, 1],
+        "maximum_resident_set_size_bytes": [1550221312, 1551810560, 1559658496]
+      },
+      {
+        "id": "ami-es2002c-mix-headset",
+        "max_segment_seconds": 20,
+        "wall_seconds": [473.418675375],
+        "processing_seconds": [472.1126365],
+        "real_time_factor": [0.19533052027289083],
+        "wer_by_run": [0.2271457592686643],
+        "term_recall_by_run": [1],
+        "maximum_resident_set_size_bytes": [2873753600]
+      }
+    ],
+    "output_contract": {
+      "segments": true,
+      "word_timestamps": false,
+      "speaker_labels": false,
+      "detected_language": false,
+      "native_timestamps": false,
+      "timing_reliable": false,
+      "metadata_completeness": 0.375,
+      "normalization": "Zero-duration text segments are retained and warned about; timing, speakers, and language are not overclaimed."
+    }
+  },
+  "failures": [
+    {
+      "fixture_id": "ami-es2002c-mix-headset",
+      "max_segment_seconds": 30,
+      "classification": "empty_sherpa_result_on_29_9_second_chunk",
+      "wall_seconds": 80.064456791,
+      "maximum_resident_set_size_bytes": 3116990464,
+      "transcript_produced": false,
+      "raw_error_sha256": "fbd3d8be23142d76b88933ecd95d8110d5a08fbbcc38910ceecff6345586a030"
+    }
+  ],
+  "downloaded_model_cleanup": {
+    "evaluation_root_preexisting": false,
+    "evaluation_scope": "Qwen3-ASR model, Silero VAD, and Sherpa v1.13.4 arm64 native libraries",
+    "disk_bytes_removed": 1080893440,
+    "free_bytes_before": 56353751040,
+    "free_bytes_after": 57406259200,
+    "free_bytes_delta": 1052508160,
+    "evaluation_root_absent_after_cleanup": true
+  },
+  "raw_evidence_hashes": {
+    "scored_runs_sha256": "f010e46eb16298928b5afa22203885cee57374268e6ae2d0fb35bfb8ba53fbe1",
+    "runner_sha256": "4d21b346da8c610546133fad2378dd5d0a01e0552c15a9731ac73e4bc7ca792d"
+  },
+  "conclusion": {
+    "decision": "accept_native_sherpa_onnx_path",
+    "maintainability": "Uses the existing optional Sherpa engine and managed artifact verifier; no Python or separate server is required.",
+    "product_safeguard": "Automatically cap Qwen3-ASR chunks at 20 seconds.",
+    "scope_limit": "Text transcription only; alignment and language metadata remain unsupported in this path."
+  },
+  "sanitization": {
+    "transcript_text_removed": true,
+    "segment_and_word_text_removed": true,
+    "speaker_names_and_mappings_removed": true,
+    "local_absolute_paths_removed": true,
+    "provider_request_and_task_ids_removed": true,
+    "remote_object_names_and_signed_urls_removed": true,
+    "provider_error_messages_removed": true,
+    "secrets_removed": true
+  }
+}

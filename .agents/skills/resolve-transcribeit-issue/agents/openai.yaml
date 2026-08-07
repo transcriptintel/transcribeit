@@ -1,0 +1,4 @@
+interface:
+  display_name: "Resolve TranscribeIt Issue"
+  short_description: "Resolve one issue across code tests and docs"
+  default_prompt: "Use $resolve-transcribeit-issue to implement the next TranscribeIt issue end to end."

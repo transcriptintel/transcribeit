@@ -1,33 +1,30 @@
-use super::{AudioSegment, SilenceInterval, compute_segments};
+use std::io::Write;
+
+use super::{AudioSegment, SilenceInterval, compute_segments, detect_silence, get_duration};
 
 #[test]
 fn no_silence_uses_fixed_splits_when_longer_than_limit() {
-    let segments = compute_segments(&[], 30.0, 10.0);
+    let segments = compute_segments(&[], 30.0, 10.0).unwrap();
 
-    assert_eq!(segments.len(), 3);
-    assert_eq!(segments[0].index, 0);
-    assert_eq!(segments[0].start_secs, 0.0);
-    assert_eq!(segments[0].end_secs, 10.0);
-    assert_eq!(segments[1].index, 1);
-    assert_eq!(segments[1].start_secs, 10.0);
-    assert_eq!(segments[1].end_secs, 20.0);
-    assert_eq!(segments[2].index, 2);
-    assert_eq!(segments[2].start_secs, 20.0);
-    assert_eq!(segments[2].end_secs, 30.0);
+    assert_eq!(
+        segments,
+        vec![
+            segment(0, 0.0, 10.0),
+            segment(1, 10.0, 20.0),
+            segment(2, 20.0, 30.0),
+        ]
+    );
 }
 
 #[test]
 fn no_silence_keeps_single_segment_when_short_enough() {
-    let segments = compute_segments(&[], 8.0, 10.0);
+    let segments = compute_segments(&[], 8.0, 10.0).unwrap();
 
-    assert_eq!(segments.len(), 1);
-    assert_eq!(segments[0].index, 0);
-    assert_eq!(segments[0].start_secs, 0.0);
-    assert_eq!(segments[0].end_secs, 8.0);
+    assert_eq!(segments, vec![segment(0, 0.0, 8.0)]);
 }
 
 #[test]
-fn silence_midpoints_guide_splitting_points() {
+fn latest_usable_silence_before_hard_limit_is_preferred() {
     let silences = vec![
         SilenceInterval {
             start_secs: 2.0,
@@ -39,16 +36,16 @@ fn silence_midpoints_guide_splitting_points() {
         },
     ];
 
-    let segments = compute_segments(&silences, 35.0, 20.0);
+    let segments = compute_segments(&silences, 35.0, 20.0).unwrap();
 
-    assert_eq!(segments.len(), 3);
-    assert_eq!(segments[0], segment(0, 0.0, 3.0));
-    assert_eq!(segments[1], segment(1, 3.0, 18.0));
-    assert_eq!(segments[2], segment(2, 18.0, 35.0));
+    assert_eq!(
+        segments,
+        vec![segment(0, 0.0, 18.0), segment(1, 18.0, 35.0)]
+    );
 }
 
 #[test]
-fn very_short_splits_are_skipped() {
+fn early_silences_do_not_create_tiny_segments() {
     let silences = vec![
         SilenceInterval {
             start_secs: 1.0,
@@ -60,83 +57,85 @@ fn very_short_splits_are_skipped() {
         },
     ];
 
-    let segments = compute_segments(&silences, 40.0, 30.0);
+    let segments = compute_segments(&silences, 40.0, 30.0).unwrap();
 
-    assert_eq!(segments.len(), 1);
-    assert_eq!(segments[0], segment(0, 0.0, 40.0));
+    assert_eq!(
+        segments,
+        vec![segment(0, 0.0, 30.0), segment(1, 30.0, 40.0)]
+    );
 }
 
 #[test]
-fn short_split_is_kept_when_followed_by_long_gap() {
-    let silences = vec![
-        SilenceInterval {
-            start_secs: 1.0,
-            end_secs: 2.0,
-        },
-        SilenceInterval {
-            start_secs: 20.0,
-            end_secs: 21.5,
-        },
-    ];
+fn short_final_tail_is_not_merged_past_hard_limit() {
+    let segments = compute_segments(&[], 32.0, 30.0).unwrap();
 
-    let segments = compute_segments(&silences, 40.0, 20.0);
-
-    assert_eq!(segments.len(), 3);
-    assert_eq!(segments[0], segment(0, 0.0, 1.5));
-    assert_eq!(segments[1], segment(1, 1.5, 20.75));
-    assert_eq!(segments[2], segment(2, 20.75, 40.0));
+    assert_eq!(
+        segments,
+        vec![segment(0, 0.0, 30.0), segment(1, 30.0, 32.0)]
+    );
 }
 
 #[test]
-fn consecutive_short_splits_are_merged() {
-    let silences = vec![
-        SilenceInterval {
-            start_secs: 1.0,
-            end_secs: 2.0,
-        },
-        SilenceInterval {
-            start_secs: 2.8,
-            end_secs: 3.5,
-        },
-        SilenceInterval {
-            start_secs: 3.8,
-            end_secs: 4.3,
-        },
-    ];
-
-    let segments = compute_segments(&silences, 40.0, 20.0);
-
-    assert_eq!(segments.len(), 1);
-    assert_eq!(segments[0], segment(0, 0.0, 40.0));
-}
-
-#[test]
-fn split_exactly_at_min_segment_threshold_is_kept() {
-    let silences = vec![SilenceInterval {
-        start_secs: 0.0,
-        end_secs: 10.0,
-    }];
-
-    let segments = compute_segments(&silences, 15.0, 20.0);
-
-    assert_eq!(segments.len(), 1);
-    assert_eq!(segments[0], segment(0, 0.0, 15.0));
-}
-
-#[test]
-fn max_segment_limit_overrides_sparse_splits() {
+fn sparse_silence_never_overrides_hard_limit() {
     let silences = vec![SilenceInterval {
         start_secs: 29.0,
         end_secs: 31.0,
     }];
 
-    let segments = compute_segments(&silences, 40.0, 10.0);
+    let segments = compute_segments(&silences, 40.0, 10.0).unwrap();
 
     assert_eq!(segments.len(), 4);
-    assert_eq!(segments[0], segment(0, 0.0, 10.0));
-    assert_eq!(segments[1], segment(1, 10.0, 20.0));
-    assert_eq!(segments[2], segment(2, 20.0, 30.0));
-    assert_eq!(segments[3], segment(3, 30.0, 40.0));
+    assert!(segments.iter().all(|segment| {
+        segment.end_secs > segment.start_secs && segment.end_secs - segment.start_secs <= 10.0
+    }));
+}
+
+#[test]
+fn invalid_durations_are_rejected_without_looping() {
+    for maximum in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        assert!(compute_segments(&[], 30.0, maximum).is_err());
+    }
+    assert!(compute_segments(&[], 1.0, f64::MIN_POSITIVE).is_err());
+    for duration in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        assert!(compute_segments(&[], duration, 10.0).is_err());
+    }
+}
+
+#[tokio::test]
+async fn silence_detection_fails_for_invalid_media() {
+    crate::audio::extract::check_ffmpeg().expect("FFmpeg is required for this integration test");
+    let mut input = tempfile::Builder::new().suffix(".wav").tempfile().unwrap();
+    input.write_all(b"not a wave file").unwrap();
+
+    let error = detect_silence(input.path(), -30.0, 0.5)
+        .await
+        .expect_err("invalid media must not be treated as having no silence");
+
+    assert!(format!("{error:#}").contains("ffmpeg silencedetect exited with status"));
+}
+
+#[tokio::test]
+async fn local_playlist_cannot_open_network_protocols() {
+    crate::audio::extract::check_ffmpeg().expect("FFmpeg is required for this integration test");
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut playlist = tempfile::Builder::new().suffix(".m3u8").tempfile().unwrap();
+    writeln!(
+        playlist,
+        "#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\nhttp://{address}/audio.wav\n#EXT-X-ENDLIST"
+    )
+    .unwrap();
+
+    let error = get_duration(playlist.path())
+        .await
+        .expect_err("network-backed playlist must be rejected");
+    assert!(format!("{error:#}").contains("ffprobe failed"));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(250), listener.accept())
+            .await
+            .is_err(),
+        "FFprobe attempted an outbound connection from a local playlist"
+    );
 }
 
 fn segment(index: usize, start_secs: f64, end_secs: f64) -> AudioSegment {

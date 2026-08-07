@@ -18,7 +18,14 @@ pub struct Manifest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub analysis: Option<AnalysisResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis_error: Option<AnalysisFailure>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_metadata: Option<ProviderMetadata>,
+}
+
+#[derive(Serialize)]
+pub struct AnalysisFailure {
+    pub message: String,
 }
 
 #[derive(Serialize)]

@@ -9,8 +9,8 @@ use reqwest::Client;
 use serde_json::{Value, json};
 
 use crate::audio::wav::encode_wav;
-use crate::engines::rate_limit::{self, send_with_retry};
-use crate::storage::s3::{S3CleanupResult, S3Uploader};
+use crate::engines::rate_limit::{self, RetryPolicy, send_with_retry};
+use crate::storage::s3::{S3CleanupResult, S3Uploader, finish_staged_operation};
 use crate::transcriber::{Segment, Transcriber, Transcript, Word};
 
 pub struct DeepgramApi {
@@ -134,22 +134,27 @@ impl DeepgramApi {
 
     async fn transcribe_bytes(&self, bytes: Vec<u8>, mime: &'static str) -> Result<Transcript> {
         let url = self.listen_url();
-        let body = send_with_retry(&self.settings, "Deepgram listen", || {
-            let client = self.client.clone();
-            let api_key = self.api_key.clone();
-            let url = url.clone();
-            let bytes = bytes.clone();
-            Box::pin(async move {
-                client
-                    .post(url)
-                    .header("Authorization", format!("Token {api_key}"))
-                    .header("Content-Type", mime)
-                    .body(bytes)
-                    .send()
-                    .await
-                    .context("Failed to send request to Deepgram listen")
-            })
-        })
+        let body = send_with_retry(
+            &self.settings,
+            "Deepgram listen",
+            RetryPolicy::RateLimitOnly,
+            || {
+                let client = self.client.clone();
+                let api_key = self.api_key.clone();
+                let url = url.clone();
+                let bytes = bytes.clone();
+                Box::pin(async move {
+                    client
+                        .post(url)
+                        .header("Authorization", format!("Token {api_key}"))
+                        .header("Content-Type", mime)
+                        .body(bytes)
+                        .send()
+                        .await
+                        .context("Failed to send request to Deepgram listen")
+                })
+            },
+        )
         .await
         .map_err(|(status, body)| anyhow::anyhow!("Deepgram listen returned {status}: {body}"))?;
 
@@ -158,21 +163,26 @@ impl DeepgramApi {
 
     async fn transcribe_file_url(&self, file_url: String) -> Result<Transcript> {
         let url = self.listen_url();
-        let body = send_with_retry(&self.settings, "Deepgram listen", || {
-            let client = self.client.clone();
-            let api_key = self.api_key.clone();
-            let url = url.clone();
-            let file_url = file_url.clone();
-            Box::pin(async move {
-                client
-                    .post(url)
-                    .header("Authorization", format!("Token {api_key}"))
-                    .json(&json!({ "url": file_url }))
-                    .send()
-                    .await
-                    .context("Failed to send request to Deepgram listen")
-            })
-        })
+        let body = send_with_retry(
+            &self.settings,
+            "Deepgram listen",
+            RetryPolicy::RateLimitOnly,
+            || {
+                let client = self.client.clone();
+                let api_key = self.api_key.clone();
+                let url = url.clone();
+                let file_url = file_url.clone();
+                Box::pin(async move {
+                    client
+                        .post(url)
+                        .header("Authorization", format!("Token {api_key}"))
+                        .json(&json!({ "url": file_url }))
+                        .send()
+                        .await
+                        .context("Failed to send request to Deepgram listen")
+                })
+            },
+        )
         .await
         .map_err(|(status, body)| anyhow::anyhow!("Deepgram listen returned {status}: {body}"))?;
 
@@ -200,18 +210,13 @@ impl Transcriber for DeepgramApi {
     async fn transcribe_path(&self, audio_path: &Path) -> Result<Transcript> {
         if let Some(uploader) = &self.presigned_url_uploader {
             let upload = uploader.upload_and_presign_object(audio_path).await?;
-            let mut transcript = self.transcribe_file_url(upload.url.clone()).await?;
+            let result = self.transcribe_file_url(upload.url.clone()).await;
             let cleanup = if self.autoclean {
                 uploader.cleanup_uploaded_object(&upload).await
             } else {
                 S3CleanupResult::skipped(&upload)
             };
-            if let Some(error) = cleanup.error.as_deref() {
-                eprintln!(
-                    "Failed to delete staged Deepgram object s3://{}/{}: {error}",
-                    cleanup.bucket, cleanup.key
-                );
-            }
+            let mut transcript = finish_staged_operation("Deepgram", result, &cleanup)?;
             add_deepgram_staging_metadata(&mut transcript, cleanup);
             return Ok(transcript);
         }

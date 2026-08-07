@@ -3,6 +3,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use tempfile::TempPath;
 
+use super::LOCAL_MEDIA_PROTOCOLS;
+
 /// Check that ffmpeg is available on the system PATH.
 pub fn check_ffmpeg() -> Result<()> {
     let output = std::process::Command::new("ffmpeg")
@@ -30,6 +32,8 @@ pub async fn extract_to_wav(input: &Path, normalize: bool) -> Result<TempPath> {
 
     let mut cmd = tokio::process::Command::new("ffmpeg");
     cmd.arg("-y")
+        .arg("-protocol_whitelist")
+        .arg(LOCAL_MEDIA_PROTOCOLS)
         .arg("-i")
         .arg(input)
         .arg("-ar")
@@ -74,6 +78,8 @@ pub async fn extract_to_mp3(input: &Path, normalize: bool) -> Result<TempPath> {
 
     let mut cmd = tokio::process::Command::new("ffmpeg");
     cmd.arg("-y")
+        .arg("-protocol_whitelist")
+        .arg(LOCAL_MEDIA_PROTOCOLS)
         .arg("-i")
         .arg(input)
         .arg("-ar")

@@ -5,6 +5,14 @@
   "timezone": "Europe/Bucharest",
   "labels": ["dependencies"],
   "dependencyDashboard": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["at any time"]
+  },
   "automerge": false,
   "enabledManagers": ["cargo", "github-actions"],
   "schedule": ["before 3:00am on monday"],
