@@ -3,7 +3,7 @@
 All notable changes to TranscribeIt are documented here. The project follows
 [Semantic Versioning](https://semver.org/).
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-08-07
 
 ### Breaking changes
 
