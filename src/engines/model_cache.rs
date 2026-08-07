@@ -10,15 +10,7 @@ pub struct ModelCache {
 
 impl ModelCache {
     fn silence_whisper_logs() {
-        unsafe extern "C" fn noop(
-            _level: std::os::raw::c_uint,
-            _text: *const std::os::raw::c_char,
-            _user_data: *mut std::os::raw::c_void,
-        ) {
-        }
-        unsafe {
-            whisper_rs::set_log_callback(Some(noop), std::ptr::null_mut());
-        }
+        whisper_rs::install_logging_hooks();
     }
 
     pub fn new() -> Self {

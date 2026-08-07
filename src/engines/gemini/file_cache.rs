@@ -274,7 +274,7 @@ fn open_private_lock_file(path: &Path) -> Result<File> {
     Ok(file)
 }
 
-fn set_private_permissions(file: &File) -> Result<()> {
+fn set_private_permissions(#[allow(unused_variables)] file: &File) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

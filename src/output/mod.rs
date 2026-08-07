@@ -24,7 +24,7 @@ pub(crate) fn create_private_file(path: &Path) -> Result<File> {
     Ok(file)
 }
 
-pub(crate) fn set_private_permissions(file: &File) -> Result<()> {
+pub(crate) fn set_private_permissions(#[allow(unused_variables)] file: &File) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
