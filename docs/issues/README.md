@@ -6,8 +6,8 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
 `bun run scripts/issues_registry.ts generate` and verify it with
 `bun run scripts/issues_registry.ts check`.
 
-- Total findings: 11
-- Active findings: 1
+- Total findings: 17
+- Active findings: 2
 
 | ID | Priority | Status | Area | Summary |
 |---|---:|---|---|---|
@@ -22,6 +22,12 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
 | [TI-009](./TI-009.md) | P2 | Resolved | Provider operations | Run and record the live provider smoke matrix |
 | [TI-010](./TI-010.md) | P2 | Resolved | Local inference | Retire the unused Sherpa-ONNX integration |
 | [TI-011](./TI-011.md) | P1 | Open | Security and dependencies | Remove the transitive lru unsoundness advisory |
+| [TI-012](./TI-012.md) | P1 | Resolved | Output correctness | Preserve zero-duration text in subtitle output |
+| [TI-013](./TI-013.md) | P2 | Resolved | Provider integration | Add an Apple Speech on-device provider |
+| [TI-014](./TI-014.md) | P2 | Open | Benchmark quality | Benchmark Apple Speech on the representative corpus |
+| [TI-015](./TI-015.md) | P2 | Resolved | Provider integration | Avoid redundant Apple Speech media conversion |
+| [TI-016](./TI-016.md) | P1 | Resolved | Provider correctness | Require explicit Apple Speech locale selection |
+| [TI-017](./TI-017.md) | P1 | Resolved | Build and release | Pin Rust 1.97.1 across build and release surfaces |
 
 ## Working agreement
 
@@ -35,3 +41,5 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
    resolution date plus concrete outcome and validation evidence.
 5. Run `bun run scripts/issues_registry.ts generate` and then the matching
    `check`; never hand-edit this generated index.
+6. Identify private fixtures only with sanitized ids, hashes, sizes, and durations.
+   Never include a filename from `samples/` in an issue page.

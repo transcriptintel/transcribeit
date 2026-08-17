@@ -1,0 +1,160 @@
+{
+  "schema_version": "transcribeit.exploratory-comparison.v1",
+  "benchmark_id": "ti-014-apple-vs-large-v3-japanese-long-form-2026-08-17",
+  "issue": "TI-014",
+  "recorded_at_utc": "2026-08-17T09:22:40Z",
+  "classification": "dirty_worktree_exploratory_private_fixture",
+  "baseline_eligible": false,
+  "baseline_exclusion_reasons": [
+    "worktree was dirty before the run",
+    "the private fixture has no reviewed reference transcript",
+    "this is one long-form Japanese fixture rather than the representative corpus"
+  ],
+  "git": {
+    "commit": "8761248bfe0242f8afee38262c7c4b0ad767ad10",
+    "worktree_dirty": true
+  },
+  "binary": {
+    "version": "transcribeit 2.0.0",
+    "profile": "release",
+    "sha256": "c96f77692208b987fd6820b92f7ed582de6095c24b01c29f8bea33053e5d7f7f"
+  },
+  "machine": {
+    "cpu": "Apple M4 Pro",
+    "logical_cores": 12,
+    "memory_bytes": 25769803776,
+    "os": "macOS 26.5.2",
+    "build": "25F84",
+    "kernel": "25.5.0",
+    "architecture": "arm64"
+  },
+  "tools": {
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "ffmpeg": "ffmpeg version 9.0.1",
+    "swift": "Apple Swift 6.3.3"
+  },
+  "fixture": {
+    "id": "private-japanese-interview-long-form",
+    "reference_transcript": false,
+    "language": "ja",
+    "duration_seconds": 3234.752,
+    "bytes": 34237539,
+    "container": "m4a",
+    "codec": "aac",
+    "sample_rate_hz": 48000,
+    "channels": 2,
+    "sha256": "5fff1ce2a2021024afc676472745a8e157616840634914e288fc0d98b5170c1d"
+  },
+  "protocol": {
+    "execution": "sequential",
+    "repetitions_per_provider": 2,
+    "output_format": "vtt",
+    "normalization": false,
+    "segmentation": false,
+    "retries": 0,
+    "apple_language_hint": "ja (resolved ja_JP)",
+    "local_language_hint": "ja",
+    "apple_preprocessing": "original M4A accepted directly by AVAudioFile; no WAV fallback",
+    "local_preprocessing": "TranscribeIt converted M4A to canonical mono 16 kHz WAV for each run",
+    "apple_warm_state": "system speech asset was present from earlier validation; AssetInventory returned an installation request in both runs",
+    "local_warm_state": "new evaluation model; both runs used new processes, and model pages were likely filesystem-warm because integrity hashing preceded transcription"
+  },
+  "commands": {
+    "apple_speech": "./target/release/transcribeit run -p apple-speech --language ja -i $FIXTURE -f vtt -o $OUTPUT",
+    "local_large_v3": "./target/release/transcribeit run -p local --language ja -m $MODEL -i $FIXTURE -f vtt -o $OUTPUT"
+  },
+  "providers": [
+    {
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "model_lifecycle": "macos_system_managed",
+      "resolved_locale": "ja_JP",
+      "asset_install_requested": true,
+      "on_device": true,
+      "wall_seconds": [19.48, 18.14],
+      "median_wall_seconds": 18.81,
+      "real_time_factors": [0.0060221, 0.005607849],
+      "median_real_time_factor": 0.0058149745,
+      "maximum_rss_bytes": [31244288, 32194560],
+      "median_maximum_rss_bytes": 31719424,
+      "output_shape": {
+        "segments": 214,
+        "nonempty_segments": 214,
+        "unique_nonempty_segments": 214,
+        "characters": 16348,
+        "normalized_characters": 15373,
+        "last_end_ms": 3232800,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "determinism": {
+        "text_identical_across_runs": true,
+        "timed_segments_identical_across_runs": true,
+        "transcript_text_sha256": "cf98f93407f1a36abb54611f2ff57a404013f3401c67b0e1f1884766f3143fec",
+        "timed_segments_sha256": "d0b8233ed0d5ef3be7897b710a5ffd2c81de760a822268ea950fbc4d458a931e",
+        "vtt_sha256": "93f7b052a1c2597655e6ccac675efe1a61429fa5e9aafb526c766ef7bf9ec514"
+      }
+    },
+    {
+      "provider": "local",
+      "model": "whisper.cpp large-v3",
+      "model_revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+      "model_bytes": 3095033483,
+      "model_sha256": "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+      "wall_seconds": [614.93, 615.81],
+      "median_wall_seconds": 615.37,
+      "real_time_factors": [0.190101127, 0.190373172],
+      "median_real_time_factor": 0.1902371495,
+      "maximum_rss_bytes": [4776968192, 4726636544],
+      "median_maximum_rss_bytes": 4751802368,
+      "output_shape": {
+        "segments": 1189,
+        "nonempty_segments": 1189,
+        "unique_nonempty_segments": 1053,
+        "characters": 16510,
+        "normalized_characters": 14925,
+        "last_end_ms": 3235040,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "timing_source": "model_native",
+        "timing_reliable": true,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "determinism": {
+        "text_identical_across_runs": true,
+        "timed_segments_identical_across_runs": true,
+        "transcript_text_sha256": "4158ed43d7ef317fff0e48fa5c9736d9b6518f46987ee0eadfea1bef5c068d18",
+        "timed_segments_sha256": "288b45d600152bbeea270138a1346c5b47c61479d7635015ba1e29d22e58d9e5",
+        "vtt_sha256": "4ef1d59a338bda1522f3e72b877229b21dae7384be7db9b087b3daf79379faaa"
+      }
+    }
+  ],
+  "comparison": {
+    "median_local_wall_over_apple": 32.71504518872939,
+    "median_local_rss_over_apple": 149.8073347107438,
+    "normalized_character_bigram_overlap_f1": 0.876749,
+    "normalized_character_trigram_overlap_f1": 0.807024,
+    "accuracy_conclusion": "unsupported_without_reviewed_reference"
+  },
+  "downloaded_model_cleanup": {
+    "evaluation_root_preexisting": false,
+    "initial_evaluation_root_allocated_kib": 4,
+    "downloaded_model_bytes": 3095033483,
+    "evaluation_logical_bytes_removed": 3096993151,
+    "cleanup_completed": true,
+    "evaluation_root_absent_after_cleanup": true
+  },
+  "sanitization": {
+    "credential_values_removed": true,
+    "transcript_text_removed": true,
+    "speaker_names_removed": true,
+    "local_paths_removed": true,
+    "request_ids_removed": true,
+    "raw_transcripts_and_manifests_deleted": true
+  }
+}

@@ -21,6 +21,25 @@ fn untimed_openai_text_does_not_claim_native_timestamps() {
     assert!(!capabilities.native_timestamps);
 }
 
+#[test]
+fn apple_speech_timed_segments_claim_native_timestamps() {
+    let transcript = Transcript {
+        segments: vec![Segment {
+            start_ms: 100,
+            end_ms: 900,
+            text: "hello".to_string(),
+            language: Some("en_US".to_string()),
+            ..Default::default()
+        }],
+        provider_metadata: None,
+    };
+    let capabilities = build_capabilities(&test_config("apple-speech"), &transcript);
+
+    assert!(capabilities.native_timestamps);
+    assert!(capabilities.language_per_segment);
+    assert!(!capabilities.speaker_labels);
+}
+
 fn test_config(provider: &str) -> PipelineConfig {
     PipelineConfig {
         input: PathBuf::from("sample.wav"),

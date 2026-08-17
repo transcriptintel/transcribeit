@@ -1,4 +1,4 @@
-use crate::output::validate_subtitle_timing;
+use crate::output::prepare_subtitle_cues;
 use crate::transcriber::Transcript;
 use anyhow::Result;
 use std::io::Write;
@@ -16,19 +16,21 @@ fn format_timestamp(ms: i64) -> String {
 
 /// Write a Transcript as SRT to any writer
 pub fn write_srt(transcript: &Transcript, writer: &mut impl Write) -> Result<()> {
-    validate_subtitle_timing(transcript)?;
-    for (i, segment) in transcript.segments.iter().enumerate() {
+    let cues = prepare_subtitle_cues(transcript)?;
+    for (i, cue) in cues.iter().enumerate() {
         writeln!(writer, "{}", i + 1)?;
         writeln!(
             writer,
             "{} --> {}",
-            format_timestamp(segment.start_ms),
-            format_timestamp(segment.end_ms)
+            format_timestamp(cue.start_ms),
+            format_timestamp(cue.end_ms)
         )?;
-        if let Some(ref spk) = segment.speaker {
-            writeln!(writer, "[{}] {}", spk, segment.text.trim())?;
-        } else {
-            writeln!(writer, "{}", segment.text.trim())?;
+        for line in &cue.lines {
+            if let Some(speaker) = line.speaker {
+                writeln!(writer, "[{}] {}", speaker, line.text)?;
+            } else {
+                writeln!(writer, "{}", line.text)?;
+            }
         }
         writeln!(writer)?;
     }
@@ -62,6 +64,35 @@ mod tests {
         assert!(result.contains("1"));
         assert!(result.contains("00:00:00,000 --> 00:00:01,234"));
         assert!(result.contains("Hello"));
+    }
+
+    #[test]
+    fn write_srt_folds_zero_duration_text_and_preserves_speaker() {
+        let transcript = Transcript {
+            segments: vec![
+                Segment {
+                    start_ms: 0,
+                    end_ms: 1_000,
+                    text: "first".to_string(),
+                    ..Default::default()
+                },
+                Segment {
+                    start_ms: 1_000,
+                    end_ms: 1_000,
+                    text: "second".to_string(),
+                    speaker: Some("Speaker 2".to_string()),
+                    ..Default::default()
+                },
+            ],
+            provider_metadata: None,
+        };
+
+        let mut out = Cursor::new(Vec::new());
+        write_srt(&transcript, &mut out).expect("zero-duration text should be folded");
+        let out = String::from_utf8(out.into_inner()).unwrap();
+
+        assert_eq!(out.matches(" --> ").count(), 1);
+        assert!(out.contains("first\n[Speaker 2] second"));
     }
 
     #[test]

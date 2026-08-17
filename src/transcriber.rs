@@ -55,6 +55,14 @@ impl Transcript {
 
 #[async_trait]
 pub trait Transcriber: Send + Sync {
+    /// Whether the engine prefers the original media file for whole-file transcription.
+    ///
+    /// The pipeline still prepares canonical WAV input for normalization, segmentation,
+    /// provider upload encoding, and engines that do not opt into this capability.
+    fn prefers_original_media(&self) -> bool {
+        false
+    }
+
     async fn transcribe(&self, audio_samples: Vec<f32>) -> Result<Transcript>;
 
     async fn transcribe_path(&self, wav_path: &Path) -> Result<Transcript> {

@@ -1,3 +1,4 @@
+mod apple_speech;
 mod deepgram;
 mod gemini;
 mod local;
@@ -76,6 +77,7 @@ pub(crate) struct ProviderFactoryArgs<'a> {
 
 pub(crate) async fn build(args: &ProviderFactoryArgs<'_>) -> Result<ProviderRuntime> {
     match args.provider {
+        Provider::AppleSpeech => apple_speech::build(args),
         Provider::Local => local::build_local(args),
         Provider::Openai => openai::build_openai(args),
         Provider::Azure => openai::build_azure(args),
@@ -84,6 +86,20 @@ pub(crate) async fn build(args: &ProviderFactoryArgs<'_>) -> Result<ProviderRunt
         Provider::NvidiaRiva => riva::build(args),
         Provider::Deepgram => deepgram::build(args).await,
     }
+}
+
+pub(crate) fn validate_platform(provider: &Provider, target_os: &str) -> Result<()> {
+    if matches!(provider, Provider::AppleSpeech) && target_os != "macos" {
+        anyhow::bail!("provider 'apple-speech' requires macOS 26 or later");
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_language(provider: &Provider, language: Option<&str>) -> Result<()> {
+    if matches!(provider, Provider::AppleSpeech) {
+        apple_speech::resolve_locale(language)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn handles_diarization(provider_name: &str, model_name: &str) -> bool {
@@ -100,7 +116,26 @@ pub(super) fn owned(value: Option<&str>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::handles_diarization;
+    use super::{handles_diarization, validate_language, validate_platform};
+    use crate::cli::Provider;
+
+    #[test]
+    fn apple_speech_is_rejected_on_non_macos_targets() {
+        assert!(validate_platform(&Provider::AppleSpeech, "linux").is_err());
+        assert!(validate_platform(&Provider::AppleSpeech, "windows").is_err());
+        assert!(validate_platform(&Provider::AppleSpeech, "macos").is_ok());
+        assert!(validate_platform(&Provider::Local, "linux").is_ok());
+    }
+
+    #[test]
+    fn apple_speech_requires_an_explicit_language_choice() {
+        assert!(validate_language(&Provider::AppleSpeech, None).is_err());
+        assert!(validate_language(&Provider::AppleSpeech, Some("auto")).is_err());
+        assert!(validate_language(&Provider::AppleSpeech, Some("ja-JP")).is_ok());
+        assert!(validate_language(&Provider::AppleSpeech, Some("system")).is_ok());
+        assert!(validate_language(&Provider::Local, None).is_ok());
+        assert!(validate_language(&Provider::Local, Some("auto")).is_ok());
+    }
 
     #[test]
     fn provider_native_diarization_is_model_sensitive_for_openai() {

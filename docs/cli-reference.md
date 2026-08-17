@@ -51,7 +51,23 @@ transcribeit run [OPTIONS] --input <FILE_OR_PATH_OR_GLOB>
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-i, --input` | Input path, directory, or glob pattern for audio/video files | required |
-| `-p, --provider` | `local`, `openai`, `azure`, `qwen-filetrans`, `gemini`, `nvidia-riva`, or `deepgram` | `local` |
+| `-p, --provider` | `apple-speech`, `local`, `openai`, `azure`, `qwen-filetrans`, `gemini`, `nvidia-riva`, or `deepgram` | `local` |
+
+#### Apple Speech provider options (`-p apple-speech`)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--language` | Requested Apple Speech locale, such as `en-US`; use `system` to opt into the current macOS locale | required |
+
+Apple Speech requires macOS 26 or later, a device with Apple Intelligence
+available and enabled, and a locale supported by `SpeechTranscriber`. It runs
+on-device and returns native segment timestamps without speaker labels. The
+provider rejects an omitted language and `--language auto` before input
+discovery; it never silently chooses the current locale. The
+first use of a locale may download a system-managed speech asset; macOS retains,
+updates, and shares that asset, so it is not part of TranscribeIt's model cache
+or cleanup surface. Linux and Windows builds accept the portable CLI schema but
+reject this provider before media preparation.
 
 #### Local provider options (`-p local`)
 
@@ -416,6 +432,11 @@ transcribeit run -p deepgram --remote-model nova-3-medical \
 
 ### Provider behavior
 
+- **Apple Speech** (`-p apple-speech`) uses the macOS 26 on-device
+  `SpeechAnalyzer`/`SpeechTranscriber` APIs after checking Apple Intelligence
+  availability. An explicit `--language <locale>` is required, with
+  `--language system` as the opt-in for the current macOS locale. No API key is
+  used; native timing and the resolved locale are mapped into VTT/SRT/manifests.
 - **Local** (`-p local`) runs whisper.cpp in-process using GGML models.
 - **OpenAI-compatible** (`-p openai`) uses `--remote-model` and calls `POST {base-url}/v1/audio/transcriptions`.
   `gpt-4o-transcribe-diarize` is handled specially: the request includes `response_format=diarized_json` and `chunking_strategy=auto`, and response segments are parsed defensively so unknown or missing fields do not fail the run.
@@ -442,8 +463,11 @@ When `--output-dir` is specified, the following files are created:
 - `<input_stem>.manifest.json` — Processing manifest with metadata
 
 On Unix these files are created with mode `0600`. Manifest replacement is atomic.
-SRT/VTT serialization fails when a cue has negative, zero-duration, reversed, or
-non-monotonic timing rather than emitting invalid subtitle output.
+SRT/VTT serialization folds an isolated zero-duration text segment into the
+nearest positive-duration cue, preserving text order and per-line speaker labels.
+The manifest retains the original provider timestamps and reports the timing as
+unreliable. Negative, reversed, non-monotonic, and completely untimed
+transcripts still fail rather than emitting invalid subtitle output.
 
 ### Manifest format
 

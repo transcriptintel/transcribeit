@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { existsSync } from "node:fs";
 import { basename, join } from "node:path";
 
 export type IssueStatus = "open" | "in-progress" | "resolved";
@@ -19,8 +20,11 @@ type YamlMap = Record<string, unknown>;
 
 const repository = join(import.meta.dir, "..");
 const issuesDirectory = join(repository, "docs/issues");
+const samplesDirectory = join(repository, "samples");
 const registryPath = join(issuesDirectory, "README.md");
 const issuePattern = /^TI-\d{3}$/;
+const mediaFilenamePattern =
+  /\b[\w@.+-]+\.(?:aac|aiff|flac|m4a|mka|mov|mp3|mp4|ogg|opus|wav|webm)\b/i;
 const allowedFields = new Set(["id", "title", "priority", "status", "area", "resolved"]);
 
 function asMap(value: unknown): YamlMap | undefined {
@@ -75,6 +79,11 @@ export function parseIssuePage(path: string, source: string): { issue?: Issue; e
   }
 
   const body = `${match[2].trimEnd()}\n`;
+  if (mediaFilenamePattern.test(body)) {
+    errors.push(
+      `${path}: issue pages must not include media filenames; use a sanitized fixture id or hash`,
+    );
+  }
   if (id && title && !body.startsWith(`# ${id} — ${title}\n`)) {
     errors.push(`${path}: body heading must match id and title`);
   }
@@ -88,6 +97,23 @@ export function parseIssuePage(path: string, source: string): { issue?: Issue; e
 
   if (errors.length || !id || !title || !priority || !status || !area) return { errors };
   return { issue: { id, title, priority, status, area, resolved, path, body }, errors };
+}
+
+export function containsSampleFilename(source: string, filenames: Iterable<string>): boolean {
+  const normalizedSource = source.toLocaleLowerCase("en-US");
+  return Array.from(filenames).some((filename) =>
+    normalizedSource.includes(filename.toLocaleLowerCase("en-US")),
+  );
+}
+
+async function sampleFilenames(): Promise<Set<string>> {
+  const filenames = new Set<string>();
+  if (!existsSync(samplesDirectory)) return filenames;
+  const glob = new Bun.Glob("**/*");
+  for await (const path of glob.scan({ cwd: samplesDirectory, onlyFiles: true })) {
+    filenames.add(basename(path));
+  }
+  return filenames;
 }
 
 function displayStatus(status: IssueStatus): string {
@@ -129,6 +155,8 @@ ${rows}
    resolution date plus concrete outcome and validation evidence.
 5. Run \`bun run scripts/issues_registry.ts generate\` and then the matching
    \`check\`; never hand-edit this generated index.
+6. Identify private fixtures only with sanitized ids, hashes, sizes, and durations.
+   Never include a filename from \`samples/\` in an issue page.
 `;
 }
 
@@ -141,11 +169,17 @@ export async function loadIssues(): Promise<{ issues: Issue[]; errors: string[] 
   const issues: Issue[] = [];
   const errors: string[] = [];
   const ids = new Set<string>();
+  const protectedFilenames = await sampleFilenames();
   for (const relativePath of paths) {
     const path = `docs/issues/${relativePath}`;
     const parsed = parseIssuePage(path, await Bun.file(join(issuesDirectory, relativePath)).text());
     errors.push(...parsed.errors);
     if (!parsed.issue) continue;
+    if (containsSampleFilename(parsed.issue.body, protectedFilenames)) {
+      errors.push(
+        `${path}: issue pages must not include filenames found under samples/; use a sanitized fixture id or hash`,
+      );
+    }
     if (ids.has(parsed.issue.id)) errors.push(`${path}: duplicate id ${parsed.issue.id}`);
     ids.add(parsed.issue.id);
     issues.push(parsed.issue);

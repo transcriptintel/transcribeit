@@ -61,7 +61,11 @@ Each tracked record must include:
 - hashes of untracked transcript/raw artifacts when the artifacts themselves
   cannot be tracked safely.
 - downloaded-model cleanup status, exact evaluation scope, and bytes reclaimed,
-  or `not_applicable` for providers that did not download local artifacts.
+  or `not_applicable` for providers that did not download local artifacts. For
+  `apple-speech`, record whether macOS requested a shared locale-asset install
+  and whether AVAudioFile used the original file or required the WAV fallback;
+  do not delete or claim ownership of a system-managed asset, and clean only the
+  evaluation-owned fixture/output directory.
 
 For a matrix record, add a structural assertion alongside manual sanitization
 review. For example, the TI-007 representative-corpus reference is checked with:
@@ -97,4 +101,23 @@ jq -e '
   .sanitization.response_bodies_discarded == true and
   .sanitization.transcript_text_removed == true
 ' benchmarks/results/2026-08-06-ti-009-live-provider-smoke.sanitized.json
+```
+
+The TI-014 private-fixture Apple/local comparison is exploratory rather than a
+baseline and uses a transcript-free schema:
+
+```bash
+jq -e '
+  .schema_version == "transcribeit.exploratory-comparison.v1" and
+  .classification == "dirty_worktree_exploratory_private_fixture" and
+  .baseline_eligible == false and
+  (.providers | length) == 2 and
+  ([.providers[].wall_seconds | length] | add) == 4 and
+  .comparison.accuracy_conclusion == "unsupported_without_reviewed_reference" and
+  .downloaded_model_cleanup.cleanup_completed == true and
+  .downloaded_model_cleanup.evaluation_root_absent_after_cleanup == true and
+  .sanitization.transcript_text_removed == true and
+  .sanitization.local_paths_removed == true and
+  .sanitization.raw_transcripts_and_manifests_deleted == true
+' benchmarks/results/2026-08-17-ti-014-apple-vs-large-v3-exploratory.sanitized.json
 ```

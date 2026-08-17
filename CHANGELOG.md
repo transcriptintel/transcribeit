@@ -3,6 +3,13 @@
 All notable changes to TranscribeIt are documented here. The project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Raised the minimum and pinned build toolchain from Rust 1.96 to Rust 1.97.1,
+  including local, CI, and release build surfaces.
+
 ## [2.0.0] - 2026-08-07
 
 ### Breaking changes
@@ -44,4 +51,5 @@ All notable changes to TranscribeIt are documented here. The project follows
   secret-safe generated help, local media protocol restrictions, atomic private
   manifests/cache indexes, RustSec CI, and bounded provider response handling.
 
+[Unreleased]: https://github.com/transcriptintel/transcribeit/compare/v2.0.0...HEAD
 [2.0.0]: https://github.com/transcriptintel/transcribeit/compare/v1.6.0...v2.0.0

@@ -1,20 +1,30 @@
 # transcribeit
 
-A Rust CLI for speech-to-text transcription. Supports local inference via [whisper.cpp](https://github.com/ggerganov/whisper.cpp), remote transcription via OpenAI-compatible APIs, Azure OpenAI, Qwen ASR file transcription, Gemini multimodal transcription, NVIDIA hosted Riva ASR, and Deepgram.
+A Rust CLI for speech-to-text transcription. Supports Apple on-device Speech,
+local inference via [whisper.cpp](https://github.com/ggerganov/whisper.cpp), and
+remote transcription via OpenAI-compatible APIs, Azure OpenAI, Qwen ASR file
+transcription, Gemini multimodal transcription, NVIDIA hosted Riva ASR, and
+Deepgram.
 
-Accepts any audio or video format — FFmpeg handles conversion automatically.
+Accepts any audio or video format. Providers receive the preparation they need;
+Apple Speech tries the original media first and uses FFmpeg only as a fallback or
+when normalization or segmentation is requested.
 Sherpa-ONNX and its local ONNX/VAD/diarization stack were retired on 2026-08-06;
 see the [retirement note](docs/retired/sherpa-onnx.md) for historical results and
 migration guidance.
 
 ## Prerequisites
 
-- Rust 1.96+ (edition 2024)
+- Rust 1.97.1+ (edition 2024)
 - [FFmpeg](https://ffmpeg.org/) installed and on PATH
 - C/C++ toolchain and CMake (for building whisper.cpp)
 - S3-compatible storage credentials when using `qwen-filetrans`, Gemini signed-URL mode, or Deepgram signed-URL mode; Cloudflare R2 is supported through `S3_ENDPOINT_URL`
 - NVIDIA API key and hosted Riva function id when using `nvidia-riva`
 - Deepgram API key when using `deepgram`
+- macOS 26+, Apple Intelligence enabled, and a supported locale/device when
+  using `apple-speech`; pass an explicit locale with `--language` (or use
+  `--language system` to opt into the current macOS locale). Building this
+  provider requires Xcode command line tools
 
 ## Quick start
 
@@ -30,6 +40,14 @@ transcribeit list-models
 
 # Transcribe with local whisper.cpp (model alias resolves from MODEL_CACHE_DIR)
 transcribeit run -i recording.mp3 -m base
+
+# Transcribe entirely on-device with Apple Speech (macOS 26+)
+transcribeit run -p apple-speech --language en-US \
+  -i recording.mp3 -f vtt -o ./output
+
+# Explicitly opt into the current macOS locale when that is intentional
+transcribeit run -p apple-speech --language system \
+  -i recording.mp3 -f vtt -o ./output
 
 # Or pass an explicit model path
 transcribeit run -i recording.mp3 -m .cache/ggml-base.bin
@@ -120,8 +138,13 @@ transcribeit run -i recording.wav -m base --language en --normalize
 
 ## Features
 
-- **Any local input format** — MP3, MP4, WAV, FLAC, OGG, etc. FFmpeg converts to mono 16kHz WAV automatically. Nested network/data protocols are blocked for local inputs.
-- **7 providers** — Local whisper.cpp, OpenAI API, Azure OpenAI, Qwen file transcription, Gemini, NVIDIA Riva, and Deepgram. Extensible via the `Transcriber` trait.
+- **Any local input format** — MP3, MP4, WAV, FLAC, OGG, etc. Provider-aware preparation uses FFmpeg when needed. Nested network/data protocols are blocked for local inputs.
+- **8 providers** — Apple Speech, local whisper.cpp, OpenAI API, Azure OpenAI, Qwen file transcription, Gemini, NVIDIA Riva, and Deepgram. Extensible via the `Transcriber` trait.
+- **Apple on-device transcription** — `apple-speech` uses macOS 26
+  `SpeechAnalyzer`/`SpeechTranscriber`, requires available Apple Intelligence by
+  product policy, passes supported original media such as M4A directly to
+  `AVAudioFile`, requires an explicit locale choice, returns native segment
+  timing, and uses system-managed locale assets without an API key.
 - **Qwen ASR whole-file transcription** — `qwen-filetrans` stages audio in S3-compatible storage, passes a pre-signed URL to DashScope, polls the async task, and maps Qwen timestamps into the transcript model.
 - **External llama.cpp compatibility** — A user-managed Qwen3-ASR `llama-server` can be reached through `-p openai --base-url`; TranscribeIt does not install, launch, monitor, update, stop, or clean that server or its GGUF artifacts, and the tested endpoint returns text without timestamps or speakers.
 - **Resumable benchmark harness** — Bun-native YAML matrices select pinned corpus fixtures, declare local/hosted and warm/cold state, persist attempts atomically, preserve failures, remove transcript-bearing outputs by default, and require an explicit opt-in for hosted execution.
@@ -146,8 +169,8 @@ transcribeit run -i recording.wav -m base --language en --normalize
 - **Verified model installation** — Managed whisper.cpp GGML files are pinned by revision, size, and SHA-256.
 - **Progress spinner** — Shows live terminal feedback during transcription (single file and segmented mode).
 - **Parallel API segment transcription** — Multiple segment requests can be processed concurrently with `--segment-concurrency`.
-- **VTT output** (default) — WebVTT subtitle files with validated monotonic, positive-duration timestamps.
-- **SRT output** — SubRip subtitle files with the same timing validation.
+- **VTT output** (default) — WebVTT subtitle files with validated timing; isolated zero-duration text is folded into the nearest timed cue.
+- **SRT output** — SubRip subtitle files with the same validation and zero-duration folding.
 - **Text output** — Writes plain text transcript to stdout by default and `<input>.txt` when `--output-dir` is specified.
 - **Private outputs** — Transcript, subtitle, cache-index, and manifest files are created with owner-only permissions on Unix; manifests are atomically replaced.
 - **Bounded responses** — Hosted HTTP results/errors and Gemini SSE events have hard size limits; SSE UTF-8 is decoded only after complete event framing.

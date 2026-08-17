@@ -52,3 +52,26 @@ fn generated_help_never_renders_environment_values() {
         }
     }
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn apple_speech_rejects_missing_locale_before_input_discovery() {
+    let working_directory = tempfile::tempdir().unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_transcribeit"))
+        .args([
+            "run",
+            "--provider",
+            "apple-speech",
+            "--input",
+            "missing-input",
+        ])
+        .current_dir(working_directory.path())
+        .env_clear()
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(error.contains("requires --language <locale>"));
+    assert!(!error.contains("No input files"));
+}

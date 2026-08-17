@@ -2,7 +2,9 @@
 
 ## Overview
 
-transcribeit uses a trait-based architecture with a pipeline-driven processing flow. Any audio or video file goes through: conversion → optional segmentation → transcription → output.
+transcribeit uses a trait-based architecture with a pipeline-driven processing
+flow: provider-aware media preparation → optional segmentation → transcription
+→ output.
 
 ```
 src/
@@ -28,10 +30,12 @@ src/
 ├── output/
 │   ├── vtt.rs             # WebVTT subtitle writer (supports <v Speaker N> tags)
 │   ├── srt.rs             # SRT subtitle writer (supports [Speaker N] labels)
+│   ├── subtitle.rs        # Shared subtitle timing validation and cue folding
 │   └── manifest.rs        # JSON manifest writer (includes speaker labels)
 ├── storage/
 │   └── s3.rs              # S3/R2 upload, presigning, and cleanup
 └── engines/
+    ├── apple_speech.rs    # macOS SpeechAnalyzer provider and bounded Swift FFI
     ├── whisper_local.rs   # Local whisper.cpp via whisper-rs
     ├── openai_api.rs      # OpenAI-compatible REST API
     ├── azure_openai.rs    # Azure OpenAI REST API
@@ -51,6 +55,9 @@ All engines implement the async `Transcriber` trait, which provides three method
 ```rust
 #[async_trait]
 pub trait Transcriber: Send + Sync {
+    /// Opt into receiving original media for whole-file transcription.
+    fn prefers_original_media(&self) -> bool { false }
+
     /// Transcribe from decoded f32 PCM samples. All engines must implement this.
     async fn transcribe(&self, audio_samples: Vec<f32>) -> Result<Transcript>;
 
@@ -64,6 +71,8 @@ pub trait Transcriber: Send + Sync {
 ```
 
 - **Local engine** (`whisper_local`) uses `transcribe()` — it needs decoded samples for whisper.cpp.
+- **Apple Speech** opts into original-media input. It asks `AVAudioFile` to open
+  the source directly and prepares a temporary WAV only when that read fails.
 - **OpenAI/Azure API engines** override `transcribe_path()` to upload files directly via multipart, and `transcribe_wav()` to upload in-memory bytes — avoiding the decode→re-encode round-trip.
 - **Qwen file transcription** overrides `transcribe_path()` to upload prepared audio to S3-compatible storage, generate a pre-signed URL, and submit that URL to DashScope.
 - **Gemini** overrides `transcribe_path()` to upload prepared audio through Gemini Files API and call streamed `streamGenerateContent` with structured JSON output. In signed URL mode, it stages the prepared MP3 in S3-compatible storage and sends the pre-signed URL as Gemini `file_uri` instead.
@@ -83,6 +92,8 @@ The `pipeline.rs` module orchestrates the full flow:
 ```
 Input file (any format)
   │
+  ├─ Apple Speech whole-file path: try original media with AVAudioFile
+  │   └─ If AVAudioFile rejects it, convert once to temporary WAV and retry
   ├─ Create one canonical 16 kHz mono WAV when conversion or normalization is needed
   ├─ Duration and segmentation use the canonical WAV
   ├─ Encode one provider upload artifact from that WAV when MP3 is required
@@ -102,6 +113,7 @@ Input file (any format)
   │   └─ Transcribe each segment, offset segment/word timestamps, preserve per-chunk metadata
   │
   ├─ If not segmenting:
+  │   ├─ Apple Speech: original media, with an AVAudioFile-read fallback to WAV
   │   ├─ Local: read_wav() → transcribe() directly
   │   └─ API: transcribe_path() with prepared file or staged pre-signed URL
   │
@@ -120,6 +132,17 @@ Input file (any format)
 
 Temporary files use the `tempfile` crate and are cleaned up automatically on drop.
 
+The `apple-speech` engine overrides path transcription and runs its synchronous
+Swift FFI call in `spawn_blocking`, keeping AVFoundation/Speech work off Tokio's
+async workers. The bridge is compiled only for macOS targets. Other targets keep
+the same CLI enum and fail the provider selection before media work. Speech and
+FoundationModels are weak-linked so the portable macOS binary retains its
+existing deployment target; availability checks guard all macOS 26 symbols.
+For whole-file runs, supported original media such as M4A reaches `AVAudioFile`
+unchanged. A typed AVAudioFile read error triggers one temporary WAV conversion
+and retry; normalization, segmentation, and unrelated Apple failures do not use
+that fallback path.
+
 ## Manifest contract
 
 When `--output-dir` is set, the JSON manifest is the stable machine-readable contract for downstream applications. The current schema is `transcribeit.manifest.v2`.
@@ -134,7 +157,7 @@ When `--output-dir` is set, the JSON manifest is the stable machine-readable con
 - Segmented runs preserve exact provider metadata per chunk under `provider_metadata.data.chunks`, paired with each chunk index and absolute offset.
 - Post-transcription analysis lives under the optional top-level `analysis` object. It is provider-neutral and separate from `provider_metadata` because downstream consumers should not need provider-specific parsing for summaries.
 - `analysis_error` records an optional post-transcription analysis failure after the transcript and initial manifest have already been persisted.
-- On Unix, transcript/subtitle/manifest files use owner-only permissions. Subtitle writers reject negative, zero-duration, reversed, and non-monotonic cue timing; `quality.timing_reliable` requires every segment to satisfy the timing invariants.
+- On Unix, transcript/subtitle/manifest files use owner-only permissions. Subtitle writers fold isolated zero-duration text into the nearest timed cue while preserving the raw manifest evidence; they reject negative, reversed, non-monotonic, and completely untimed transcripts. `quality.timing_reliable` requires every raw segment to satisfy the timing invariants.
 - The top-level `segments` array remains as a compatibility mirror for older consumers.
 
 ## Cache telemetry
@@ -290,7 +313,7 @@ Managed GGML downloads are pinned to exact upstream artifacts and verified by by
 
 ## Build requirements
 
-The project builds with Rust 1.96 and requires FFmpeg/FFprobe at runtime and in
+The project builds with Rust 1.97.1 and requires FFmpeg/FFprobe at runtime and in
 integration tests. Provider-specific credentials are runtime configuration; no
 optional native inference library or linker-path bootstrap is required.
 

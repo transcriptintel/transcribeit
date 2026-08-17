@@ -15,6 +15,40 @@ Capture these details for every benchmark run:
 - GGML artifact identity for local whisper.cpp runs
 - Input file duration and codec/container
 
+For `apple-speech`, also record macOS version and build, architecture, resolved
+locale, Apple Intelligence availability, whether the system requested a speech
+asset installation, cold/warm asset state, and whether AVAudioFile used the
+original media or required the WAV fallback. macOS owns and shares the locale
+asset; clean only the evaluation-owned fixture and outputs. The TI-013
+implementation smoke proves request/output compatibility but is not a quality or
+latency benchmark and does not alter the dated TI-007 baseline below.
+
+### 2026-08-17 Apple Speech versus local large-v3 exploratory observation
+
+The sanitized [TI-014 exploratory record](../benchmarks/results/2026-08-17-ti-014-apple-vs-large-v3-exploratory.sanitized.json)
+compares two sequential repetitions on one private 3,234.752-second Japanese M4A
+without normalization or segmentation. This is dirty-worktree, private-fixture
+evidence with no reviewed reference transcript, so it is not baseline-eligible
+and cannot establish which transcript is more accurate.
+
+| Provider | Preparation | Median wall | Median RTF | Median max RSS | Output shape |
+|---|---|---:|---:|---:|---|
+| Apple Speech (`ja_JP`) | Original M4A through AVAudioFile | 18.81 s | 0.00581 | 31.7 MB | 214 native-timed segments; 16,348 characters |
+| Local whisper.cpp large-v3 (`ja`) | M4A converted to mono 16 kHz WAV | 615.37 s | 0.19024 | 4.75 GB | 1,189 model-native segments; 16,510 characters |
+
+Apple was 32.7 times faster and used about 150 times less process RSS on this
+host. Both providers produced identical text and timed segments across their two
+repetitions. Their normalized transcript character volumes were close, with
+bigram overlap F1 0.877 and trigram overlap F1 0.807; those agreement measures
+are not accuracy scores. Apple used a warm macOS-managed speech asset. The local
+model was a new verified evaluation artifact, but its filesystem pages were
+likely warm because SHA-256 verification preceded transcription.
+
+The pinned 3,095,033,483-byte large-v3 model and all raw outputs lived under one
+evaluation-owned directory. After hashes and sanitized metrics were captured,
+3,096,993,151 logical bytes were removed and the exact directory was verified
+absent. The shared macOS speech asset remained under system ownership.
+
 ## Representative quality corpus
 
 Publishable quality comparisons use

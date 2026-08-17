@@ -51,8 +51,13 @@ pub async fn run_pipeline(
 ) -> Result<()> {
     let started = Instant::now();
 
+    let use_original_media = engine.prefers_original_media()
+        && !config.normalize_audio
+        && !config.segment
+        && config.auto_split_max_bytes.is_none()
+        && !config.upload_as_mp3;
     let (canonical_path, _canonical_tmp) =
-        if needs_conversion(&config.input) || config.normalize_audio {
+        if !use_original_media && (needs_conversion(&config.input) || config.normalize_audio) {
             eprintln!("Converting to mono 16kHz WAV...");
             let tmp = extract_to_wav(&config.input, config.normalize_audio).await?;
             (tmp.to_path_buf(), Some(tmp))

@@ -27,6 +27,26 @@ benchmark evidence.
 For diarization, use a provider with native or model-generated speaker labels:
 Deepgram, Gemini, NVIDIA Riva, or OpenAI `gpt-4o-transcribe-diarize`.
 
+### Apple Speech is unavailable
+
+`apple-speech` requires macOS 26 or later, supported Apple hardware, Apple
+Intelligence enabled and ready, and a locale supported by `SpeechTranscriber`.
+Linux and Windows reject the provider by design. On macOS:
+
+- enable Apple Intelligence in System Settings and wait for its model to become
+  ready;
+- pass an explicit locale such as `--language en-US`; automatic language
+  detection is not supported;
+- use `--language system` only when intentionally selecting the current macOS
+  locale;
+- allow the first run to download the macOS-managed speech locale asset;
+- keep network access available for that first asset installation.
+
+Apple owns, updates, and shares speech assets across apps. Do not delete system
+speech caches to clean up TranscribeIt; only evaluation-owned input and output
+directories belong to the benchmark cleanup surface. Apple Speech does not
+provide diarization, so omit `--diarize` and `--speakers`.
+
 ### Model download fails
 
 Common symptoms:
@@ -212,6 +232,10 @@ Common symptoms:
 Fix:
 - Use `--normalize` to reduce volume inconsistency from recorded content.
 - Ensure input is not corrupted and ffmpeg conversion succeeds.
+- Apple Speech first gives unmodified whole-file media to `AVAudioFile`; M4A is
+  normally handled without conversion. If AVAudioFile cannot read a container,
+  TranscribeIt reports the fallback and retries with a temporary mono 16 kHz WAV.
+  `--normalize` and `--segment` intentionally prepare WAV first.
 - For OpenAI/Azure providers, MP3 conversion is used internally; local provider uses WAV input internally. Qwen file transcription stages a prepared MP3 in S3-compatible storage and passes a pre-signed URL to DashScope. Gemini uses Gemini Files API by default, but can optionally stage prepared MP3 in S3/R2 and submit a signed URL with `--gemini-use-presigned-url`. Deepgram and NVIDIA Riva use WAV input internally; Deepgram can optionally stage that prepared WAV in S3/R2 and submit a pre-signed URL with `--deepgram-use-presigned-url`.
 
 ### Empty or tiny transcript outputs
@@ -227,3 +251,15 @@ Fix:
   - raise (less negative) `--silence-threshold` for more aggressive splits
   - lower `--min-silence-duration` for noisy recordings
 - Try the same file with a different model (for example `base.en`, `small`, `small.en`).
+
+### Subtitle timing errors
+
+An isolated provider segment whose start and end timestamps are equal is folded
+into the nearest timed VTT/SRT cue. Its text and speaker label are preserved, and
+the manifest retains the original timestamps with `quality.timing_reliable` set
+to `false`. Update to the current build if an older binary reports
+`must have a positive duration` for an otherwise timed local Whisper transcript.
+
+Negative, reversed, non-monotonic, or completely untimed transcripts remain
+invalid for subtitle output. Use `--output-format text` when the selected model
+does not return any native timestamps.

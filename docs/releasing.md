@@ -16,6 +16,12 @@ The release workflow builds locked Cargo dependencies and publishes:
 Every archive contains the platform binary, `README.md`, and `LICENSE`. FFmpeg
 remains an external runtime prerequisite and is not bundled.
 
+Both macOS archives include the weak-linked Apple Speech bridge. The binary
+retains its existing deployment target, but `--provider apple-speech` requires
+macOS 26+, available Apple Intelligence, and supported SpeechTranscriber
+hardware/locale at runtime. Intel archives are expected to reject the provider
+when Apple Intelligence is unavailable while all other providers remain usable.
+
 ## Prepare on `develop`
 
 1. Select the version using Semantic Versioning. Removing a released provider,

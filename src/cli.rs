@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
+mod provider;
 mod setup;
+pub(crate) use provider::Provider;
 pub(crate) use setup::SetupComponent;
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -40,26 +42,6 @@ impl ModelSize {
             Self::LargeV3Turbo => "ggml-large-v3-turbo.bin",
         }
     }
-}
-
-#[derive(Debug, Clone, ValueEnum)]
-pub(crate) enum Provider {
-    /// Local whisper.cpp engine
-    Local,
-    /// OpenAI-compatible API
-    Openai,
-    /// Azure OpenAI API
-    Azure,
-    /// Qwen3-ASR-Flash-Filetrans via DashScope and S3 pre-signed URLs
-    #[value(name = "qwen-filetrans")]
-    QwenFiletrans,
-    /// Gemini multimodal transcription through Files API and streamed generateContent
-    Gemini,
-    /// NVIDIA-hosted Riva ASR over gRPC
-    #[value(name = "nvidia-riva")]
-    NvidiaRiva,
-    /// Deepgram batch transcription API
-    Deepgram,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -283,7 +265,7 @@ pub(crate) enum Command {
         #[arg(long, env = "GEMINI_CACHE_TTL_SECS", default_value = "3600")]
         gemini_cache_ttl_secs: u64,
 
-        /// Language code (e.g. en, fr, auto). If not set, auto-detection is used.
+        /// Language code or locale. Apple Speech requires an explicit locale or `system`.
         #[arg(long)]
         language: Option<String>,
 

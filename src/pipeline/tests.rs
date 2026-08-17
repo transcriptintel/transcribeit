@@ -7,6 +7,7 @@ use hound::WavSpec;
 use serde_json::{Value, json};
 use std::f32::consts::PI;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
 use tempfile::tempdir;
 
 #[tokio::test]
@@ -62,6 +63,45 @@ async fn pipeline_end_to_end_writes_vtt_and_manifest() -> Result<()> {
     assert_eq!(manifest["quality"]["timing_source"], "unknown");
     assert_eq!(manifest["quality"]["timing_reliable"], false);
     assert!(manifest.get("provider_metadata").is_none());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn pipeline_writes_vtt_for_isolated_zero_duration_segment() -> Result<()> {
+    let workdir = tempdir()?;
+    let input_path = workdir.path().join("sample.wav");
+    write_test_wav(&input_path, 1_000)?;
+    let output_dir = workdir.path().join("out");
+
+    run_pipeline(
+        &FakeZeroDurationTranscriber,
+        None,
+        PipelineConfig {
+            provider_name: "local".into(),
+            model_name: "large-v3".into(),
+            ..test_config(input_path, output_dir.clone(), OutputFormat::Vtt)
+        },
+    )
+    .await?;
+
+    let vtt = std::fs::read_to_string(output_dir.join("sample.vtt"))?;
+    assert_eq!(vtt.matches(" --> ").count(), 1);
+    assert!(vtt.contains("timed text\nboundary text"));
+
+    let manifest: Value = serde_json::from_str(&std::fs::read_to_string(
+        output_dir.join("sample.manifest.json"),
+    )?)?;
+    assert_eq!(manifest["transcript"]["segments"][1]["start_ms"], 1_000);
+    assert_eq!(manifest["transcript"]["segments"][1]["end_ms"], 1_000);
+    assert_eq!(manifest["quality"]["timing_reliable"], false);
+    assert!(
+        manifest["quality"]["warnings"]
+            .as_array()
+            .is_some_and(|warnings| warnings.iter().any(|warning| warning
+                .as_str()
+                .is_some_and(|text| text.contains("zero-duration"))))
+    );
 
     Ok(())
 }
@@ -319,6 +359,61 @@ async fn pipeline_segmented_api_uploads_are_processed_concurrently() -> Result<(
     Ok(())
 }
 
+#[tokio::test]
+async fn original_media_provider_receives_m4a_without_conversion() -> Result<()> {
+    let workdir = tempdir()?;
+    let source_wav = workdir.path().join("source.wav");
+    let input_path = workdir.path().join("large-input.m4a");
+    write_test_wav(&source_wav, 1_000)?;
+    encode_test_m4a(&source_wav, &input_path).await?;
+
+    run_pipeline(
+        &OriginalMediaTranscriber {
+            original_path: input_path.clone(),
+            expect_original: true,
+        },
+        None,
+        PipelineConfig {
+            provider_name: "original-media".into(),
+            model_name: "native".into(),
+            ..test_config(
+                input_path.clone(),
+                workdir.path().join("out"),
+                OutputFormat::Text,
+            )
+        },
+    )
+    .await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn normalization_still_prepares_wav_for_original_media_provider() -> Result<()> {
+    let workdir = tempdir()?;
+    let source_wav = workdir.path().join("source.wav");
+    let input_path = workdir.path().join("input.m4a");
+    write_test_wav(&source_wav, 1_000)?;
+    encode_test_m4a(&source_wav, &input_path).await?;
+
+    run_pipeline(
+        &OriginalMediaTranscriber {
+            original_path: input_path.clone(),
+            expect_original: false,
+        },
+        None,
+        PipelineConfig {
+            provider_name: "original-media".into(),
+            model_name: "native".into(),
+            normalize_audio: true,
+            ..test_config(input_path, workdir.path().join("out"), OutputFormat::Text)
+        },
+    )
+    .await?;
+
+    Ok(())
+}
+
 fn test_config(input: PathBuf, output_dir: PathBuf, output_format: OutputFormat) -> PipelineConfig {
     PipelineConfig {
         input,
@@ -361,6 +456,22 @@ fn write_test_wav(path: &Path, duration_ms: u64) -> Result<()> {
     Ok(())
 }
 
+async fn encode_test_m4a(input: &Path, output: &Path) -> Result<()> {
+    let status = tokio::process::Command::new("ffmpeg")
+        .arg("-y")
+        .arg("-i")
+        .arg(input)
+        .arg("-c:a")
+        .arg("aac")
+        .arg(output)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await?;
+    anyhow::ensure!(status.success(), "failed to create M4A test fixture");
+    Ok(())
+}
+
 struct FakeTranscriber;
 
 #[async_trait]
@@ -374,6 +485,74 @@ impl Transcriber for FakeTranscriber {
                 speaker: None,
                 ..Default::default()
             }],
+            provider_metadata: None,
+        })
+    }
+}
+
+struct OriginalMediaTranscriber {
+    original_path: PathBuf,
+    expect_original: bool,
+}
+
+#[async_trait]
+impl Transcriber for OriginalMediaTranscriber {
+    fn prefers_original_media(&self) -> bool {
+        true
+    }
+
+    async fn transcribe(&self, _audio_samples: Vec<f32>) -> Result<Transcript> {
+        anyhow::bail!("path transcription was expected")
+    }
+
+    async fn transcribe_path(&self, path: &Path) -> Result<Transcript> {
+        if self.expect_original {
+            anyhow::ensure!(
+                path == self.original_path,
+                "original input path was not preserved"
+            );
+        } else {
+            anyhow::ensure!(
+                path != self.original_path,
+                "normalization did not prepare media"
+            );
+            anyhow::ensure!(
+                path.extension().and_then(|value| value.to_str()) == Some("wav"),
+                "normalization did not produce WAV input"
+            );
+        }
+        Ok(Transcript {
+            segments: vec![Segment {
+                start_ms: 0,
+                end_ms: 1_000,
+                text: "native input".to_string(),
+                ..Default::default()
+            }],
+            provider_metadata: None,
+        })
+    }
+}
+
+struct FakeZeroDurationTranscriber;
+
+#[async_trait]
+impl Transcriber for FakeZeroDurationTranscriber {
+    async fn transcribe(&self, _audio_samples: Vec<f32>) -> Result<Transcript> {
+        Ok(Transcript {
+            segments: vec![
+                Segment {
+                    start_ms: 0,
+                    end_ms: 1_000,
+                    text: "timed text".to_string(),
+                    ..Default::default()
+                },
+                Segment {
+                    start_ms: 1_000,
+                    end_ms: 1_000,
+                    text: "boundary text".to_string(),
+                    ..Default::default()
+                },
+            ],
             provider_metadata: None,
         })
     }

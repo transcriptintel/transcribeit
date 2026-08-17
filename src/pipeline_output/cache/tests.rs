@@ -80,6 +80,19 @@ fn cache_info_marks_qwen_as_no_provider_cache() {
     assert_eq!(cache.transcription.cached_tokens, None);
 }
 
+#[test]
+fn cache_info_marks_apple_speech_as_no_token_cache() {
+    let transcript = Transcript {
+        segments: vec![test_segment()],
+        provider_metadata: None,
+    };
+    let cache = build_cache_info(&test_config("apple-speech"), &transcript, None);
+
+    assert_eq!(cache.transcription.mode, "none");
+    assert!(!cache.transcription.hit);
+    assert_eq!(cache.transcription.input_tokens, None);
+}
+
 fn transcript_with_metadata(metadata: serde_json::Value) -> Transcript {
     Transcript {
         segments: vec![test_segment()],

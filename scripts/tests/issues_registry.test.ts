@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseIssuePage, renderRegistry, type Issue } from "../issues_registry";
+import {
+  containsSampleFilename,
+  parseIssuePage,
+  renderRegistry,
+  type Issue,
+} from "../issues_registry";
 
 const openPage = `---
 id: "TI-001"
@@ -30,6 +35,29 @@ describe("issue registry", () => {
     const parsed = parseIssuePage("docs/issues/TI-001.md", resolved);
     expect(parsed.errors.some((error) => error.includes("ISO resolved date"))).toBeTrue();
     expect(parsed.errors.some((error) => error.includes("Outcome and validation"))).toBeTrue();
+  });
+
+  test("rejects media filenames without echoing the protected name", () => {
+    const protectedName = "private-client-recording.m4a";
+    const parsed = parseIssuePage(
+      "docs/issues/TI-001.md",
+      openPage.replace("affected behavior", `affected behavior in ${protectedName}`),
+    );
+
+    expect(
+      parsed.errors.some((error) => error.includes("must not include media filenames")),
+    ).toBeTrue();
+    expect(parsed.errors.every((error) => !error.includes(protectedName))).toBeTrue();
+  });
+
+  test("detects any filename currently protected by the samples directory", () => {
+    const protectedName = "private-client-reference.txt";
+    expect(
+      containsSampleFilename(`Evidence came from ${protectedName}.`, [protectedName]),
+    ).toBeTrue();
+    expect(
+      containsSampleFilename("Evidence uses a sanitized fixture id.", [protectedName]),
+    ).toBeFalse();
   });
 
   test("renders active counts and stable links", () => {

@@ -1,4 +1,4 @@
-use crate::output::validate_subtitle_timing;
+use crate::output::prepare_subtitle_cues;
 use crate::transcriber::Transcript;
 use anyhow::Result;
 use std::io::Write;
@@ -16,22 +16,24 @@ fn format_timestamp(ms: i64) -> String {
 
 /// Write a Transcript as WebVTT to any writer
 pub fn write_vtt(transcript: &Transcript, writer: &mut impl Write) -> Result<()> {
-    validate_subtitle_timing(transcript)?;
+    let cues = prepare_subtitle_cues(transcript)?;
     writeln!(writer, "WEBVTT")?;
     writeln!(writer)?;
 
-    for (i, segment) in transcript.segments.iter().enumerate() {
+    for (i, cue) in cues.iter().enumerate() {
         writeln!(writer, "{}", i + 1)?;
         writeln!(
             writer,
             "{} --> {}",
-            format_timestamp(segment.start_ms),
-            format_timestamp(segment.end_ms)
+            format_timestamp(cue.start_ms),
+            format_timestamp(cue.end_ms)
         )?;
-        if let Some(ref spk) = segment.speaker {
-            write!(writer, "<v {}>", spk)?;
+        for line in &cue.lines {
+            if let Some(speaker) = line.speaker {
+                write!(writer, "<v {}>", speaker)?;
+            }
+            writeln!(writer, "{}", line.text)?;
         }
-        writeln!(writer, "{}", segment.text.trim())?;
         writeln!(writer)?;
     }
 
@@ -114,6 +116,36 @@ mod tests {
         assert!(out.contains("\n2\n"));
         assert!(out.contains("\n3\n"));
         assert!(!out.contains(" 0\n"));
+    }
+
+    #[test]
+    fn write_vtt_folds_zero_duration_text_and_preserves_speaker() {
+        let transcript = Transcript {
+            segments: vec![
+                Segment {
+                    start_ms: 55_000,
+                    end_ms: 57_040,
+                    text: "regular cue".to_string(),
+                    ..Default::default()
+                },
+                Segment {
+                    start_ms: 57_040,
+                    end_ms: 57_040,
+                    text: "boundary text".to_string(),
+                    speaker: Some("Speaker 2".to_string()),
+                    ..Default::default()
+                },
+            ],
+            provider_metadata: None,
+        };
+
+        let mut out = Cursor::new(Vec::new());
+        write_vtt(&transcript, &mut out).expect("zero-duration text should be folded");
+        let out = String::from_utf8(out.into_inner()).unwrap();
+
+        assert_eq!(out.matches(" --> ").count(), 1);
+        assert!(out.contains("00:00:55.000 --> 00:00:57.040"));
+        assert!(out.contains("regular cue\n<v Speaker 2>boundary text"));
     }
 
     #[test]

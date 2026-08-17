@@ -7,7 +7,10 @@ use crate::transcriber::Transcript;
 
 pub mod manifest;
 pub mod srt;
+mod subtitle;
 pub mod vtt;
+
+pub(crate) use subtitle::prepare_subtitle_cues;
 
 pub(crate) fn create_private_file(path: &Path) -> Result<File> {
     let mut options = OpenOptions::new();
@@ -44,8 +47,8 @@ pub(crate) fn validate_subtitle_timing(transcript: &Transcript) -> Result<()> {
             segment.start_ms
         );
         anyhow::ensure!(
-            segment.end_ms > segment.start_ms,
-            "subtitle segment {} must have a positive duration ({}ms..{}ms)",
+            segment.end_ms >= segment.start_ms,
+            "subtitle segment {} ends before it starts ({}ms..{}ms)",
             index + 1,
             segment.start_ms,
             segment.end_ms

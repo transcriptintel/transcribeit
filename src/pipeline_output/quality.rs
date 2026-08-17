@@ -125,7 +125,9 @@ fn zero_duration_segment_count(transcript: &Transcript) -> usize {
 fn timing_source(provider: &str) -> &'static str {
     match provider {
         "gemini" => "model_generated",
-        "qwen-filetrans" | "openai" | "azure" | "nvidia-riva" | "deepgram" => "provider_native",
+        "apple-speech" | "qwen-filetrans" | "openai" | "azure" | "nvidia-riva" | "deepgram" => {
+            "provider_native"
+        }
         "local" => "model_native",
         _ => "unknown",
     }

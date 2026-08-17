@@ -4,7 +4,7 @@
   "exceptions": [
     {
       "path": "src/cli.rs",
-      "max_lines": 528,
+      "max_lines": 510,
       "rationale": "Legacy command schema and validation boundary; extract provider option groups before adding another command family."
     },
     {

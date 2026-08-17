@@ -32,7 +32,13 @@ pub(super) fn build_capabilities(config: &PipelineConfig, transcript: &Transcrip
 fn native_timestamps(provider: &str) -> bool {
     matches!(
         provider,
-        "local" | "openai" | "azure" | "qwen-filetrans" | "nvidia-riva" | "deepgram"
+        "apple-speech"
+            | "local"
+            | "openai"
+            | "azure"
+            | "qwen-filetrans"
+            | "nvidia-riva"
+            | "deepgram"
     )
 }
 

@@ -88,6 +88,8 @@ pub(crate) async fn execute(command: Command) -> Result<()> {
         unreachable!("run command dispatcher received a non-run command");
     };
 
+    provider_factory::validate_platform(&provider, std::env::consts::OS)?;
+    provider_factory::validate_language(&provider, language.as_deref())?;
     let input_paths = resolve_input_paths(&input)?;
     validate_batch_output_plan(&input_paths, output_dir.as_deref())?;
     check_ffmpeg()?;

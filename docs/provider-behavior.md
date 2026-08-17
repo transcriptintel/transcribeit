@@ -1,6 +1,7 @@
 # Provider behavior
 
-This project supports seven providers. They share the same input/output surface, but engine type, API shape, and credentials differ.
+This project supports eight providers. They share the same input/output surface,
+but engine type, API shape, credentials, and platform availability differ.
 
 ## Remote URL input support
 
@@ -20,6 +21,39 @@ so a playlist/container cannot cause an HTTP or other nested-protocol fetch. A
 failed `silencedetect` process is an error rather than an empty-silence result.
 Hosted HTTP result bodies are capped at 64 MiB and error bodies at 1 MiB.
 
+## Apple Speech (`-p apple-speech`)
+
+- Available only on macOS 26 or later. Linux and Windows reject the provider
+  before input discovery, FFmpeg probing, or media conversion.
+- Uses Apple's on-device
+  [`SpeechAnalyzer`](https://developer.apple.com/documentation/speech/speechanalyzer)
+  with a `SpeechTranscriber`; audio is not sent to Apple's speech-recognition
+  servers.
+- Requires Apple Intelligence to be available and enabled as a TranscribeIt
+  product gate. The transcription itself is performed by the Speech framework,
+  not the Foundation Models framework, which is why the provider is named
+  `apple-speech` rather than `afm`.
+- `--language` is required and interpreted as a locale such as `en-US`.
+  `--language system` explicitly opts into the current macOS locale;
+  `--language auto`, an omitted value, and an empty value are rejected before
+  input discovery or media preparation. Unsupported locales fail explicitly
+  rather than silently switching languages.
+- The first use of a locale may install a model through
+  [`AssetInventory`](https://developer.apple.com/documentation/speech/assetinventory).
+  Apple documents these assets as system-managed, persistent, and shared across
+  apps. TranscribeIt does not place them in `MODEL_CACHE_DIR` and must not delete
+  the shared system asset after a run or benchmark.
+- Returns native segment timing and a resolved locale, but no word timestamps,
+  speaker labels, diarization, emotion, token cache, or API request metadata.
+- Whole-file runs pass the original media directly to `AVAudioFile`; M4A and
+  other formats AVFoundation accepts are not converted, regardless of file size.
+  If AVAudioFile rejects the container, TranscribeIt converts it once to a
+  temporary mono 16 kHz WAV and retries. `--normalize` and `--segment` require
+  prepared WAV input by design.
+- The Swift bridge response is capped at 64 MiB and 200,000 segments. Malformed,
+  negative, non-finite, or reversed timing fails without including transcript
+  text or the local input path in the error.
+
 ## Local (`-p local`)
 
 - Input audio/video is converted with FFmpeg to 16 kHz mono WAV.
@@ -28,6 +62,9 @@ Hosted HTTP result bodies are capped at 64 MiB and error bodies at 1 MiB.
   - or cache alias (`base`, `base.en`, `small`, `small.en`, etc.) resolved under `MODEL_CACHE_DIR`.
 - Transcription happens in-process through `whisper.cpp` (`whisper-rs`).
 - Outputs are produced locally and no external API key is required.
+- If whisper.cpp returns an isolated equal-timestamp text segment, VTT/SRT folds
+  that text into the nearest timed cue. The manifest keeps the native equal
+  timestamps, adds a zero-duration warning, and marks timing unreliable.
 
 ## OpenAI-compatible (`-p openai`)
 

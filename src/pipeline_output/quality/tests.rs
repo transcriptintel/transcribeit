@@ -64,6 +64,24 @@ fn one_valid_segment_does_not_make_all_timing_reliable() {
     assert!(!quality.timing_reliable);
 }
 
+#[test]
+fn apple_speech_valid_timing_is_provider_native_and_reliable() {
+    let transcript = Transcript {
+        segments: vec![Segment {
+            start_ms: 0,
+            end_ms: 1_000,
+            text: "valid".to_string(),
+            ..Default::default()
+        }],
+        provider_metadata: None,
+    };
+    let quality = build_quality(&test_config("apple-speech"), &transcript);
+
+    assert_eq!(quality.timing_source, "provider_native");
+    assert!(quality.timing_reliable);
+    assert!(quality.warnings.is_empty());
+}
+
 fn test_config(provider: &str) -> PipelineConfig {
     PipelineConfig {
         input: PathBuf::from("sample.wav"),

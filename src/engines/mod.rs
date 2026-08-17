@@ -1,3 +1,4 @@
+pub mod apple_speech;
 pub mod azure_openai;
 pub mod deepgram;
 pub mod gemini;

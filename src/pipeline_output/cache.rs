@@ -30,7 +30,7 @@ fn cache_entry_for_provider(provider: &str, metadata: Option<&Value>, source: &s
     match provider {
         "gemini" => gemini_cache_entry(provider, metadata, source),
         "openai" | "azure" => openai_cache_entry(provider, metadata, source),
-        "qwen-filetrans" | "nvidia-riva" | "deepgram" | "local" => CacheEntry {
+        "apple-speech" | "qwen-filetrans" | "nvidia-riva" | "deepgram" | "local" => CacheEntry {
             provider: provider.to_string(),
             mode: "none".to_string(),
             hit: false,
