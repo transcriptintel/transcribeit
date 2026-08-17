@@ -6,8 +6,8 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
 `bun run scripts/issues_registry.ts generate` and verify it with
 `bun run scripts/issues_registry.ts check`.
 
-- Total findings: 10
-- Active findings: 0
+- Total findings: 11
+- Active findings: 1
 
 | ID | Priority | Status | Area | Summary |
 |---|---:|---|---|---|
@@ -21,6 +21,7 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
 | [TI-008](./TI-008.md) | P3 | Resolved | Benchmark tooling | Add an automation-friendly benchmark harness |
 | [TI-009](./TI-009.md) | P2 | Resolved | Provider operations | Run and record the live provider smoke matrix |
 | [TI-010](./TI-010.md) | P2 | Resolved | Local inference | Retire the unused Sherpa-ONNX integration |
+| [TI-011](./TI-011.md) | P1 | Open | Security and dependencies | Remove the transitive lru unsoundness advisory |
 
 ## Working agreement
 
