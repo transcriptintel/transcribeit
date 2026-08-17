@@ -20,18 +20,23 @@ export function captureEnvironment(): RunState["environment"] {
   const firstLine = (value: string): string => value.split("\n", 1)[0];
   const processors = cpus();
   const memoryValue = totalmem();
+  const macos = process.platform === "darwin";
   return {
     machine: {
       cpu: processors[0]?.model || command(["uname", "-m"]) || "unknown",
       logical_cores: processors.length || navigator.hardwareConcurrency,
       memory_bytes: Number.isFinite(memoryValue) && memoryValue > 0 ? memoryValue : null,
       os: process.platform,
+      os_version: macos ? command(["sw_vers", "-productVersion"]) || null : null,
+      os_build: macos ? command(["sw_vers", "-buildVersion"]) || null : null,
       kernel: command(["uname", "-r"]) || "unknown",
       architecture: process.arch,
     },
     tools: {
       rustc: firstLine(command(["rustc", "--version"])) || "unavailable",
       ffmpeg: firstLine(command(["ffmpeg", "-version"])) || "unavailable",
+      swift: firstLine(command(["swift", "--version"])) || "unavailable",
+      bun: Bun.version,
     },
   };
 }

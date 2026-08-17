@@ -24,7 +24,7 @@ acceptance criteria, outcome, and validation evidence. Regenerate this index wit
 | [TI-011](./TI-011.md) | P1 | Open | Security and dependencies | Remove the transitive lru unsoundness advisory |
 | [TI-012](./TI-012.md) | P1 | Resolved | Output correctness | Preserve zero-duration text in subtitle output |
 | [TI-013](./TI-013.md) | P2 | Resolved | Provider integration | Add an Apple Speech on-device provider |
-| [TI-014](./TI-014.md) | P2 | Open | Benchmark quality | Benchmark Apple Speech on the representative corpus |
+| [TI-014](./TI-014.md) | P2 | In progress | Benchmark quality | Benchmark Apple Speech on the representative corpus |
 | [TI-015](./TI-015.md) | P2 | Resolved | Provider integration | Avoid redundant Apple Speech media conversion |
 | [TI-016](./TI-016.md) | P1 | Resolved | Provider correctness | Require explicit Apple Speech locale selection |
 | [TI-017](./TI-017.md) | P1 | Resolved | Build and release | Pin Rust 1.97.1 across build and release surfaces |

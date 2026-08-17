@@ -6,6 +6,7 @@ import {
   type BenchmarkMatrix,
   type FixtureIdentity,
   type MatrixEntry,
+  type ModelArtifact,
   type TolerancePolicy,
 } from "./types";
 
@@ -15,9 +16,13 @@ const repository = join(import.meta.dir, "../..");
 const corpusPath = join(repository, "benchmarks/corpus/v1/manifest.yaml");
 const idPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const envPattern = /^[A-Z][A-Z0-9_]*$/;
-const matrixFields = new Set(["schema_version", "matrix_id", "description", "execution_policy", "concurrency", "retries", "timeout_seconds", "fixture_ids", "tolerances", "entries"]);
+const matrixFields = new Set(["schema_version", "matrix_id", "description", "execution_policy", "attempt_order", "concurrency", "retries", "timeout_seconds", "fixture_ids", "measurements", "tolerances", "entries"]);
+const measurementFields = new Set(["reference_scoring", "peak_rss"]);
 const toleranceFields = new Set(["enforcement", "max_relative_latency_regression_percent", "max_absolute_latency_regression_ms", "min_success_rate"]);
-const entryFields = new Set(["id", "provider", "model", "execution", "cache_state", "repetitions", "fixture_ids", "required_env", "args"]);
+const entryFields = new Set(["id", "provider", "model", "execution", "cache_state", "repetitions", "fixture_ids", "required_env", "args", "artifact"]);
+const artifactFields = new Set(["lifecycle", "revision", "sha256", "bytes"]);
+const localePattern = /^(?:auto|system|[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*)$/;
+const revisionPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const forbiddenArgs = new Set([
   "--api-key",
   "--api-key-file",
@@ -90,11 +95,22 @@ export function validateMatrix(value: unknown, corpus: CorpusManifest): { matrix
   if (!['manual', 'scheduled', 'local_ci'].includes(executionPolicy)) {
     errors.push("execution_policy must be manual, scheduled, or local_ci");
   }
+  const attemptOrder = stringValue(raw.attempt_order, "attempt_order", errors);
+  if (!["entry-fixture-repetition", "fixture-repetition-entry"].includes(attemptOrder)) {
+    errors.push("attempt_order must be entry-fixture-repetition or fixture-repetition-entry");
+  }
   const concurrency = integer(raw.concurrency, "concurrency", errors, 1, 8);
   const retries = integer(raw.retries, "retries", errors, 0, 10);
   const timeoutSeconds = integer(raw.timeout_seconds, "timeout_seconds", errors, 1, 86_400);
   const fixtureIds = stringList(raw.fixture_ids, "fixture_ids", errors);
   validateFixtureIds(fixtureIds, corpus, "fixture_ids", errors);
+
+  const measurementRaw = asMap(raw.measurements, "measurements", errors);
+  if (measurementRaw) rejectUnexpected(measurementRaw, measurementFields, "measurements", errors);
+  const measurements = {
+    reference_scoring: booleanValue(measurementRaw?.reference_scoring, "measurements.reference_scoring", errors),
+    peak_rss: booleanValue(measurementRaw?.peak_rss, "measurements.peak_rss", errors),
+  };
 
   const toleranceRaw = asMap(raw.tolerances, "tolerances", errors);
   if (toleranceRaw) rejectUnexpected(toleranceRaw, toleranceFields, "tolerances", errors);
@@ -151,16 +167,24 @@ export function validateMatrix(value: unknown, corpus: CorpusManifest): { matrix
       const requiredEnv = stringList(entryRaw.required_env ?? [], `${label}.required_env`, errors, true);
       for (const name of requiredEnv) if (!envPattern.test(name)) errors.push(`${label}.required_env contains invalid name ${name}`);
       const args = stringList(entryRaw.args ?? [], `${label}.args`, errors, true);
-      for (const arg of args) {
-        const flag = arg.split("=", 1)[0];
-        if (forbiddenArgs.has(flag)) errors.push(`${label}.args cannot override harness-owned or credential option ${flag}`);
-        if (/key|token|secret|credential/i.test(flag)) errors.push(`${label}.args cannot contain credential-like option ${flag}`);
-        if (arg.startsWith("/") || arg.startsWith("~") || arg.includes("://") || arg.includes("?")) {
-          errors.push(`${label}.args cannot contain absolute paths or URLs; use reviewed environment configuration`);
+      validateReviewedArgs(args, provider, label, errors);
+      const localProviders = new Set(["apple-speech", "local"]);
+      if (execution === "local" && !localProviders.has(provider)) {
+        errors.push(`${label}: execution local requires apple-speech or local provider`);
+      }
+      if (execution === "hosted" && localProviders.has(provider)) {
+        errors.push(`${label}: provider ${provider} requires execution local`);
+      }
+      if (provider === "apple-speech") {
+        const language = optionValue(args, "--language");
+        if (!language || language.toLowerCase() === "auto") {
+          errors.push(`${label}: apple-speech requires an explicit non-auto --language argument`);
         }
       }
-      if (execution === "local" && provider !== "local") errors.push(`${label}: execution local requires provider local`);
-      if (execution === "hosted" && provider === "local") errors.push(`${label}: provider local requires execution local`);
+      const artifact = parseArtifact(entryRaw.artifact, label, errors);
+      if (artifact?.lifecycle === "evaluation_download" && !requiredEnv.includes("MODEL_CACHE_DIR")) {
+        errors.push(`${label}.artifact evaluation_download requires MODEL_CACHE_DIR in required_env`);
+      }
       entries.push({
         id,
         provider: provider as MatrixEntry["provider"],
@@ -171,6 +195,7 @@ export function validateMatrix(value: unknown, corpus: CorpusManifest): { matrix
         fixture_ids: entryFixtures,
         required_env: requiredEnv,
         args,
+        artifact,
       });
     }
   }
@@ -191,15 +216,91 @@ export function validateMatrix(value: unknown, corpus: CorpusManifest): { matrix
           matrix_id: matrixId,
           description,
           execution_policy: executionPolicy as BenchmarkMatrix["execution_policy"],
+          attempt_order: attemptOrder as BenchmarkMatrix["attempt_order"],
           concurrency,
           retries,
           timeout_seconds: timeoutSeconds,
           fixture_ids: fixtureIds,
           entries,
+          measurements,
           tolerances,
         },
         errors,
       };
+}
+
+function booleanValue(value: unknown, label: string, errors: string[]): boolean {
+  if (typeof value === "boolean") return value;
+  errors.push(`${label} must be a boolean`);
+  return false;
+}
+
+function optionValue(args: string[], name: string): string | undefined {
+  const equals = args.find((arg) => arg.startsWith(`${name}=`));
+  if (equals) return equals.slice(name.length + 1).trim() || undefined;
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1]?.trim() || undefined : undefined;
+}
+
+function parseArtifact(value: unknown, label: string, errors: string[]): ModelArtifact | undefined {
+  if (value === undefined) return undefined;
+  const raw = asMap(value, `${label}.artifact`, errors);
+  if (!raw) return undefined;
+  rejectUnexpected(raw, artifactFields, `${label}.artifact`, errors);
+  const lifecycle = stringValue(raw.lifecycle, `${label}.artifact.lifecycle`, errors);
+  if (!["evaluation_download", "system_managed", "provider_managed"].includes(lifecycle)) {
+    errors.push(`${label}.artifact.lifecycle is unsupported`);
+  }
+  const revision = raw.revision === undefined ? undefined : stringValue(raw.revision, `${label}.artifact.revision`, errors);
+  const sha256 = raw.sha256 === undefined ? undefined : stringValue(raw.sha256, `${label}.artifact.sha256`, errors);
+  const bytes = raw.bytes === undefined ? undefined : integer(raw.bytes, `${label}.artifact.bytes`, errors, 1, Number.MAX_SAFE_INTEGER);
+  if (sha256 && !/^[a-f0-9]{64}$/.test(sha256)) errors.push(`${label}.artifact.sha256 must be lowercase SHA-256`);
+  if (revision && !revisionPattern.test(revision)) {
+    errors.push(`${label}.artifact.revision must be a safe pinned identifier`);
+  }
+  if (lifecycle === "evaluation_download" && (!revision || !sha256 || !bytes)) {
+    errors.push(`${label}.artifact evaluation_download requires revision, sha256, and bytes`);
+  }
+  return {
+    lifecycle: lifecycle as ModelArtifact["lifecycle"],
+    ...(revision ? { revision } : {}),
+    ...(sha256 ? { sha256 } : {}),
+    ...(bytes ? { bytes } : {}),
+  };
+}
+
+function validateReviewedArgs(args: string[], provider: string, label: string, errors: string[]): void {
+  const seen = new Set<string>();
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (/[\u0000-\u001f\u007f]/.test(argument)) {
+      errors.push(`${label}.args cannot contain control characters`);
+      continue;
+    }
+    if (argument === "--language" || argument.startsWith("--language=")) {
+      if (seen.has("--language")) errors.push(`${label}.args cannot repeat --language`);
+      seen.add("--language");
+      const value = argument === "--language" ? args[++index] : argument.slice("--language=".length);
+      if (!value || !localePattern.test(value)) {
+        errors.push(`${label}.args --language must use a safe locale, system, or auto value`);
+      }
+      continue;
+    }
+    if (argument === "--gemini-autoclean") {
+      if (seen.has(argument)) errors.push(`${label}.args cannot repeat ${argument}`);
+      if (provider !== "gemini") errors.push(`${label}.args ${argument} is valid only for the gemini provider`);
+      seen.add(argument);
+      continue;
+    }
+    const flag = argument.split("=", 1)[0];
+    if (forbiddenArgs.has(flag)) {
+      errors.push(`${label}.args cannot override harness-owned or credential option ${flag}`);
+    } else if (/key|token|secret|credential/i.test(flag)) {
+      errors.push(`${label}.args cannot contain credential-like option ${flag}`);
+    } else {
+      errors.push(`${label}.args contains unsupported reviewed option ${flag || argument}`);
+    }
+  }
 }
 
 function numberRange(value: unknown, label: string, errors: string[], minimum: number, maximum: number): number {

@@ -1,9 +1,23 @@
-import { chmod, mkdir, readdir, rm, stat } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 
+import { collectAttemptSuccess, parsePeakRss } from "./attempt_output";
+import { expectedAttemptIdentities, type ExpectedAttemptIdentity } from "./attempt_plan";
+import { childEnvironment } from "./child_environment";
 import { repositoryRoot, resolveFixtures } from "./config";
 import { binaryIdentity, captureEnvironment } from "./environment";
-import { loadRunState, matrixSha256, sha256, writeJsonAtomic } from "./state";
+import { verifyAllRunInputs, verifyAttemptInputs, verifyInitialFixtures } from "./input_integrity";
+import { captureRepositoryProvenance } from "./provenance";
+import { reconcileAttemptPlan, sameEnvironment, sameProvenance } from "./resume_binding";
+import {
+  ensureDirectDirectory,
+  evaluationRootBinding,
+  prepareRunDirectory,
+  removeDirectDirectory,
+  type EvaluationRootBinding,
+} from "./runner_paths";
+import { loadRunState, matrixSha256, writeJsonAtomic } from "./state";
+import { ScoringIntegrityError } from "./scoring";
+import { SubprocessSupervisor } from "./subprocess";
 import type { AttemptRecord, BenchmarkMatrix, FixtureIdentity, MatrixEntry, RunState } from "./types";
 import type { CorpusManifest } from "../corpus";
 
@@ -16,21 +30,45 @@ type RunOptions = {
 };
 
 const ownedOptions = new Set(["--provider", "--model", "--remote-model", "--input", "--output-dir", "--max-retries", "--request-timeout-secs"]);
+type AttemptCollector = typeof collectAttemptSuccess;
 
-export async function runMatrix(matrix: BenchmarkMatrix, corpus: CorpusManifest, options: RunOptions): Promise<RunState> {
-  const repository = repositoryRoot();
-  const runDirectory = safeRunDirectory(options.runDirectory);
+export async function runMatrix(matrix: BenchmarkMatrix, corpus: CorpusManifest, options: RunOptions, collector: AttemptCollector = collectAttemptSuccess): Promise<RunState> {
+  const { runDirectory, attemptsRoot, lock } = await prepareRunDirectory(options.runDirectory);
+  let invocationFailed = false;
+  try {
+    return await runMatrixLocked(matrix, corpus, options, collector, runDirectory, attemptsRoot);
+  } catch (error) {
+    invocationFailed = true;
+    throw error;
+  } finally {
+    try {
+      await lock.release();
+    } catch (error) {
+      if (!invocationFailed) throw error;
+    }
+  }
+}
+
+async function runMatrixLocked(
+  matrix: BenchmarkMatrix,
+  corpus: CorpusManifest,
+  options: RunOptions,
+  collector: AttemptCollector,
+  runDirectory: string,
+  attemptsRoot: string,
+): Promise<RunState> {
+  const evaluationRoot = await evaluationRootBinding(matrix, runDirectory);
   const statePath = join(runDirectory, "state.json");
-  const attemptsRoot = join(runDirectory, "attempts");
-  await mkdir(attemptsRoot, { recursive: true, mode: 0o700 });
-  await chmod(runDirectory, 0o700);
   if (matrix.entries.some((entry) => entry.execution === "hosted") && !options.allowHosted) {
     throw new Error("matrix contains hosted entries; rerun with --allow-hosted after reviewing provider cost and scope");
   }
   const fixtures = resolveFixtures(matrix, corpus);
-  await verifyFixtures(fixtures);
+  await verifyInitialFixtures(fixtures);
   const binary = await binaryIdentity(options.binary);
   const expectedHash = matrixSha256(matrix);
+  const expectedAttempts = buildAttempts(matrix, fixtures);
+  const provenance = await captureRepositoryProvenance();
+  const environment = captureEnvironment();
   let state: RunState;
   if (await Bun.file(statePath).exists()) {
     state = await loadRunState(statePath);
@@ -39,25 +77,34 @@ export async function runMatrix(matrix: BenchmarkMatrix, corpus: CorpusManifest,
       throw new Error("existing run state uses a different binary classification");
     }
     if (state.binary_sha256 !== binary.sha256) throw new Error("existing run state uses a different binary hash");
+    if (state.evaluation_root_sha256 !== (evaluationRoot?.identitySha256 ?? null)) {
+      throw new Error("existing run state uses a different evaluation model root identity");
+    }
+    if (!sameProvenance(state.producing_commit, provenance)) {
+      throw new Error("existing run state uses a different repository HEAD or worktree fingerprint");
+    }
+    if (!sameEnvironment(state.environment, environment)) {
+      throw new Error("existing run state uses a different captured environment");
+    }
     if (state.keep_attempt_outputs !== options.keepAttemptOutputs) {
       throw new Error("existing run state uses a different attempt-output retention policy");
     }
+    reconcileAttemptPlan(state.attempts, expectedAttempts);
     for (const attempt of state.attempts) if (attempt.status === "running") attempt.status = "pending";
   } else {
-    const commit = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: repository }).stdout.toString().trim();
-    const dirty = Bun.spawnSync(["git", "status", "--porcelain"], { cwd: repository }).stdout.length > 0;
     state = {
       schema_version: "transcribeit.benchmark-run-state.v1",
       matrix,
       matrix_sha256: expectedHash,
-      producing_commit: { hash: commit, worktree_dirty: dirty },
+      producing_commit: provenance,
       started_at_utc: new Date().toISOString(),
       updated_at_utc: new Date().toISOString(),
       binary_classification: binary.classification,
       binary_sha256: binary.sha256,
-      environment: captureEnvironment(),
+      evaluation_root_sha256: evaluationRoot?.identitySha256 ?? null,
+      environment,
       keep_attempt_outputs: options.keepAttemptOutputs,
-      attempts: buildAttempts(matrix, fixtures),
+      attempts: expectedAttempts,
     };
     await writeJsonAtomic(statePath, state);
   }
@@ -74,18 +121,68 @@ export async function runMatrix(matrix: BenchmarkMatrix, corpus: CorpusManifest,
     return true;
   });
   let cursor = 0;
-  const workers = Array.from({ length: Math.min(matrix.concurrency, queue.length) }, async () => {
-    while (cursor < queue.length) {
-      const attempt = queue[cursor++];
-      const entry = matrix.entries.find((candidate) => candidate.id === attempt.entry_id);
-      const fixture = fixtures.get(attempt.fixture.id);
-      if (!entry || !fixture) throw new Error(`attempt ${attempt.key} no longer resolves to its matrix entry and fixture`);
-      await executeAttempt(state, attempt, entry, fixture, attemptsRoot, options, save);
+  const supervisor = new SubprocessSupervisor();
+  try {
+    let hasWorkerError = false;
+    let firstWorkerError: unknown;
+    const recordWorkerError = (error: unknown): void => {
+      if (supervisor.interruptedSignal) return;
+      if (!hasWorkerError) firstWorkerError = error;
+      hasWorkerError = true;
+      supervisor.abort();
+    };
+    const workers = Array.from({ length: Math.min(matrix.concurrency, queue.length) }, async () => {
+      try {
+        while (cursor < queue.length && !supervisor.interruptedSignal && !supervisor.internallyAborted) {
+          const attempt = queue[cursor++];
+          const entry = matrix.entries.find((candidate) => candidate.id === attempt.entry_id);
+          const fixture = fixtures.get(attempt.fixture.id);
+          if (!entry || !fixture) throw new Error("planned attempt no longer resolves to its matrix entry and fixture");
+          await executeAttempt(
+            state,
+            attempt,
+            entry,
+            fixture,
+            attemptsRoot,
+            runDirectory,
+            binary,
+            evaluationRoot,
+            options,
+            supervisor,
+            save,
+            collector,
+          );
+        }
+      } catch (error) {
+        recordWorkerError(error);
+        throw error;
+      }
+    });
+    await Promise.allSettled(workers);
+    let finalInputError: unknown;
+    try {
+      await verifyAllRunInputs(binary, fixtures);
+    } catch (error) {
+      finalInputError = error;
     }
-  });
-  await Promise.all(workers);
-  await saveQueue;
-  return state;
+    try {
+      await saveQueue;
+    } catch (error) {
+      if (!supervisor.interruptedSignal && !hasWorkerError) {
+        firstWorkerError = error;
+        hasWorkerError = true;
+      }
+    }
+    if (hasWorkerError) throw firstWorkerError;
+    if (supervisor.interruptedSignal) throw new Error(`benchmark interrupted by ${supervisor.interruptedSignal}`);
+    if (finalInputError) throw finalInputError;
+    if (!sameProvenance(provenance, await captureRepositoryProvenance())) {
+      throw new Error("repository HEAD or worktree changed during the benchmark run");
+    }
+    return state;
+  } finally {
+    supervisor.dispose();
+  }
 }
 
 async function executeAttempt(
@@ -94,99 +191,122 @@ async function executeAttempt(
   entry: MatrixEntry,
   fixture: FixtureIdentity,
   attemptsRoot: string,
+  runDirectory: string,
+  binary: { path: string; sha256: string },
+  evaluationRoot: EvaluationRootBinding,
   options: RunOptions,
+  supervisor: SubprocessSupervisor,
   save: () => Promise<void>,
+  collector: AttemptCollector,
 ): Promise<void> {
+  resetAttemptOutcome(attempt);
+  const outputDirectory = join(attemptsRoot, attempt.key);
+  await removeDirectDirectory(outputDirectory, attemptsRoot, "attempt output directory");
   const missing = entry.required_env.filter((name) => !process.env[name]);
   if (missing.length) {
+    const now = new Date().toISOString();
     Object.assign(attempt, {
       status: "skipped",
-      started_at_utc: new Date().toISOString(),
-      completed_at_utc: new Date().toISOString(),
+      started_at_utc: now,
+      completed_at_utc: now,
       error_category: "unconfigured",
     });
     await save();
+    await verifyAttemptInputs(binary, fixture);
     console.log(`${attempt.key}: skipped (unconfigured)`);
     return;
   }
   attempt.status = "running";
   attempt.started_at_utc = new Date().toISOString();
-  attempt.completed_at_utc = null;
-  attempt.error_category = null;
   await save();
 
-  const outputDirectory = join(attemptsRoot, attempt.key);
-  assertChildPath(outputDirectory, attemptsRoot);
-  await rm(outputDirectory, { recursive: true, force: true });
-  await mkdir(outputDirectory, { recursive: true, mode: 0o700 });
-  const command = buildCommand(options.binary, state.matrix, entry, fixture, outputDirectory);
-  console.log(`${attempt.key}: running`);
-  const started = performance.now();
-  const child = Bun.spawn(command, { cwd: repositoryRoot(), env: process.env, stdout: "pipe", stderr: "pipe" });
-  const stdoutPromise = new Response(child.stdout).text();
-  const stderrPromise = new Response(child.stderr).text();
-  const exitCode = await child.exited;
-  const wallMs = performance.now() - started;
-  await stdoutPromise;
-  const stderr = await stderrPromise;
-  attempt.wall_ms = wallMs;
-  attempt.real_time_factor = wallMs / 1000 / fixture.duration_seconds;
-  attempt.completed_at_utc = new Date().toISOString();
-  if (exitCode !== 0) {
-    attempt.status = "failed";
-    attempt.error_category = classifyError(stderr);
-  } else {
-    try {
-      await collectSuccess(attempt, outputDirectory);
-      attempt.status = "passed";
-    } catch (error) {
+  let wallMs = 0;
+  let cancelled = false;
+  let executionError: unknown;
+  try {
+    await ensureDirectDirectory(outputDirectory, attemptsRoot, "attempt output directory");
+    const command = buildCommand(binary.path, state.matrix, entry, fixture, outputDirectory);
+    console.log(`${attempt.key}: running`);
+    const measuredCommand = state.matrix.measurements.peak_rss && process.platform === "darwin"
+      ? ["/usr/bin/time", "-l", ...command]
+      : command;
+    await verifyAttemptInputs(binary, fixture);
+    const result = await supervisor.run(measuredCommand, {
+      cwd: runDirectory,
+      env: childEnvironment(entry, evaluationRoot),
+      timeoutMs: state.matrix.timeout_seconds * 1000,
+    });
+    wallMs = result.wallMs;
+    if (result.interrupted || result.aborted) {
+      cancelled = true;
+      resetAttemptOutcome(attempt);
+    } else {
+      attempt.wall_ms = wallMs;
+      attempt.peak_rss_bytes = state.matrix.measurements.peak_rss ? parsePeakRss(result.stderr) : null;
+      attempt.real_time_factor = wallMs / 1000 / fixture.duration_seconds;
+      attempt.completed_at_utc = new Date().toISOString();
+    }
+    if (result.interrupted || result.aborted) {
+      // Leave the attempt resumable without requiring --retry-failures.
+    } else if (result.timedOut) {
       attempt.status = "failed";
-      attempt.error_category = "local_output_invalid";
+      attempt.error_category = "timeout";
+    } else if (result.exitCode !== 0) {
+      attempt.status = "failed";
+      attempt.error_category = classifyError(result.stderr);
+    } else {
+      try {
+        await collector(
+          attempt,
+          outputDirectory,
+          result.stderr,
+          state.matrix.measurements.reference_scoring,
+        );
+        attempt.status = "passed";
+      } catch (error) {
+        if (error instanceof ScoringIntegrityError) { resetAttemptOutcome(attempt); throw error; }
+        attempt.status = "failed";
+        attempt.error_category = "local_output_invalid";
+      }
+    }
+  } catch (error) {
+    executionError = error;
+  } finally {
+    if (cancelled || !options.keepAttemptOutputs) {
+      try {
+        await removeDirectDirectory(outputDirectory, attemptsRoot, "attempt output directory");
+      } catch (error) {
+        executionError ??= error;
+      }
+    }
+    try {
+      await verifyAttemptInputs(binary, fixture);
+    } catch (error) {
+      executionError ??= error;
     }
   }
-  if (!options.keepAttemptOutputs) await rm(outputDirectory, { recursive: true, force: true });
+  if (executionError) throw executionError;
   await save();
   console.log(`${attempt.key}: ${attempt.status} (${Math.round(wallMs)} ms${attempt.error_category ? `, ${attempt.error_category}` : ""})`);
 }
 
-async function collectSuccess(attempt: AttemptRecord, outputDirectory: string): Promise<void> {
-  const files = await readdir(outputDirectory);
-  const manifestName = files.find((name) => name.endsWith(".manifest.json"));
-  const outputName = files.find((name) => name.endsWith(".txt"));
-  if (!manifestName || !outputName) throw new Error("expected text and manifest output");
-  const manifestText = await Bun.file(join(outputDirectory, manifestName)).text();
-  const output = await Bun.file(join(outputDirectory, outputName)).arrayBuffer();
-  const manifest = JSON.parse(manifestText);
-  attempt.output_sha256 = sha256(new Uint8Array(output));
-  attempt.manifest_sha256 = sha256(manifestText);
-  const capabilityNames = ["segments", "word_timestamps", "speaker_labels", "language_per_segment", "emotion_per_segment", "native_timestamps"];
-  attempt.capabilities = Object.fromEntries(capabilityNames.map((name) => [name, manifest.capabilities?.[name] === true]));
-  attempt.quality = {
-    timing_source: safeEnum(manifest.quality?.timing_source, ["provider_native", "model_generated", "synthetic", "none"]),
-    timing_reliable: typeof manifest.quality?.timing_reliable === "boolean" ? manifest.quality.timing_reliable : null,
-    timestamps_clamped: typeof manifest.quality?.timestamps_clamped === "boolean" ? manifest.quality.timestamps_clamped : null,
-    speaker_source: safeEnum(manifest.quality?.speaker_source, ["provider_native", "model_generated", "local_postprocess", "none"]),
-    warning_count: Array.isArray(manifest.quality?.warnings) ? manifest.quality.warnings.length : 0,
-  };
-  attempt.remote_cleanup = cleanupClassification(attempt.provider, manifest);
-}
-
 export function buildCommand(binary: string, matrix: BenchmarkMatrix, entry: MatrixEntry, fixture: FixtureIdentity, outputDirectory: string): string[] {
   for (const arg of entry.args) if (ownedOptions.has(arg.split("=", 1)[0])) throw new Error(`entry ${entry.id} overrides harness-owned option`);
-  const command = [binary, "run", "--provider", entry.provider];
+  const repository = repositoryRoot();
+  const command = [resolve(repository, binary), "run", "--provider", entry.provider];
   if (entry.provider === "local") command.push("--model", entry.model);
-  else if (entry.provider !== "azure" && entry.provider !== "nvidia-riva") command.push("--remote-model", entry.model);
+  else if (!["apple-speech", "azure", "nvidia-riva"].includes(entry.provider)) command.push("--remote-model", entry.model);
   command.push(
     "--max-retries",
     String(matrix.retries),
     "--request-timeout-secs",
     String(matrix.timeout_seconds),
     "--input",
-    fixture.path,
+    resolve(repository, fixture.path),
     "--output-format",
     "text",
     "--output-dir",
-    outputDirectory,
+    resolve(repository, outputDirectory),
     ...entry.args,
   );
   return command;
@@ -195,90 +315,74 @@ export function buildCommand(binary: string, matrix: BenchmarkMatrix, entry: Mat
 export function commandTemplate(matrix: BenchmarkMatrix, entry: MatrixEntry): string {
   const model = entry.provider === "local"
     ? ` --model ${entry.model}`
-    : entry.provider === "azure" || entry.provider === "nvidia-riva"
+    : ["apple-speech", "azure", "nvidia-riva"].includes(entry.provider)
       ? ""
       : ` --remote-model ${entry.model}`;
   return `transcribeit run --provider ${entry.provider}${model} --max-retries ${matrix.retries} --request-timeout-secs ${matrix.timeout_seconds} --input $FIXTURE --output-format text --output-dir $ATTEMPT_DIR${entry.args.length ? ` ${entry.args.join(" ")}` : ""}`;
 }
 
-function buildAttempts(matrix: BenchmarkMatrix, fixtures: Map<string, FixtureIdentity>): AttemptRecord[] {
-  const attempts: AttemptRecord[] = [];
-  for (const entry of matrix.entries) {
-    const ids = entry.fixture_ids ?? matrix.fixture_ids;
-    for (const id of ids) {
-      const fixture = fixtures.get(id);
-      if (!fixture) throw new Error(`fixture ${id} is not available`);
-      for (let repetition = 1; repetition <= entry.repetitions; repetition++) {
-        attempts.push({
-          key: `${entry.id}--${fixture.id}--${String(repetition).padStart(3, "0")}`,
-          entry_id: entry.id,
-          provider: entry.provider,
-          model: entry.model,
-          execution: entry.execution,
-          cache_state: entry.cache_state,
-          fixture: { id: fixture.id, duration_seconds: fixture.duration_seconds, bytes: fixture.bytes, sha256: fixture.sha256 },
-          repetition,
-          status: "pending",
-          started_at_utc: null,
-          completed_at_utc: null,
-          wall_ms: null,
-          real_time_factor: null,
-          error_category: null,
-          output_sha256: null,
-          manifest_sha256: null,
-          capabilities: null,
-          quality: null,
-          remote_cleanup: null,
-        });
-      }
-    }
-  }
-  return attempts;
+export function buildAttempts(matrix: BenchmarkMatrix, fixtures: Map<string, FixtureIdentity>): AttemptRecord[] {
+  return expectedAttemptIdentities(matrix).map((identity) => {
+    const entry = matrix.entries.find((candidate) => candidate.id === identity.entry_id);
+    const fixture = fixtures.get(identity.fixture_id);
+    if (!entry || !fixture) throw new Error(`planned attempt ${identity.key} does not resolve to an entry and fixture`);
+    return newAttempt(identity, entry, fixture);
+  });
 }
 
-async function verifyFixtures(fixtures: Map<string, FixtureIdentity>): Promise<void> {
-  for (const fixture of fixtures.values()) {
-    const path = resolve(repositoryRoot(), fixture.path);
-    const metadata = await stat(path).catch(() => undefined);
-    if (!metadata || metadata.size !== fixture.bytes) throw new Error(`fixture ${fixture.id} is missing or has the wrong byte size; run corpus fetch/verify`);
-    const digest = Bun.spawnSync(["shasum", "-a", "256", path]).stdout.toString().trim().split(/\s+/)[0];
-    if (digest !== fixture.sha256) throw new Error(`fixture ${fixture.id} failed SHA-256 verification`);
-  }
+function newAttempt(identity: ExpectedAttemptIdentity, entry: MatrixEntry, fixture: FixtureIdentity): AttemptRecord {
+  return {
+    key: identity.key,
+    entry_id: entry.id,
+    provider: entry.provider,
+    model: entry.model,
+    execution: entry.execution,
+    cache_state: entry.cache_state,
+    fixture: { id: fixture.id, duration_seconds: fixture.duration_seconds, bytes: fixture.bytes, sha256: fixture.sha256 },
+    repetition: identity.repetition,
+    status: "pending",
+    started_at_utc: null,
+    completed_at_utc: null,
+    wall_ms: null,
+    processing_ms: null,
+    real_time_factor: null,
+    peak_rss_bytes: null,
+    error_category: null,
+    output_sha256: null,
+    manifest_sha256: null,
+    capabilities: null,
+    quality: null,
+    output_shape: null,
+    preprocessing: null,
+    apple_speech: null,
+    reference_metrics: null,
+    remote_cleanup: null,
+  };
 }
 
-function safeRunDirectory(value: string): string {
-  const repository = repositoryRoot();
-  const allowed = join(repository, "output/benchmarks");
-  const target = resolve(repository, value);
-  if (target === allowed || !target.startsWith(`${allowed}${sep}`)) throw new Error("run directory must be a named child of output/benchmarks");
-  return target;
+export function resetAttemptOutcome(attempt: AttemptRecord): void {
+  Object.assign(attempt, {
+    status: "pending",
+    started_at_utc: null,
+    completed_at_utc: null,
+    wall_ms: null,
+    processing_ms: null,
+    real_time_factor: null,
+    peak_rss_bytes: null,
+    error_category: null,
+    output_sha256: null,
+    manifest_sha256: null,
+    capabilities: null,
+    quality: null,
+    output_shape: null,
+    preprocessing: null,
+    apple_speech: null,
+    reference_metrics: null,
+    remote_cleanup: null,
+  });
 }
 
-function assertChildPath(target: string, root: string): void {
-  const resolvedTarget = resolve(target);
-  const resolvedRoot = resolve(root);
-  if (!resolvedTarget.startsWith(`${resolvedRoot}${sep}`)) throw new Error("attempt output escaped its run directory");
-}
-
-function safeEnum(value: unknown, allowed: string[]): string | null {
-  return typeof value === "string" && allowed.includes(value) ? value : null;
-}
-
-function cleanupClassification(provider: string, manifest: any): AttemptRecord["remote_cleanup"] {
-  if (provider === "qwen-filetrans" || provider === "deepgram") {
-    const cleanup = manifest?.provider_metadata?.data?.staging?.cleanup;
-    if (!cleanup) return provider === "deepgram" ? "not_applicable" : null;
-    if (cleanup.attempted === true && cleanup.deleted === true && cleanup.error == null) return "deleted";
-    return cleanup.attempted === false ? "not_attempted" : "failed";
-  }
-  if (provider === "gemini") {
-    const file = manifest?.provider_metadata?.data?.file;
-    if (!file) return null;
-    if (file.delete_attempted === true && file.deleted === true && file.delete_error == null) return "deleted";
-    return file.delete_attempted === false ? "not_attempted" : "failed";
-  }
-  return "not_applicable";
-}
+export { parsePeakRss } from "./attempt_output";
 
 export function classifyError(stderr: string): string {
   const value = stderr.toLowerCase();

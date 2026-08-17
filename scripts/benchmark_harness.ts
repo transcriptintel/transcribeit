@@ -24,9 +24,11 @@ async function main(): Promise<void> {
     const plan = {
       matrix_id: matrix.matrix_id,
       execution_policy: matrix.execution_policy,
+      attempt_order: matrix.attempt_order,
       concurrency: matrix.concurrency,
       retries: matrix.retries,
       timeout_seconds: matrix.timeout_seconds,
+      measurements: matrix.measurements,
       attempts: matrix.entries.reduce((sum, entry) => sum + (entry.fixture_ids ?? matrix.fixture_ids).length * entry.repetitions, 0),
       fixtures: [...fixtures.values()].map(({ path: _path, ...fixture }) => fixture),
       entries: matrix.entries.map((entry) => ({
@@ -35,6 +37,7 @@ async function main(): Promise<void> {
         cache_state: entry.cache_state,
         repetitions: entry.repetitions,
         required_env: entry.required_env,
+        artifact: entry.artifact ?? null,
         command_template: commandTemplate(matrix, entry),
       })),
       hosted_execution_requires: matrix.entries.some((entry) => entry.execution === "hosted") ? "--allow-hosted" : null,
@@ -60,7 +63,12 @@ async function main(): Promise<void> {
   if (command === "publish") {
     const statePath = requiredOption(options, "state");
     const outputPath = requiredOption(options, "output");
-    const result = await publishResult(statePath, outputPath);
+    const result = await publishResult(
+      statePath,
+      outputPath,
+      typeof options["cleanup-record"] === "string" ? options["cleanup-record"] : undefined,
+      typeof options["cleanup-root"] === "string" ? options["cleanup-root"] : undefined,
+    );
     console.log(`Published sanitized result: ${relative(repositoryRoot(), resolve(outputPath))} (${result.summary.passed} passed, ${result.summary.failed} failed, ${result.summary.skipped} skipped).`);
     return;
   }

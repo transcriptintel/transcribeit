@@ -1,0 +1,46 @@
+schema_version: 1
+matrix_id: ti-014-apple-vs-local-large-v3
+description: Clean representative-corpus comparison of Apple Speech and local whisper.cpp large-v3.
+execution_policy: manual
+attempt_order: fixture-repetition-entry
+concurrency: 1
+retries: 0
+timeout_seconds: 3600
+fixture_ids:
+  - fleurs-en-us-traffic-flow-clean
+  - fleurs-en-us-traffic-flow-noisy-10db
+  - speechocean-mandarin-l1-computer-clean
+  - ami-es2002c-mix-headset
+measurements:
+  reference_scoring: true
+  peak_rss: true
+tolerances:
+  enforcement: report_only
+  max_relative_latency_regression_percent: 100
+  max_absolute_latency_regression_ms: 5000
+  min_success_rate: 1
+entries:
+  - id: apple-speech-en-us
+    provider: apple-speech
+    model: speech-transcriber
+    execution: local
+    cache_state: warm
+    repetitions: 3
+    required_env: []
+    args: [--language, en-US]
+    artifact:
+      lifecycle: system_managed
+
+  - id: local-whisper-large-v3
+    provider: local
+    model: large-v3
+    execution: local
+    cache_state: warm
+    repetitions: 3
+    required_env: [MODEL_CACHE_DIR]
+    args: [--language, en]
+    artifact:
+      lifecycle: evaluation_download
+      revision: 5359861c739e955e79d9a303bcbc70fb988958b1
+      sha256: 64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2
+      bytes: 3095033483

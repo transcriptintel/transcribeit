@@ -2,11 +2,15 @@ schema_version: 1
 matrix_id: hosted-provider-smoke
 description: Manual one-attempt compatibility matrix for the configured hosted transcription providers.
 execution_policy: manual
+attempt_order: entry-fixture-repetition
 concurrency: 1
 retries: 0
 timeout_seconds: 300
 fixture_ids:
   - fleurs-en-us-traffic-flow-clean
+measurements:
+  reference_scoring: false
+  peak_rss: false
 tolerances:
   enforcement: report_only
   max_relative_latency_regression_percent: 100

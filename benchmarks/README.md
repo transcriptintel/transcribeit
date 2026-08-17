@@ -15,9 +15,17 @@ measurements.
 
 Use the maintained [Bun/YAML benchmark harness](HARNESS.md) for new matrices.
 It validates deterministic fixture selection, records local/hosted and warm/cold
-state, resumes atomically, preserves individual failures, deletes attempt output
-by default, and publishes an allowlisted result schema. Hosted execution always
-requires an explicit `--allow-hosted` opt-in and remains report-only.
+state, supports deterministic provider interleaving, resumes atomically, preserves
+individual failures, deletes attempt output before publication by default, and
+publishes an allowlisted result schema. Reviewed-reference scoring is computed in
+memory without retaining transcript text. Darwin runs can also record peak
+process RSS. Hosted execution always requires an explicit `--allow-hosted` opt-in
+and remains report-only.
+
+Apple Speech is a local execution provider but does not receive a model option;
+its matrix entry must declare an explicit locale. Local whisper.cpp receives its
+model through `--model`. The tracked TI-014 matrix demonstrates the paired,
+sequentially interleaved form of this comparison.
 
 Before a run, capture the environment and fixture identity:
 
@@ -44,11 +52,22 @@ baselines. Dirty-worktree measurements can remain compatibility/reference record
 For every downloadable model evaluation, prefer a new evaluation-owned directory
 instead of a shared cache. Record whether that exact directory existed before the
 run, its initial and downloaded byte counts, model revision and hashes, and free
-disk space. After the run succeeds, fails, or is cancelled, remove only artifacts
-created in that directory, verify that the directory is absent, and record bytes
-reclaimed. Never clean a pre-existing cache, a broad path or glob, or a target
-derived from an unresolved variable. A deliberately retained artifact needs a
-private exact path plus a documented owner, reason, and expiry.
+disk space. Keep free-space observations in an ignored operator log because they
+are not part of the sanitized result allowlist. After the run succeeds, fails, or
+is cancelled, remove only artifacts created in that directory, verify that the
+directory is absent, and record bytes reclaimed. Never clean a pre-existing
+cache, a broad path or glob, or a target derived from an unresolved variable. A
+deliberately retained artifact needs a private exact path plus a documented
+owner, reason, and expiry.
+
+When a matrix entry declares `artifact.lifecycle: evaluation_download`, the
+harness refuses publication without a validated
+`transcribeit.downloaded-model-cleanup.v1` record supplied through both
+`publish --cleanup-record` and `publish --cleanup-root`. The latter must name the
+now-absent, run-bound direct child of `output/benchmarks/`. See
+[the harness cleanup protocol](HARNESS.md) for the exact schema and command.
+`system_managed` Apple Speech assets remain owned and shared by macOS; never
+delete them as benchmark cleanup.
 
 Each tracked record must include:
 
@@ -59,13 +78,16 @@ Each tracked record must include:
 - provider/model or local model artifact identity;
 - warm/cold state, wall time, processing time, RTF, retries, and output shape;
 - hashes of untracked transcript/raw artifacts when the artifacts themselves
-  cannot be tracked safely.
+  cannot be tracked safely;
 - downloaded-model cleanup status, exact evaluation scope, and bytes reclaimed,
   or `not_applicable` for providers that did not download local artifacts. For
   `apple-speech`, record whether macOS requested a shared locale-asset install
   and whether AVAudioFile used the original file or required the WAV fallback;
-  do not delete or claim ownership of a system-managed asset, and clean only the
-  evaluation-owned fixture/output directory.
+  do not delete or claim ownership of a system-managed asset. The harness removes
+  transcript-bearing attempt directories, while the operator separately removes
+  only the evaluation-owned model directory. The shared public corpus remains in
+  place; remove the ignored run directory only after its sanitized result has
+  been copied and validated.
 
 For a matrix record, add a structural assertion alongside manual sanitization
 review. For example, the TI-007 representative-corpus reference is checked with:
