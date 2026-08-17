@@ -5,10 +5,28 @@ All notable changes to TranscribeIt are documented here. The project follows
 
 ## [Unreleased]
 
+### Added
+
+- Added the macOS-only `apple-speech` provider backed by on-device
+  `SpeechAnalyzer`, with explicit locale selection, Apple Intelligence and asset
+  lifecycle gates, native timing, and direct AVAudioFile ingestion.
+- Added a clean 24-attempt representative-corpus comparison of Apple Speech and
+  pinned local whisper.cpp large-v3, including transcript-free reference
+  scoring, peak RSS, output shape, and verified model cleanup evidence.
+
 ### Changed
 
 - Raised the minimum and pinned build toolchain from Rust 1.96 to Rust 1.97.1,
   including local, CI, and release build surfaces.
+- Hardened the benchmark harness with atomic state, exclusive run locking,
+  bounded process-group cancellation, provenance/input drift checks, strict
+  result allowlists, and cleanup evidence bound to the exact run and artifact.
+
+### Fixed
+
+- Preserved transcript text in VTT/SRT when a provider emits a zero-duration
+  segment by folding it into the nearest positive-duration cue instead of
+  rejecting the run.
 
 ## [2.0.0] - 2026-08-07
 

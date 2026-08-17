@@ -19,9 +19,52 @@ For `apple-speech`, also record macOS version and build, architecture, resolved
 locale, Apple Intelligence availability, whether the system requested a speech
 asset installation, cold/warm asset state, and whether AVAudioFile used the
 original media or required the WAV fallback. macOS owns and shares the locale
-asset; clean only the evaluation-owned fixture and outputs. The TI-013
+asset; clean only the evaluation-owned model and outputs. The TI-013
 implementation smoke proves request/output compatibility but is not a quality or
 latency benchmark and does not alter the dated TI-007 baseline below.
+
+### 2026-08-17 clean Apple Speech versus local large-v3 benchmark
+
+The tracked
+[TI-014 clean record](../benchmarks/results/2026-08-17-ti-014-apple-vs-local-large-v3.sanitized.json)
+contains 24 passed attempts: Apple Speech and local whisper.cpp large-v3, three
+sequentially interleaved repetitions on each of the four representative corpus
+fixtures. It was produced from clean commit
+`d9187b7eef00f9ecb05d0c6e4695445a44f19bfe` on an Apple M4 Pro with 12
+logical cores and 24 GiB RAM, macOS 26.5.2 build 25F84, Rust 1.97.1, Swift
+6.3.3, FFmpeg 9.0.1, and Bun 1.3.14.
+
+| Provider | Short macro WER | Short term recall | AMI median wall / RTF | AMI term recall | AMI median max RSS |
+|---|---:|---:|---:|---:|---:|
+| Apple Speech (`en_US`) | 21.57% | 77.78% | 27.88s / 0.01150 | 100% | 25.86 MiB |
+| Local whisper.cpp `large-v3` | 21.57% | 88.89% | 568.82s / 0.23469 | 33.33% | 4.36 GiB |
+
+Apple was 20.4 times faster and used about 173 times less peak process RSS on
+AMI on this host. The equal short-fixture macro WER masks different behavior:
+Apple scored 29.41% on clean English and 35.29% on its deterministic noisy
+variant; local scored 23.53% and 41.18%. Both scored 0% on the short
+accented-English fixture. Apple retained all three tracked AMI terms, while
+large-v3 retained one.
+
+AMI ordinary serialized WER and boundary timing are deliberately unsupported
+because the reviewed reference contains overlapping speakers. Neither provider
+exposed speaker labels or word timestamps. Apple returned 517 native-timed AMI
+segments with no zero-duration or reversed segments; large-v3 returned 1,892,
+including one zero-duration segment and no reversed segments. Every Apple input
+used the original WAV through AVAudioFile, while local used the canonical mono
+16 kHz WAV path.
+
+All Apple attempts resolved `en_US`, ran on-device with Apple Intelligence
+available, and reported a macOS-managed asset-install request. An unmeasured
+readiness probe warmed the shared system asset before the matrix; the benchmark
+did not delete or claim that asset. The harness removed every transcript-bearing
+attempt directory. The pinned large-v3 model was held in a new evaluation root,
+re-verified, then deleted after the run, reclaiming 3,095,033,483 bytes and
+leaving the exact root absent.
+
+These observations apply only to the recorded host, OS-managed Apple speech
+asset, model artifact, fixtures, and request shape. They do not identify Apple's
+internal model revision and do not establish a universal provider ranking.
 
 ### 2026-08-17 Apple Speech versus local large-v3 exploratory observation
 

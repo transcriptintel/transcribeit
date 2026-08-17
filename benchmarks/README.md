@@ -25,7 +25,8 @@ and remains report-only.
 Apple Speech is a local execution provider but does not receive a model option;
 its matrix entry must declare an explicit locale. Local whisper.cpp receives its
 model through `--model`. The tracked TI-014 matrix demonstrates the paired,
-sequentially interleaved form of this comparison.
+sequentially interleaved form of this comparison. The completed clean record is
+[`2026-08-17-ti-014-apple-vs-local-large-v3.sanitized.json`](results/2026-08-17-ti-014-apple-vs-local-large-v3.sanitized.json).
 
 Before a run, capture the environment and fixture identity:
 
@@ -142,4 +143,30 @@ jq -e '
   .sanitization.local_paths_removed == true and
   .sanitization.raw_transcripts_and_manifests_deleted == true
 ' benchmarks/results/2026-08-17-ti-014-apple-vs-large-v3-exploratory.sanitized.json
+```
+
+The clean TI-014 representative-corpus record uses the maintained harness
+schema and must preserve its pass, lifecycle, and sanitization boundaries:
+
+```bash
+jq -e '
+  .schema_version == "transcribeit.benchmark-harness-result.v1" and
+  .classification == "clean_commit_benchmark" and
+  .producing_commit.worktree_dirty == false and
+  .summary == {attempts: 24, passed: 24, failed: 0, skipped: 0} and
+  (.attempts | length) == 24 and
+  ([.attempts[] | select(.status != "passed")] | length) == 0 and
+  ([.attempts[] | select(
+    .provider == "apple-speech" and
+    (.apple_speech.apple_intelligence_available != true or
+     .apple_speech.on_device != true or
+     .apple_speech.asset_managed_by != "macos")
+  )] | length) == 0 and
+  .cleanup.attempt_outputs_removed == true and
+  .cleanup.downloaded_model.cleanup_completed == true and
+  .cleanup.downloaded_model.evaluation_root_absent_after_cleanup == true and
+  .cleanup.apple_speech_asset.lifecycle == "system_managed_shared" and
+  .sanitization.transcript_text_removed == true and
+  .sanitization.local_absolute_paths_removed == true
+' benchmarks/results/2026-08-17-ti-014-apple-vs-local-large-v3.sanitized.json
 ```

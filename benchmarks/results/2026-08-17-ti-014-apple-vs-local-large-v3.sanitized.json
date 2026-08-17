@@ -1,0 +1,2073 @@
+{
+  "schema_version": "transcribeit.benchmark-harness-result.v1",
+  "matrix_sha256": "98af9da569534f2b9b5dc047d5d391c9dba5a9aa70d3c9a0472cf50f7826a36f",
+  "recorded_at_utc": "2026-08-17T13:08:41.136Z",
+  "classification": "clean_commit_benchmark",
+  "producing_commit": {
+    "hash": "d9187b7eef00f9ecb05d0c6e4695445a44f19bfe",
+    "worktree_dirty": false,
+    "worktree_fingerprint_sha256": "f0292013e33c92cc431fe0fb93dadf78c0ff5afdaa38146d5e65749753b4288b"
+  },
+  "runtime": {
+    "binary_classification": "target/release/transcribeit",
+    "binary_sha256": "aab056e6c80a3e9b6c3c9986510dcace140e2e778749fb73d3203878ae947bc9"
+  },
+  "environment": {
+    "machine": {
+      "cpu": "Apple M4 Pro",
+      "logical_cores": 12,
+      "memory_bytes": 25769803776,
+      "os": "darwin",
+      "os_version": "26.5.2",
+      "os_build": "25F84",
+      "kernel": "25.5.0",
+      "architecture": "arm64"
+    },
+    "tools": {
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+      "ffmpeg": "ffmpeg version 9.0.1 Copyright (c) 2000-2026 the FFmpeg developers",
+      "swift": "Apple Swift version 6.3.3 (swiftlang-6.3.3.1.3 clang-2100.1.1.101)",
+      "bun": "1.3.14"
+    }
+  },
+  "matrix": {
+    "schema_version": 1,
+    "matrix_id": "ti-014-apple-vs-local-large-v3",
+    "description": "Clean representative-corpus comparison of Apple Speech and local whisper.cpp large-v3.",
+    "execution_policy": "manual",
+    "attempt_order": "fixture-repetition-entry",
+    "concurrency": 1,
+    "retries": 0,
+    "timeout_seconds": 3600,
+    "fixture_ids": [
+      "fleurs-en-us-traffic-flow-clean",
+      "fleurs-en-us-traffic-flow-noisy-10db",
+      "speechocean-mandarin-l1-computer-clean",
+      "ami-es2002c-mix-headset"
+    ],
+    "entries": [
+      {
+        "id": "apple-speech-en-us",
+        "provider": "apple-speech",
+        "model": "speech-transcriber",
+        "execution": "local",
+        "cache_state": "warm",
+        "repetitions": 3,
+        "required_env": [],
+        "args": [
+          "--language",
+          "en-US"
+        ],
+        "artifact": {
+          "lifecycle": "system_managed"
+        },
+        "command_template": "transcribeit run --provider apple-speech --max-retries 0 --request-timeout-secs 3600 --input $FIXTURE --output-format text --output-dir $ATTEMPT_DIR --language en-US"
+      },
+      {
+        "id": "local-whisper-large-v3",
+        "provider": "local",
+        "model": "large-v3",
+        "execution": "local",
+        "cache_state": "warm",
+        "repetitions": 3,
+        "required_env": [
+          "MODEL_CACHE_DIR"
+        ],
+        "args": [
+          "--language",
+          "en"
+        ],
+        "artifact": {
+          "lifecycle": "evaluation_download",
+          "revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+          "sha256": "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+          "bytes": 3095033483
+        },
+        "command_template": "transcribeit run --provider local --model large-v3 --max-retries 0 --request-timeout-secs 3600 --input $FIXTURE --output-format text --output-dir $ATTEMPT_DIR --language en"
+      }
+    ],
+    "measurements": {
+      "reference_scoring": true,
+      "peak_rss": true
+    },
+    "tolerances": {
+      "enforcement": "report_only",
+      "max_relative_latency_regression_percent": 100,
+      "max_absolute_latency_regression_ms": 5000,
+      "min_success_rate": 1
+    }
+  },
+  "summary": {
+    "attempts": 24,
+    "passed": 24,
+    "failed": 0,
+    "skipped": 0
+  },
+  "attempts": [
+    {
+      "key": "apple-speech-en-us--fleurs-en-us-traffic-flow-clean--001",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-clean",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "3e76cc5728bfd7c24f1039b5c9a47e8d79c7f225605862e977833a4f79249bff"
+      },
+      "repetition": 1,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:35:54.013Z",
+      "completed_at_utc": "2026-08-17T12:35:54.300Z",
+      "wall_ms": 281.437459,
+      "processing_ms": 250.25883399999998,
+      "real_time_factor": 0.022265621756329113,
+      "peak_rss_bytes": 24526848,
+      "error_category": null,
+      "output_sha256": "b50cad2fbf45dba8df20e74d817106da04e1fec258994ccedd0e7b5baffa8e14",
+      "manifest_sha256": "6017cd34e05c310621c3e855a39d3bd39d7209af8a4eaeaae94c361c8be43b4e",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 116,
+        "last_end_ms": 10560,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 15,
+          "substitutions": 3,
+          "deletions": 2,
+          "insertions": 0,
+          "wer": 0.29411764705882354
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 2,
+          "term_recall": 0.6666666666666666
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--fleurs-en-us-traffic-flow-clean--001",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-clean",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "3e76cc5728bfd7c24f1039b5c9a47e8d79c7f225605862e977833a4f79249bff"
+      },
+      "repetition": 1,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:35:54.307Z",
+      "completed_at_utc": "2026-08-17T12:36:00.395Z",
+      "wall_ms": 6082.898792,
+      "processing_ms": 4502.202042000001,
+      "real_time_factor": 0.48124199303797466,
+      "peak_rss_bytes": 3792420864,
+      "error_category": null,
+      "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311",
+      "manifest_sha256": "80da2fe4f146ae4b907513997b4e03aba53a3e2b0c5577b891d22039a8b6154f",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 115,
+        "last_end_ms": 12640,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 15,
+          "substitutions": 2,
+          "deletions": 2,
+          "insertions": 0,
+          "wer": 0.23529411764705882
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 3,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--fleurs-en-us-traffic-flow-clean--002",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-clean",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "3e76cc5728bfd7c24f1039b5c9a47e8d79c7f225605862e977833a4f79249bff"
+      },
+      "repetition": 2,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:00.409Z",
+      "completed_at_utc": "2026-08-17T12:36:00.702Z",
+      "wall_ms": 287.5900419999998,
+      "processing_ms": 255.820292,
+      "real_time_factor": 0.022752376740506314,
+      "peak_rss_bytes": 24346624,
+      "error_category": null,
+      "output_sha256": "b50cad2fbf45dba8df20e74d817106da04e1fec258994ccedd0e7b5baffa8e14",
+      "manifest_sha256": "5425f21ef44e758cf3044babe68ba23b18578295436cd9b9d94bc53103e60d2e",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 116,
+        "last_end_ms": 10560,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 15,
+          "substitutions": 3,
+          "deletions": 2,
+          "insertions": 0,
+          "wer": 0.29411764705882354
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 2,
+          "term_recall": 0.6666666666666666
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--fleurs-en-us-traffic-flow-clean--002",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-clean",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "3e76cc5728bfd7c24f1039b5c9a47e8d79c7f225605862e977833a4f79249bff"
+      },
+      "repetition": 2,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:00.708Z",
+      "completed_at_utc": "2026-08-17T12:36:06.581Z",
+      "wall_ms": 5865.980541,
+      "processing_ms": 4419.59325,
+      "real_time_factor": 0.46408073900316454,
+      "peak_rss_bytes": 3794452480,
+      "error_category": null,
+      "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311",
+      "manifest_sha256": "65f093f8105506b112b5dffe0293ff859d681731f8f31d644e6be456571646e7",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 115,
+        "last_end_ms": 12640,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 15,
+          "substitutions": 2,
+          "deletions": 2,
+          "insertions": 0,
+          "wer": 0.23529411764705882
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 3,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--fleurs-en-us-traffic-flow-clean--003",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-clean",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "3e76cc5728bfd7c24f1039b5c9a47e8d79c7f225605862e977833a4f79249bff"
+      },
+      "repetition": 3,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:06.591Z",
+      "completed_at_utc": "2026-08-17T12:36:06.896Z",
+      "wall_ms": 299.036709,
+      "processing_ms": 264.51383400000003,
+      "real_time_factor": 0.02365796748417721,
+      "peak_rss_bytes": 24428544,
+      "error_category": null,
+      "output_sha256": "b50cad2fbf45dba8df20e74d817106da04e1fec258994ccedd0e7b5baffa8e14",
+      "manifest_sha256": "6af91ebc5e96205f24ca626ccbfff151cf3a866d412916deed3b59dd8a4a4283",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 116,
+        "last_end_ms": 10560,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 15,
+          "substitutions": 3,
+          "deletions": 2,
+          "insertions": 0,
+          "wer": 0.29411764705882354
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 2,
+          "term_recall": 0.6666666666666666
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--fleurs-en-us-traffic-flow-clean--003",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-clean",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "3e76cc5728bfd7c24f1039b5c9a47e8d79c7f225605862e977833a4f79249bff"
+      },
+      "repetition": 3,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:06.902Z",
+      "completed_at_utc": "2026-08-17T12:36:11.989Z",
+      "wall_ms": 5081.589207999999,
+      "processing_ms": 3638.609791,
+      "real_time_factor": 0.4020244626582278,
+      "peak_rss_bytes": 3803512832,
+      "error_category": null,
+      "output_sha256": "06bca9e9683dbed76f3ecec00fb3cbaad61700c705988d9315952798fdbf9311",
+      "manifest_sha256": "bf835fb8fb2f2e7345268c25c0cb22e92a6cb91b7b7d87036a4c9a6bd76b7af5",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 115,
+        "last_end_ms": 12640,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 15,
+          "substitutions": 2,
+          "deletions": 2,
+          "insertions": 0,
+          "wer": 0.23529411764705882
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 3,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--fleurs-en-us-traffic-flow-noisy-10db--001",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-noisy-10db",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "0ce03952e2c7d4acc813a5a49b55f2675c2ff25dc58575068dd51b2fc54b63d9"
+      },
+      "repetition": 1,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:11.998Z",
+      "completed_at_utc": "2026-08-17T12:36:12.337Z",
+      "wall_ms": 332.0267079999976,
+      "processing_ms": 293.217333,
+      "real_time_factor": 0.02626793575949348,
+      "peak_rss_bytes": 24461312,
+      "error_category": null,
+      "output_sha256": "91928e68062d3257534a5830fd9fd9a8c94e1646f8bab31a0be510ac0781b2de",
+      "manifest_sha256": "63b472cd06dd9b30a24fdf8907c3d6bd107692a659a4c521088f9053a38e76d0",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 119,
+        "last_end_ms": 11580,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 16,
+          "substitutions": 5,
+          "deletions": 1,
+          "insertions": 0,
+          "wer": 0.35294117647058826
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 2,
+          "term_recall": 0.6666666666666666
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--fleurs-en-us-traffic-flow-noisy-10db--001",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-noisy-10db",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "0ce03952e2c7d4acc813a5a49b55f2675c2ff25dc58575068dd51b2fc54b63d9"
+      },
+      "repetition": 1,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:12.343Z",
+      "completed_at_utc": "2026-08-17T12:36:17.788Z",
+      "wall_ms": 5438.152875,
+      "processing_ms": 3967.271208,
+      "real_time_factor": 0.430233613528481,
+      "peak_rss_bytes": 3801219072,
+      "error_category": null,
+      "output_sha256": "f4c6452e7482fbe8b7223423dc1bc9587d6b40f98ea9fd8a437f1d38a8a4d2bd",
+      "manifest_sha256": "76afbe2b06d9754d526e819d532f70764959a1471a02952921fcdab69d870b0e",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 93,
+        "last_end_ms": 12640,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 12,
+          "substitutions": 2,
+          "deletions": 5,
+          "insertions": 0,
+          "wer": 0.4117647058823529
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 2,
+          "term_recall": 0.6666666666666666
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--fleurs-en-us-traffic-flow-noisy-10db--002",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-noisy-10db",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "0ce03952e2c7d4acc813a5a49b55f2675c2ff25dc58575068dd51b2fc54b63d9"
+      },
+      "repetition": 2,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:17.798Z",
+      "completed_at_utc": "2026-08-17T12:36:18.121Z",
+      "wall_ms": 317.4410420000022,
+      "processing_ms": 282.086542,
+      "real_time_factor": 0.025114006487341942,
+      "peak_rss_bytes": 24428544,
+      "error_category": null,
+      "output_sha256": "91928e68062d3257534a5830fd9fd9a8c94e1646f8bab31a0be510ac0781b2de",
+      "manifest_sha256": "bbbdadd5049dfa8d854e9a64319bb82407b410597d5fa07c764f7b2e729a73f7",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 119,
+        "last_end_ms": 11580,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 16,
+          "substitutions": 5,
+          "deletions": 1,
+          "insertions": 0,
+          "wer": 0.35294117647058826
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 2,
+          "term_recall": 0.6666666666666666
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--fleurs-en-us-traffic-flow-noisy-10db--002",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-noisy-10db",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "0ce03952e2c7d4acc813a5a49b55f2675c2ff25dc58575068dd51b2fc54b63d9"
+      },
+      "repetition": 2,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:18.128Z",
+      "completed_at_utc": "2026-08-17T12:36:23.156Z",
+      "wall_ms": 5022.652291999999,
+      "processing_ms": 3553.882666,
+      "real_time_factor": 0.39736173196202523,
+      "peak_rss_bytes": 3802316800,
+      "error_category": null,
+      "output_sha256": "f4c6452e7482fbe8b7223423dc1bc9587d6b40f98ea9fd8a437f1d38a8a4d2bd",
+      "manifest_sha256": "a9e14056c7ff84a514ec285701117e53d1e6faf5fa5d0c4ddf40e19dc623c375",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 93,
+        "last_end_ms": 12640,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 12,
+          "substitutions": 2,
+          "deletions": 5,
+          "insertions": 0,
+          "wer": 0.4117647058823529
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 2,
+          "term_recall": 0.6666666666666666
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--fleurs-en-us-traffic-flow-noisy-10db--003",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-noisy-10db",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "0ce03952e2c7d4acc813a5a49b55f2675c2ff25dc58575068dd51b2fc54b63d9"
+      },
+      "repetition": 3,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:23.165Z",
+      "completed_at_utc": "2026-08-17T12:36:23.463Z",
+      "wall_ms": 292.40408399999797,
+      "processing_ms": 257.653958,
+      "real_time_factor": 0.023133234493670725,
+      "peak_rss_bytes": 24412160,
+      "error_category": null,
+      "output_sha256": "91928e68062d3257534a5830fd9fd9a8c94e1646f8bab31a0be510ac0781b2de",
+      "manifest_sha256": "b0e0afc2fdb046e31e72f2e7fd3d0170e52a384fe9cd5877a15c146e5950fc53",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 119,
+        "last_end_ms": 11580,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 16,
+          "substitutions": 5,
+          "deletions": 1,
+          "insertions": 0,
+          "wer": 0.35294117647058826
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 2,
+          "term_recall": 0.6666666666666666
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--fleurs-en-us-traffic-flow-noisy-10db--003",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "fleurs-en-us-traffic-flow-noisy-10db",
+        "duration_seconds": 12.64,
+        "bytes": 809018,
+        "sha256": "0ce03952e2c7d4acc813a5a49b55f2675c2ff25dc58575068dd51b2fc54b63d9"
+      },
+      "repetition": 3,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:23.470Z",
+      "completed_at_utc": "2026-08-17T12:36:28.493Z",
+      "wall_ms": 5016.489582999999,
+      "processing_ms": 3474.7056669999997,
+      "real_time_factor": 0.39687417587025303,
+      "peak_rss_bytes": 3804758016,
+      "error_category": null,
+      "output_sha256": "f4c6452e7482fbe8b7223423dc1bc9587d6b40f98ea9fd8a437f1d38a8a4d2bd",
+      "manifest_sha256": "20ad93f2521c2b21cb80a9a15297904a778e788df97801a940b93f6054e22118",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 93,
+        "last_end_ms": 12640,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 17,
+          "hypothesis_words": 12,
+          "substitutions": 2,
+          "deletions": 5,
+          "insertions": 0,
+          "wer": 0.4117647058823529
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 2,
+          "term_recall": 0.6666666666666666
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--speechocean-mandarin-l1-computer-clean--001",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "speechocean-mandarin-l1-computer-clean",
+        "duration_seconds": 3,
+        "bytes": 96044,
+        "sha256": "147537ac415dbf33afb6a92b27f38d2da4c26a390465c4ad8f030502d815a7bf"
+      },
+      "repetition": 1,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:28.506Z",
+      "completed_at_utc": "2026-08-17T12:36:28.716Z",
+      "wall_ms": 194.82541700000002,
+      "processing_ms": 161.186208,
+      "real_time_factor": 0.06494180566666667,
+      "peak_rss_bytes": 24510464,
+      "error_category": null,
+      "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630",
+      "manifest_sha256": "3e46eacf719abe2ee8ef790f862b716f555a51c3f428ecde67c8f47ae3be40e0",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 29,
+        "last_end_ms": 3000,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 7,
+          "hypothesis_words": 7,
+          "substitutions": 0,
+          "deletions": 0,
+          "insertions": 0,
+          "wer": 0
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 1,
+          "matched_terms": 1,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--speechocean-mandarin-l1-computer-clean--001",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "speechocean-mandarin-l1-computer-clean",
+        "duration_seconds": 3,
+        "bytes": 96044,
+        "sha256": "147537ac415dbf33afb6a92b27f38d2da4c26a390465c4ad8f030502d815a7bf"
+      },
+      "repetition": 1,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:28.722Z",
+      "completed_at_utc": "2026-08-17T12:36:33.714Z",
+      "wall_ms": 4985.816959000003,
+      "processing_ms": 3533.514334,
+      "real_time_factor": 1.6619389863333345,
+      "peak_rss_bytes": 3806330880,
+      "error_category": null,
+      "output_sha256": "72a0d7bd5f5519f95d1f5c610e9349d2104aeb019485441498fcff96f0da2ccc",
+      "manifest_sha256": "185069fbd7aef7aedb824682a54d70f2ef6e65e6af768b17aaf9bfa30875db8f",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 33,
+        "last_end_ms": 3000,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 7,
+          "hypothesis_words": 7,
+          "substitutions": 0,
+          "deletions": 0,
+          "insertions": 0,
+          "wer": 0
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 1,
+          "matched_terms": 1,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--speechocean-mandarin-l1-computer-clean--002",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "speechocean-mandarin-l1-computer-clean",
+        "duration_seconds": 3,
+        "bytes": 96044,
+        "sha256": "147537ac415dbf33afb6a92b27f38d2da4c26a390465c4ad8f030502d815a7bf"
+      },
+      "repetition": 2,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:33.725Z",
+      "completed_at_utc": "2026-08-17T12:36:33.976Z",
+      "wall_ms": 245.57225000000471,
+      "processing_ms": 187.39225000000002,
+      "real_time_factor": 0.08185741666666824,
+      "peak_rss_bytes": 24543232,
+      "error_category": null,
+      "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630",
+      "manifest_sha256": "1a11837f913c1024d3d2e877fd7fd001523e0bab2a2491e919c3cc7be5ce679e",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 29,
+        "last_end_ms": 3000,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 7,
+          "hypothesis_words": 7,
+          "substitutions": 0,
+          "deletions": 0,
+          "insertions": 0,
+          "wer": 0
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 1,
+          "matched_terms": 1,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--speechocean-mandarin-l1-computer-clean--002",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "speechocean-mandarin-l1-computer-clean",
+        "duration_seconds": 3,
+        "bytes": 96044,
+        "sha256": "147537ac415dbf33afb6a92b27f38d2da4c26a390465c4ad8f030502d815a7bf"
+      },
+      "repetition": 2,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:33.997Z",
+      "completed_at_utc": "2026-08-17T12:36:38.828Z",
+      "wall_ms": 4825.146041,
+      "processing_ms": 3363.050917,
+      "real_time_factor": 1.6083820136666667,
+      "peak_rss_bytes": 3802710016,
+      "error_category": null,
+      "output_sha256": "72a0d7bd5f5519f95d1f5c610e9349d2104aeb019485441498fcff96f0da2ccc",
+      "manifest_sha256": "6bfb110a5ded661438d394408c0a839ef776bdfa6fa5535f326685d1a27c1c6e",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 33,
+        "last_end_ms": 3000,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 7,
+          "hypothesis_words": 7,
+          "substitutions": 0,
+          "deletions": 0,
+          "insertions": 0,
+          "wer": 0
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 1,
+          "matched_terms": 1,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--speechocean-mandarin-l1-computer-clean--003",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "speechocean-mandarin-l1-computer-clean",
+        "duration_seconds": 3,
+        "bytes": 96044,
+        "sha256": "147537ac415dbf33afb6a92b27f38d2da4c26a390465c4ad8f030502d815a7bf"
+      },
+      "repetition": 3,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:38.843Z",
+      "completed_at_utc": "2026-08-17T12:36:39.056Z",
+      "wall_ms": 204.9393329999948,
+      "processing_ms": 169.785666,
+      "real_time_factor": 0.06831311099999827,
+      "peak_rss_bytes": 24477696,
+      "error_category": null,
+      "output_sha256": "236ab4060dd9e43cf386037ca53f13dd0217430456c0d37672a36bddb1638630",
+      "manifest_sha256": "abdc4e0d826aaff339bebd9c53b5a4cf4b2ef682fb25a759615e0383b73aca81",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 29,
+        "last_end_ms": 3000,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 7,
+          "hypothesis_words": 7,
+          "substitutions": 0,
+          "deletions": 0,
+          "insertions": 0,
+          "wer": 0
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 1,
+          "matched_terms": 1,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--speechocean-mandarin-l1-computer-clean--003",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "speechocean-mandarin-l1-computer-clean",
+        "duration_seconds": 3,
+        "bytes": 96044,
+        "sha256": "147537ac415dbf33afb6a92b27f38d2da4c26a390465c4ad8f030502d815a7bf"
+      },
+      "repetition": 3,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:39.066Z",
+      "completed_at_utc": "2026-08-17T12:36:43.851Z",
+      "wall_ms": 4775.401707999998,
+      "processing_ms": 3349.4399169999997,
+      "real_time_factor": 1.5918005693333326,
+      "peak_rss_bytes": 3805085696,
+      "error_category": null,
+      "output_sha256": "72a0d7bd5f5519f95d1f5c610e9349d2104aeb019485441498fcff96f0da2ccc",
+      "manifest_sha256": "af1176f95344e47adb78552d60a863943b3c6c138bbe902754ded8bfa8c5a6ef",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 1,
+        "characters": 33,
+        "last_end_ms": 3000,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "scored",
+          "reference_words": 7,
+          "hypothesis_words": 7,
+          "substitutions": 0,
+          "deletions": 0,
+          "insertions": 0,
+          "wer": 0
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 1,
+          "matched_terms": 1,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_reference"
+        },
+        "speakers": {
+          "status": "unsupported_reference"
+        },
+        "word_timestamps": {
+          "status": "unsupported_reference"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--ami-es2002c-mix-headset--001",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "ami-es2002c-mix-headset",
+        "duration_seconds": 2423.68,
+        "bytes": 77557804,
+        "sha256": "8aa5dca8a0d31aaa596ecec8e0d7d8df1646fd4328d2740b287650d8012412df"
+      },
+      "repetition": 1,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:36:43.860Z",
+      "completed_at_utc": "2026-08-17T12:37:11.784Z",
+      "wall_ms": 27878.251249999994,
+      "processing_ms": 27754.996167,
+      "real_time_factor": 0.011502447208377342,
+      "peak_rss_bytes": 27115520,
+      "error_category": null,
+      "output_sha256": "82f2c40f5c0abc4c08d69a027ec57822adf96c19f77b7b0ac35a04c2fed85161",
+      "manifest_sha256": "294a9985a671d266700b14ee080885bd88ed678153cf347509280ac3015e807a",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 517,
+        "characters": 34888,
+        "last_end_ms": 2405880,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 3,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "speakers": {
+          "status": "unsupported_provider"
+        },
+        "word_timestamps": {
+          "status": "unsupported_provider"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--ami-es2002c-mix-headset--001",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "ami-es2002c-mix-headset",
+        "duration_seconds": 2423.68,
+        "bytes": 77557804,
+        "sha256": "8aa5dca8a0d31aaa596ecec8e0d7d8df1646fd4328d2740b287650d8012412df"
+      },
+      "repetition": 1,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:37:11.857Z",
+      "completed_at_utc": "2026-08-17T12:46:40.726Z",
+      "wall_ms": 568818.235458,
+      "processing_ms": 564016.768458,
+      "real_time_factor": 0.23469197066361897,
+      "peak_rss_bytes": 4675321856,
+      "error_category": null,
+      "output_sha256": "9982a63c8a3a9d65c1b8d32e9d40b4452342fc3be9227d663c3342dacd908f5c",
+      "manifest_sha256": "9c0f905f59acc420da6ce3afa4ead65f82c9bf388b0d738d2ad27a1e93211406",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": false,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 1
+      },
+      "output_shape": {
+        "segments": 1892,
+        "characters": 40906,
+        "last_end_ms": 2423880,
+        "zero_duration_segments": 1,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 1,
+          "term_recall": 0.3333333333333333
+        },
+        "timing": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "speakers": {
+          "status": "unsupported_provider"
+        },
+        "word_timestamps": {
+          "status": "unsupported_provider"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--ami-es2002c-mix-headset--002",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "ami-es2002c-mix-headset",
+        "duration_seconds": 2423.68,
+        "bytes": 77557804,
+        "sha256": "8aa5dca8a0d31aaa596ecec8e0d7d8df1646fd4328d2740b287650d8012412df"
+      },
+      "repetition": 2,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:46:40.813Z",
+      "completed_at_utc": "2026-08-17T12:47:08.607Z",
+      "wall_ms": 27756.78195799992,
+      "processing_ms": 27554.942125,
+      "real_time_factor": 0.011452329498118531,
+      "peak_rss_bytes": 27099136,
+      "error_category": null,
+      "output_sha256": "82f2c40f5c0abc4c08d69a027ec57822adf96c19f77b7b0ac35a04c2fed85161",
+      "manifest_sha256": "9f65e9c7e88b767354b3e260662d6380739f607bba4aa3bd863ce49f9851d8e9",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 517,
+        "characters": 34888,
+        "last_end_ms": 2405880,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 3,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "speakers": {
+          "status": "unsupported_provider"
+        },
+        "word_timestamps": {
+          "status": "unsupported_provider"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--ami-es2002c-mix-headset--002",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "ami-es2002c-mix-headset",
+        "duration_seconds": 2423.68,
+        "bytes": 77557804,
+        "sha256": "8aa5dca8a0d31aaa596ecec8e0d7d8df1646fd4328d2740b287650d8012412df"
+      },
+      "repetition": 2,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:47:08.662Z",
+      "completed_at_utc": "2026-08-17T12:56:24.759Z",
+      "wall_ms": 556047.396584,
+      "processing_ms": 554113.232333,
+      "real_time_factor": 0.22942277717520468,
+      "peak_rss_bytes": 4683677696,
+      "error_category": null,
+      "output_sha256": "9982a63c8a3a9d65c1b8d32e9d40b4452342fc3be9227d663c3342dacd908f5c",
+      "manifest_sha256": "cff16ec9bde0d6231db785625120eece1fe664ad6afd3c216ef53abc9d76a2ea",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": false,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 1
+      },
+      "output_shape": {
+        "segments": 1892,
+        "characters": 40906,
+        "last_end_ms": 2423880,
+        "zero_duration_segments": 1,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 1,
+          "term_recall": 0.3333333333333333
+        },
+        "timing": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "speakers": {
+          "status": "unsupported_provider"
+        },
+        "word_timestamps": {
+          "status": "unsupported_provider"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "apple-speech-en-us--ami-es2002c-mix-headset--003",
+      "entry_id": "apple-speech-en-us",
+      "provider": "apple-speech",
+      "model": "speech-transcriber",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "ami-es2002c-mix-headset",
+        "duration_seconds": 2423.68,
+        "bytes": 77557804,
+        "sha256": "8aa5dca8a0d31aaa596ecec8e0d7d8df1646fd4328d2740b287650d8012412df"
+      },
+      "repetition": 3,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:56:24.829Z",
+      "completed_at_utc": "2026-08-17T12:56:53.122Z",
+      "wall_ms": 28251.385292000137,
+      "processing_ms": 28100.726875,
+      "real_time_factor": 0.011656400717916614,
+      "peak_rss_bytes": 27443200,
+      "error_category": null,
+      "output_sha256": "82f2c40f5c0abc4c08d69a027ec57822adf96c19f77b7b0ac35a04c2fed85161",
+      "manifest_sha256": "a79b2a5ad49774483ffac4ab407e133eeb1b8c220fd419e71a4b251adef0b431",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": true,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "provider_native",
+        "timing_reliable": true,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 0
+      },
+      "output_shape": {
+        "segments": 517,
+        "characters": 34888,
+        "last_end_ms": 2405880,
+        "zero_duration_segments": 0,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "original_media",
+      "apple_speech": {
+        "resolved_locale": "en_US",
+        "apple_intelligence_available": true,
+        "asset_install_requested": true,
+        "asset_managed_by": "macos",
+        "on_device": true
+      },
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 3,
+          "term_recall": 1
+        },
+        "timing": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "speakers": {
+          "status": "unsupported_provider"
+        },
+        "word_timestamps": {
+          "status": "unsupported_provider"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    },
+    {
+      "key": "local-whisper-large-v3--ami-es2002c-mix-headset--003",
+      "entry_id": "local-whisper-large-v3",
+      "provider": "local",
+      "model": "large-v3",
+      "execution": "local",
+      "cache_state": "warm",
+      "fixture": {
+        "id": "ami-es2002c-mix-headset",
+        "duration_seconds": 2423.68,
+        "bytes": 77557804,
+        "sha256": "8aa5dca8a0d31aaa596ecec8e0d7d8df1646fd4328d2740b287650d8012412df"
+      },
+      "repetition": 3,
+      "status": "passed",
+      "started_at_utc": "2026-08-17T12:56:53.175Z",
+      "completed_at_utc": "2026-08-17T13:06:53.392Z",
+      "wall_ms": 600248.806958,
+      "processing_ms": 598291.318833,
+      "real_time_factor": 0.24766009001105754,
+      "peak_rss_bytes": 4682285056,
+      "error_category": null,
+      "output_sha256": "9982a63c8a3a9d65c1b8d32e9d40b4452342fc3be9227d663c3342dacd908f5c",
+      "manifest_sha256": "2da40e7cfb634eb1a2587a9afc900e5d07147283eb80eb4abc77e6a64ff267de",
+      "capabilities": {
+        "segments": true,
+        "word_timestamps": false,
+        "speaker_labels": false,
+        "language_per_segment": false,
+        "emotion_per_segment": false,
+        "native_timestamps": true
+      },
+      "quality": {
+        "timing_source": "model_native",
+        "timing_reliable": false,
+        "timestamps_clamped": false,
+        "speaker_source": null,
+        "warning_count": 1
+      },
+      "output_shape": {
+        "segments": 1892,
+        "characters": 40906,
+        "last_end_ms": 2423880,
+        "zero_duration_segments": 1,
+        "reversed_segments": 0,
+        "word_timestamps": false,
+        "speaker_labels": false
+      },
+      "preprocessing": "canonical_wav",
+      "apple_speech": null,
+      "reference_metrics": {
+        "status": "scored",
+        "word_accuracy": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "domain_terms": {
+          "status": "scored",
+          "expected_terms": 3,
+          "matched_terms": 1,
+          "term_recall": 0.3333333333333333
+        },
+        "timing": {
+          "status": "unsupported_overlapping_reference"
+        },
+        "speakers": {
+          "status": "unsupported_provider"
+        },
+        "word_timestamps": {
+          "status": "unsupported_provider"
+        }
+      },
+      "remote_cleanup": "not_applicable"
+    }
+  ],
+  "cleanup": {
+    "attempt_outputs_removed": true,
+    "evaluation_root_sha256": "e70a84c443be8b5dc5bb1c4529ab055dfdc717c9758309c1242148d7611a1657",
+    "downloaded_model": {
+      "schema_version": "transcribeit.downloaded-model-cleanup.v1",
+      "matrix_sha256": "98af9da569534f2b9b5dc047d5d391c9dba5a9aa70d3c9a0472cf50f7826a36f",
+      "evaluation_root_sha256": "e70a84c443be8b5dc5bb1c4529ab055dfdc717c9758309c1242148d7611a1657",
+      "artifact_sha256s": [
+        "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2"
+      ],
+      "recorded_at_utc": "2026-08-17T13:07:51.000Z",
+      "evaluation_root_preexisting": false,
+      "initial_bytes": 0,
+      "downloaded_bytes": 3095033483,
+      "reclaimed_bytes": 3095033483,
+      "cleanup_completed": true,
+      "evaluation_root_absent_after_cleanup": true
+    },
+    "apple_speech_asset": {
+      "owner": "macos",
+      "cleanup_attempted": false,
+      "lifecycle": "system_managed_shared"
+    }
+  },
+  "sanitization": {
+    "credential_values_removed": true,
+    "stdout_stderr_removed": true,
+    "transcript_text_removed": true,
+    "request_ids_removed": true,
+    "signed_urls_removed": true,
+    "local_absolute_paths_removed": true,
+    "provider_metadata_allowlisted": true
+  }
+}

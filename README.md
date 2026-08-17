@@ -267,5 +267,6 @@ See the [docs](docs/) folder for detailed documentation:
 - [Release process](docs/releasing.md) — Versioning, validation, tagging, release archives, and verification
 - [Retired Sherpa-ONNX integration](docs/retired/sherpa-onnx.md) — Historical scope, evidence, and migration guidance
 - [Representative corpus](benchmarks/corpus/README.md) — Versioned fixtures, rights, materialization, and scoring contract
-- [Latest representative provider record](benchmarks/results/2026-08-06-ti-007-representative-corpus.sanitized.json) — TI-007 metrics, failures, and cleanup evidence without transcript content
+- [Broad representative provider baseline](benchmarks/results/2026-08-06-ti-007-representative-corpus.sanitized.json) — TI-007 hosted/local metrics, failures, and cleanup evidence without transcript content
+- [Latest Apple/local representative record](benchmarks/results/2026-08-17-ti-014-apple-vs-local-large-v3.sanitized.json) — Clean TI-014 quality, resource, output-shape, and cleanup evidence
 - [Engineering issues](docs/issues/README.md) — Tracked `TI-NNN` findings, priorities, and acceptance criteria
