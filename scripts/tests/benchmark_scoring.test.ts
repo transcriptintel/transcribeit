@@ -19,12 +19,16 @@ const timedReference: ReviewedScoringReference = {
 };
 
 describe("benchmark reference scoring", () => {
-  test("normalizes English and reports WER counts and aggregate domain-term recall", async () => {
-    const metrics = await scoreTranscript(
-      "speechocean-mandarin-l1-computer-clean",
-      "I want to buy an old COMPUTER!",
-      {},
-    );
+  test("normalizes English and reports WER counts and aggregate domain-term recall", () => {
+    const metrics = scoreReviewedTranscript({
+      tokens: [{ text: "I WANT TO BUY A NEW COMPUTER" }],
+      coverage: {
+        domain_terms: ["computer"],
+        timestamp_reference: false,
+        diarization_reference: false,
+        overlapping_speech: false,
+      },
+    }, "I want to buy an old COMPUTER!", {});
 
     expect(metrics.status).toBe("scored");
     expect(metrics.word_accuracy).toEqual({

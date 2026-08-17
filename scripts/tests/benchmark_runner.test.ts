@@ -114,7 +114,9 @@ describe("benchmark runner", () => {
       expect(attempt.status).toBe("failed");
       expect(attempt.error_category).toBe("timeout");
       expect(attempt.wall_ms).toBeGreaterThanOrEqual(750);
-      expect(attempt.wall_ms).toBeLessThan(4_000);
+      // Loaded runners may take several seconds to reap the killed process group;
+      // keep the bound well below the fake child's natural 30-second runtime.
+      expect(attempt.wall_ms).toBeLessThan(15_000);
       expect(await Bun.file(join(absoluteRunDirectory, "attempts", attempt.key)).exists()).toBe(false);
       await Bun.sleep(1_300);
       expect(await Bun.file(grandchildMarker).exists()).toBe(false);
